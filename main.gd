@@ -11,6 +11,7 @@ var private_moments_unlocked: int = 0
 var ad_level: int = 0
 var imp_hired: bool = false
 var ticks: int = 0
+var rare_events_found: int = 0
 var last_event: String = "Bem-vindo! Vamos transformar esta espelunca em um império."
 
 var products: Array = [
@@ -226,7 +227,7 @@ func _build_ui() -> void:
 	right.add_child(adult_toggle_button)
 
 	var footer := Label.new()
-	footer.text = "Protótipo 0.2 • Conteúdo sensual opcional • Progresso salvo localmente"
+	footer.text = "Protótipo 0.3 • Clientes especiais e eventos raros • Conteúdo sensual opcional"
 	footer.add_theme_font_size_override("font_size", 12)
 	footer.add_theme_color_override("font_color", Color(0.62, 0.57, 0.68))
 	root.add_child(footer)
@@ -282,39 +283,113 @@ func _on_customer_tick() -> void:
 	ticks += 1
 	if imp_hired and ticks % 3 == 0:
 		products[0]["stock"] = int(products[0]["stock"]) + 1
-		last_event = "Seu diabrete estagiário fabricou uma poção. Ele perguntou se isso conta como experiência profissional."
-	var available: Array = []
+		last_event = "Seu diabrete fabricou uma poção. Ele perguntou se isso conta como experiência profissional."
+
+	# Eventos raros podem acontecer mesmo quando a loja está sem estoque.
+	if randi() % 100 < 7:
+		_trigger_random_event()
+		_save_game()
+		_refresh_ui()
+		return
+
+	var available: Array[int] = []
 	for i in range(products.size()):
 		if int(products[i]["stock"]) > 0:
 			available.append(i)
+
 	if available.is_empty():
 		status_label.text = "CLIENTE: foi embora"
 		last_event = "Um cliente entrou, viu as prateleiras vazias e foi comprar em outro plano de existência."
 		reputation = maxi(0, reputation - 1)
 	else:
-		var index: int = available[randi() % available.size()]
-		var item: Dictionary = products[index]
+		var profiles: Array[Dictionary] = [
+			{"name": "Speedrunner", "favorite": 3, "line": "“Compra feita. Onde fica o botão de pular diálogo?”"},
+			{"name": "Especialista em Tudo", "favorite": 0, "line": "“Vi um tutorial de 12 segundos e agora sou consultor.”"},
+			{"name": "Gótico Econômico", "favorite": 2, "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”"},
+			{"name": "Colecionador de Patos", "favorite": 1, "line": "“Este pato combina com os outros 47 que não me julgam.”"},
+			{"name": "Coach Interdimensional", "favorite": 4, "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”"},
+			{"name": "Cliente Misterioso", "favorite": -1, "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”"}
+		]
+		var profile: Dictionary = profiles[randi() % profiles.size()]
+		var preferred_index: int = int(profile["favorite"])
+		var chosen_index: int = available[randi() % available.size()]
+		if preferred_index >= 0 and available.has(preferred_index) and randi() % 100 < 70:
+			chosen_index = preferred_index
+
+		var item: Dictionary = products[chosen_index]
 		item["stock"] = int(item["stock"]) - 1
-		var sale_price: int = int(round(float(item["price"]) * (1.0 + 0.20 * ad_level)))
+		var price_multiplier: float = 1.0 + 0.20 * ad_level
+		var preference_bonus := 0
+		if preferred_index == chosen_index:
+			preference_bonus = maxi(2, int(round(float(item["price"]) * 0.25)))
+			last_event = "%s comprou %s e pagou %d de bônus! %s" % [
+				profile["name"], item["name"], preference_bonus, profile["line"]
+			]
+		else:
+			last_event = "%s comprou %s. %s" % [
+				profile["name"], item["name"], profile["line"]
+			]
+		var sale_price: int = int(round(float(item["price"]) * price_multiplier)) + preference_bonus
 		gold += sale_price
 		reputation += 1
 		customers_served += 1
 		affection = mini(100, affection + 1)
-		status_label.text = "CLIENTE: compra realizada!"
-		var quips: Array[String] = [
-			"Cliente comprou %s. “Não sei para que serve, mas a embalagem me convenceu.”" % item["name"],
-			"Venda concluída: %s. A chefe chamou isso de comércio visionário." % item["name"],
-			"%s vendido! O cliente pediu recibo. A chefe entregou um poema." % item["name"],
-			"Mais uma venda de %s. O departamento de ética pediu para falar com a gerente." % item["name"]
-		]
-		last_event = quips[randi() % quips.size()]
+		status_label.text = "CLIENTE: %s" % profile["name"]
+
 		if adult_content_enabled and affection >= 10 and affection % 10 == 0:
 			last_event = "A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”"
 		elif affection > 0 and affection % 5 == 0:
-			last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor. Continue assim, querido.”"
+			last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor, querido.”"
+
 	_save_game()
 	_refresh_ui()
 
+
+func _trigger_random_event() -> void:
+	var events: Array[Dictionary] = [
+		{
+			"name": "Pombo do Fim dos Tempos",
+			"message": "Um pombo de olhos brilhantes pousa na placa. Ele prevê o fim do mundo na próxima terça-feira e deixa uma moeda como gorjeta.",
+			"gold": 25, "reputation": 2
+		},
+		{
+			"name": "Especialista em Tudo",
+			"message": "Um autoproclamado especialista oferece consultoria baseada num tutorial de 12 segundos. Por algum motivo, isso atrai clientes.",
+			"gold": 18, "reputation": 1
+		},
+		{
+			"name": "Caixa Misteriosa Suspeitamente Comum",
+			"message": "Você abre uma caixa misteriosa e encontra outra caixa, menor. Um colecionador paga uma fortuna pela experiência conceitual.",
+			"gold": 20, "reputation": 0
+		},
+		{
+			"name": "Café Quântico",
+			"message": "O diabrete toma um café que está quente, frio e atrasado ao mesmo tempo. Ele trabalha tão rápido que sobra dinheiro no balcão.",
+			"gold": 15, "reputation": 0
+		},
+		{
+			"name": "Atualização de Segunda-feira",
+			"message": "A realidade reinicia para instalar uma atualização. A nota de versão diz apenas: “corrigido um erro que ninguém tinha percebido”.",
+			"gold": -8, "reputation": 2
+		},
+		{
+			"name": "Pote de Moedas de Chocolate",
+			"message": "Um cliente paga por um pote de moedas de chocolate e insiste que são um investimento. Você consegue vender o pote de novo.",
+			"gold": 12, "reputation": 1
+		},
+		{
+			"name": "Placa Antialgoritmo",
+			"message": "Você instala uma placa escrito “Não alimente o algoritmo”. A loja vira tendência justamente por causa da placa.",
+			"gold": 22, "reputation": 1
+		}
+	]
+	var event: Dictionary = events[randi() % events.size()]
+	gold = maxi(0, gold + int(event["gold"]))
+	reputation = maxi(0, reputation + int(event["reputation"]))
+	rare_events_found += 1
+	last_event = "EVENTO: %s! %s" % [event["name"], event["message"]]
+	if adult_content_enabled and affection >= 5 and randi() % 2 == 0:
+		last_event += "\nA súcubo ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui, querido.”"
 func _refresh_ui() -> void:
 	if not is_instance_valid(gold_label):
 		return
@@ -351,6 +426,7 @@ func _save_game() -> void:
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
 	config.set_value("game", "ad_level", ad_level)
 	config.set_value("game", "imp_hired", imp_hired)
+	config.set_value("game", "rare_events_found", rare_events_found)
 	config.set_value("game", "products", products)
 	config.save(SAVE_PATH)
 
@@ -366,6 +442,7 @@ func _load_game() -> void:
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
 	imp_hired = bool(config.get_value("game", "imp_hired", imp_hired))
+	rare_events_found = int(config.get_value("game", "rare_events_found", rare_events_found))
 	var saved_products = config.get_value("game", "products", products)
 	if saved_products is Array and saved_products.size() == products.size():
 		products = saved_products
