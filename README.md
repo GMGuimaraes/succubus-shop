@@ -25,8 +25,9 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 - **Três trilhas de talentos**, cada uma com até cinco níveis: Alquimia reduz custos, Comércio aumenta receita e Carisma acelera a afinidade.
 - **Contratos rotativos** para atender clientes, faturar, fabricar ou encontrar eventos raros. As recompensas aumentam conforme os dias de loja avançam.
 - **Diabrete estagiário** que produz poções automaticamente.
+- **Reações dos clientes**: cada visita termina com o cliente *encantado* (comprou o item favorito: +1 de reputação), *satisfeito* ou *decepcionado* (loja sem estoque: -1 de reputação). O retrato do cliente reage com animação, a chefe responde com falas próprias e o talento Carisma dá chance de salvar a visita no charme.
 - **Afinidade com a protagonista**, diálogos sugestivos e momentos especiais desbloqueáveis.
-- **Seis conquistas** com recompensas.
+- **Sete conquistas** com recompensas.
 - **Salvamento local** de progresso, nível, XP, talentos, contratos, estoque, melhorias e opções.
 - **Compatibilidade de estoque por nome de produto** para que saves antigos preservem os itens que continuam no catálogo.
 - **Opção de desativar o conteúdo sensual**, sem bloquear a progressão normal.

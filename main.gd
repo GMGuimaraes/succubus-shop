@@ -60,9 +60,35 @@ var imp_button: Button
 var private_button: Button
 var adult_toggle_button: Button
 var seller_portrait: TextureRect
+var reaction_label: Label
+var seller_speech_label: Label
+var customer_tween: Tween
+var happy_customers: int = 0
+var disappointed_customers: int = 0
 var customer_portrait: TextureRect
 var customer_portrait_paths: Array[String] = ["res://assets/customer_adventurer.svg", "res://assets/customer_mage.svg", "res://assets/customer_goth.svg"]
 var seller_portrait_paths: Dictionary = {"happy": "res://assets/seller_happy.svg", "neutral": "res://assets/seller_neutral.svg", "surprised": "res://assets/seller_surprised.svg"}
+
+const SELLER_DELIGHTED_LINES := [
+	"A súcubo pisca para o cliente: “Gosto de quem tem bom gosto. Volte sempre, herói.”",
+	"Ela manda um beijinho no ar: “A casa adora você. E eu também, um pouquinho.”",
+	"A chefe ronrona: “Mais um conquistado. Eu sou boa nisso, não sou?”",
+	"Ela se debruça no balcão, sorrindo: “Leva mais uma? Para mim, você nunca é pouco.”"
+]
+const SELLER_CONTENT_LINES := [
+	"A chefe sorri de canto: “Cliente satisfeito é cliente que volta. Ou que indica.”",
+	"Ela guarda as moedas com estilo: “Bom negócio. Traga o próximo, querido.”",
+	"A súcubo confere o caixa: “Nada mal. Nada mal mesmo.”"
+]
+const SELLER_DISAPPOINTED_LINES := [
+	"A súcubo faz beicinho: “Ele foi embora? Que grosseria... Eu vou me esforçar mais, prometo.”",
+	"A chefe bate o pé: “Estoque vazio é pecado, até para mim. Reabasteça, por favor!”",
+	"Ela cruza os braços: “Ninguém resiste ao meu charme duas vezes. Ele volta, você vai ver.”"
+]
+const SELLER_CHARMED_LINES := [
+	"A súcubo se inclina no balcão e sussurra algo. O cliente sai sorrindo, jurando que volta.",
+	"Ela gira uma mecha de cabelo: “Sem estoque? Deixa comigo.” O cliente sai prometendo voltar."
+]
 
 func _ready() -> void:
 	_load_game()
@@ -285,13 +311,21 @@ func _build_ui() -> void:
 	customer_portrait.texture = load(customer_portrait_paths[0])
 	portrait_row.add_child(customer_portrait)
 
+	reaction_label = Label.new()
+	reaction_label.custom_minimum_size = Vector2(260, 24)
+	reaction_label.add_theme_font_size_override("font_size", 15)
+	reaction_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	reaction_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	right.add_child(reaction_label)
+
 	var mascot := Label.new()
 	mascot.text = "A CHEFE DIZ: “Amor, não é golpe se você leu a descrição.”"
-	mascot.custom_minimum_size = Vector2(260, 48)
+	mascot.custom_minimum_size = Vector2(260, 72)
 	mascot.add_theme_font_size_override("font_size", 15)
 	mascot.add_theme_color_override("font_color", Color(1.0, 0.83, 0.92))
 	mascot.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	right.add_child(mascot)
+	seller_speech_label = mascot
 
 	status_label = Label.new()
 	status_label.text = "CLIENTE"
@@ -348,7 +382,7 @@ func _build_ui() -> void:
 	right.add_child(adult_toggle_button)
 
 	var footer := Label.new()
-	footer.text = "Protótipo 0.4 • RPG, contratos diários e progressão longa • Conteúdo sensual opcional"
+	footer.text = "Protótipo 0.5 • Reações dos clientes, RPG e contratos diários • Conteúdo sensual opcional"
 	footer.add_theme_font_size_override("font_size", 12)
 	footer.add_theme_color_override("font_color", Color(0.62, 0.57, 0.68))
 	root.add_child(footer)
@@ -443,6 +477,8 @@ func _hire_imp() -> void:
 func _on_customer_tick() -> void:
 	ticks += 1
 	_set_seller_mood("neutral")
+	if is_instance_valid(reaction_label):
+		reaction_label.text = ""
 	if ticks % 20 == 0:
 		shop_day += 1
 		daily_quest_index = (daily_quest_index + 1) % 4
@@ -475,6 +511,7 @@ func _on_customer_tick() -> void:
 		status_label.text = "CLIENTE: foi embora"
 		_set_seller_mood("surprised")
 		last_event = "Um cliente entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. Reabasteça a loja para não perder vendas."
+		_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank)
 	else:
 		var profiles: Array[Dictionary] = [
 			{"name": "Speedrunner", "favorite": 3, "line": "“Compra feita. Onde fica o botão de pular diálogo?”"},
@@ -515,6 +552,7 @@ func _on_customer_tick() -> void:
 		affection = mini(100, affection + 1 + charm_rank)
 		status_label.text = "CLIENTE: %s" % profile["name"]
 		_set_seller_mood("happy")
+		_react_to_visit("delighted" if preferred_index == chosen_index else "content")
 
 		if adult_content_enabled and affection >= 10 and affection % 10 == 0:
 			last_event = "A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”"
@@ -584,11 +622,76 @@ func _animate_customer_arrival(profile_name: String) -> void:
 			portrait_index = 0
 		_:
 			portrait_index = 0
+	if customer_tween != null and customer_tween.is_valid():
+		customer_tween.kill()
+	customer_portrait.modulate = Color.WHITE
+	customer_portrait.rotation = 0.0
 	customer_portrait.texture = load(customer_portrait_paths[portrait_index])
 	customer_portrait.pivot_offset = customer_portrait.size / 2.0
 	var tween := create_tween().set_parallel(true)
 	tween.tween_property(customer_portrait, "modulate:a", 1.0, 0.24).from(0.0)
 	tween.tween_property(customer_portrait, "scale", Vector2.ONE, 0.28).from(Vector2(0.78, 0.78))
+
+func _react_to_visit(mood: String, charm_save: bool = false) -> void:
+	var text := ""
+	var color := Color(0.91, 1.0, 0.75)
+	var line := ""
+	var animation := mood
+	match mood:
+		"delighted":
+			happy_customers += 1
+			reputation += 1
+			text = "♥ Cliente encantado! +1 de reputação"
+			color = Color(1.0, 0.78, 0.9)
+			line = SELLER_DELIGHTED_LINES.pick_random()
+		"content":
+			text = "Cliente satisfeito."
+			color = Color(0.91, 1.0, 0.75)
+			line = SELLER_CONTENT_LINES.pick_random()
+		"disappointed":
+			if charm_save:
+				text = "♥ O charme da chefe salvou a visita. Sem penalidade."
+				color = Color(1.0, 0.78, 0.9)
+				line = SELLER_CHARMED_LINES.pick_random()
+				animation = "delighted"
+				_set_seller_mood("happy")
+			else:
+				disappointed_customers += 1
+				reputation = maxi(0, reputation - 1)
+				text = "… Cliente decepcionado. -1 de reputação"
+				color = Color(1.0, 0.55, 0.55)
+				line = SELLER_DISAPPOINTED_LINES.pick_random()
+				_set_seller_mood("surprised")
+	if is_instance_valid(reaction_label):
+		reaction_label.text = text
+		reaction_label.add_theme_color_override("font_color", color)
+	if is_instance_valid(seller_speech_label):
+		seller_speech_label.text = line
+	_play_customer_reaction(animation)
+
+func _play_customer_reaction(mood: String) -> void:
+	if not is_instance_valid(customer_portrait):
+		return
+	customer_portrait.pivot_offset = customer_portrait.size / 2.0
+	var tween := create_tween()
+	customer_tween = tween
+	tween.tween_interval(0.35)
+	match mood:
+		"delighted":
+			tween.tween_property(customer_portrait, "modulate", Color(1.0, 0.92, 0.80, 1.0), 0.15)
+			for i in range(2):
+				tween.tween_property(customer_portrait, "scale", Vector2(1.14, 1.14), 0.14)
+				tween.tween_property(customer_portrait, "scale", Vector2.ONE, 0.14)
+			tween.tween_property(customer_portrait, "modulate:a", 0.3, 0.9)
+		"disappointed":
+			tween.tween_property(customer_portrait, "modulate", Color(0.62, 0.66, 0.80, 1.0), 0.2)
+			for i in range(3):
+				tween.tween_property(customer_portrait, "rotation", 0.10, 0.07)
+				tween.tween_property(customer_portrait, "rotation", -0.10, 0.07)
+			tween.tween_property(customer_portrait, "rotation", 0.0, 0.07)
+			tween.tween_property(customer_portrait, "modulate:a", 0.25, 0.9)
+		_:
+			tween.tween_property(customer_portrait, "modulate:a", 0.45, 0.9)
 
 func _set_seller_mood(mood: String) -> void:
 	if is_instance_valid(seller_portrait) and seller_portrait_paths.has(mood):
@@ -599,7 +702,7 @@ func _refresh_ui() -> void:
 		return
 	gold_label.text = "Ouro: %d" % gold
 	rep_label.text = "Reputação: %d" % reputation
-	customers_label.text = "Clientes: %d" % customers_served
+	customers_label.text = "Clientes: %d  ♥%d  ✗%d" % [customers_served, happy_customers, disappointed_customers]
 	affection_label.text = "Afinidade: %d/100" % affection
 	event_label.text = last_event
 	if is_instance_valid(progression_label):
@@ -673,6 +776,8 @@ func _save_game() -> void:
 	config.set_value("game", "alchemy_rank", alchemy_rank)
 	config.set_value("game", "trade_rank", trade_rank)
 	config.set_value("game", "charm_rank", charm_rank)
+	config.set_value("game", "happy_customers", happy_customers)
+	config.set_value("game", "disappointed_customers", disappointed_customers)
 	config.set_value("game", "products", products)
 	config.save(SAVE_PATH)
 
@@ -701,6 +806,8 @@ func _load_game() -> void:
 	alchemy_rank = int(config.get_value("game", "alchemy_rank", alchemy_rank))
 	trade_rank = int(config.get_value("game", "trade_rank", trade_rank))
 	charm_rank = int(config.get_value("game", "charm_rank", charm_rank))
+	happy_customers = int(config.get_value("game", "happy_customers", happy_customers))
+	disappointed_customers = int(config.get_value("game", "disappointed_customers", disappointed_customers))
 	var saved_achievements = config.get_value("game", "unlocked_achievements", [])
 	if saved_achievements is Array:
 		unlocked_achievements.clear()
@@ -811,7 +918,8 @@ func _check_achievements() -> void:
 		{"id": "regulars_25", "name": "A clientela conhece a casa (25)", "condition": customers_served >= 25, "gold": 40, "rep": 3},
 		{"id": "regulars_50", "name": "Lenda comercial do submundo (50)", "condition": customers_served >= 50, "gold": 75, "rep": 5},
 		{"id": "chaos_3", "name": "Caos com recibo (3 eventos raros)", "condition": rare_events_found >= 3, "gold": 35, "rep": 2},
-		{"id": "marketing_3", "name": "Propaganda em todo plano astral (nível 3)", "condition": ad_level >= 3, "gold": 30, "rep": 2}
+		{"id": "marketing_3", "name": "Propaganda em todo plano astral (nível 3)", "condition": ad_level >= 3, "gold": 30, "rep": 2},
+		{"id": "delighted_10", "name": "Coração conquistado (10 clientes encantados)", "condition": happy_customers >= 10, "gold": 40, "rep": 3}
 	]
 	for achievement in definitions:
 		var achievement_id: String = str(achievement["id"])
@@ -831,9 +939,10 @@ func _get_achievement_summary() -> String:
 		"regulars_25": "A clientela conhece a casa",
 		"regulars_50": "Lenda comercial do submundo",
 		"chaos_3": "Caos com recibo",
-		"marketing_3": "Propaganda astral"
+		"marketing_3": "Propaganda astral",
+		"delighted_10": "Coração conquistado"
 	}
-	var lines: Array[String] = ["CONQUISTAS: %d/6" % unlocked_achievements.size()]
+	var lines: Array[String] = ["CONQUISTAS: %d/%d" % [unlocked_achievements.size(), names.size()]]
 	for achievement_id in names.keys():
 		var marker := "✓" if unlocked_achievements.has(achievement_id) else "○"
 		lines.append("%s %s" % [marker, names[achievement_id]])
