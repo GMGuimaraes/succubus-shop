@@ -1,40 +1,49 @@
-# Succubus Shop — protótipo 0.3
+# Succubus Shop
 
-Jogo de gerenciamento de uma loja fantástica com humor e protagonista súcubo adulta, desenvolvido em Godot 4.7.2. Projeto em desenvolvimento, com foco em conteúdo original e orçamento zero.
+**Uma loja de fantasia, clientes excêntricos e decisões comerciais questionáveis.** Succubus Shop é um protótipo de jogo de gerenciamento feito em Godot 4.7.2, com humor, progressão, eventos inesperados e uma súcubo adulta de personalidade provocadora. O projeto prioriza conteúdo original, acessibilidade de opções e desenvolvimento com orçamento zero.
 
-## Executar
-Abra a pasta do projeto no Godot 4.7.2 ou execute:
-`Godot_v4.7.2-stable_linux.x86_64 --path /home/live/Projects/Godot/SuccubusShop`
+## Estado do projeto
 
-## Mecânicas atuais
-- Fabricar cinco produtos com custos e estoques.
-- Clientes chegam automaticamente a cada 3 segundos e compram itens disponíveis.
-- Perfis de clientes com personalidades, falas e preferências por produtos.
-- Clientes podem pagar bônus quando encontram seu produto favorito.
-- Eventos raros com efeitos na economia e na reputação.
-- Easter eggs: Pombo do Fim dos Tempos, Especialista em Tudo, Caixa Misteriosa Suspeitamente Comum, Café Quântico, Atualização de Segunda-feira, Pote de Moedas de Chocolate e Placa Antialgoritmo.
-- Ouro, reputação, contador de clientes e afinidade com a protagonista.
-- Melhorias de propaganda que aumentam o preço de venda.
-- Contratação de um diabrete que fabrica uma poção automaticamente.
-- Diálogos de flerte e momentos especiais desbloqueados por afinidade.
-- Opção para ligar/desligar diálogos e recompensas sensuais.
-- Salvamento local com ConfigFile, incluindo progresso e contagem de eventos raros.
+**Protótipo jogável em desenvolvimento.** O ciclo principal já funciona: fabricar produtos, abastecer o estoque, receber clientes automaticamente, ganhar ouro e reputação, melhorar a propaganda e contratar um diabrete para ajudar na produção. A interface e a economia ainda estão em evolução; esta versão não é um lançamento final.
 
-## Conteúdo adulto
-A protagonista é uma personagem fictícia adulta. O protótipo atual usa diálogos e descrições de momentos provocantes; ainda não inclui ilustrações de nudez ou animações explícitas. O conteúdo sensual pode ser desativado no jogo. Quaisquer artes futuras serão originais ou terão licenças verificadas.
+## Como jogar
 
-## Produtos
-1. Poção de Dano Emocional
-2. Pato Amaldiçoado Premium
-3. Lágrimas de Jogador Derrotado
-4. Caixa Misteriosa Vazia
-5. Poção de Confiança Instantânea
+1. Instale o Godot 4.7.2.
+2. Baixe ou clone este repositório.
+3. Importe a pasta do projeto no Godot e abra `project.godot`.
+4. Execute a cena principal com **F6/F5** ou o botão de executar projeto.
+
+## Recursos atuais
+
+- **Cinco produtos mágicos** para fabricar, estocar e vender, cada um com custo, preço e descrição humorística.
+- **Clientes com personalidade**, falas próprias e preferências por produtos.
+- **Bônus de venda** quando um cliente encontra seu item favorito.
+- **Eventos raros** com efeitos no ouro e na reputação.
+- **Easter eggs** como o Pombo do Fim dos Tempos, a Caixa Misteriosa Suspeitamente Comum, o Café Quântico e a Atualização de Segunda-feira.
+- **Melhorias de propaganda** para aumentar o valor das vendas.
+- **Diabrete estagiário** que produz poções automaticamente.
+- **Afinidade com a protagonista**, diálogos de flerte e momentos especiais desbloqueáveis.
+- **Seis conquistas** com recompensas em ouro e reputação.
+- **Salvamento local** de progresso, estoque, melhorias, opções e conquistas.
+- **Opção de desativar o conteúdo sensual**, sem bloquear a progressão normal.
+
+## Conteúdo e direção criativa
+
+A protagonista é uma personagem fictícia adulta. O protótipo atual utiliza humor e diálogos sugestivos, sem imagens explícitas. Futuras ilustrações serão originais ou terão licenças verificadas. A intenção é construir uma personagem memorável, com expressões, gestos, segredos, eventos e recompensas opcionais.
 
 ## Próximas etapas
-1. Refinar interface e economia.
-2. Ampliar a variedade de clientes e eventos, com feedback visual.
-3. Criar a ficha visual original da protagonista e animações simples.
-4. Melhorar a progressão de afinidade com recompensas e cenas opcionais.
-5. Continuar validando o projeto no Godot e manter este repositório atualizado.
 
-Não incluir assets de terceiros sem verificar os termos de licença. O objetivo é manter o projeto utilizável sem compras obrigatórias.
+- Melhorar a apresentação visual e a identidade da protagonista.
+- Adicionar retratos, expressões e reações a eventos.
+- Expandir os perfis dos clientes e suas preferências.
+- Balancear a economia e a progressão.
+- Adicionar mais eventos, segredos e conquistas.
+- Testar regularmente no Godot e manter o repositório sincronizado.
+
+## Desenvolvimento
+
+- Engine: Godot 4.7.2
+- Linguagem: GDScript
+- Objetivo: projeto gratuito, com conteúdo original e sem dependência de assets pagos.
+
+Contribuições, ideias e sugestões são bem-vindas. Este projeto está em desenvolvimento ativo; mecânicas, valores e interface podem mudar entre versões.
