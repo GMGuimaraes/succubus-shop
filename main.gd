@@ -12,6 +12,7 @@ var ad_level: int = 0
 var imp_hired: bool = false
 var ticks: int = 0
 var rare_events_found: int = 0
+var unlocked_achievements: Array[String] = []
 var last_event: String = "Bem-vindo! Vamos transformar esta espelunca em um império."
 
 var products: Array = [
@@ -28,6 +29,7 @@ var customers_label: Label
 var affection_label: Label
 var status_label: Label
 var event_label: Label
+var achievement_label: Label
 var products_box: VBoxContainer
 var craft_buttons: Array = []
 var product_labels: Array = []
@@ -203,6 +205,13 @@ func _build_ui() -> void:
 	event_label.add_theme_color_override("font_color", Color(0.88, 0.85, 0.92))
 	right.add_child(event_label)
 
+	achievement_label = Label.new()
+	achievement_label.custom_minimum_size = Vector2(280, 92)
+	achievement_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	achievement_label.add_theme_color_override("font_color", Color(0.91, 0.88, 0.68))
+	achievement_label.add_theme_font_size_override("font_size", 13)
+	right.add_child(achievement_label)
+
 	upgrade_button = Button.new()
 	upgrade_button.custom_minimum_size.y = 48
 	upgrade_button.text = "Comprar propaganda infernal"
@@ -261,6 +270,7 @@ func _buy_advertising() -> void:
 	gold -= cost
 	ad_level += 1
 	last_event = "Campanha lançada! Agora os clientes pagam mais porque o anúncio tinha letras brilhantes."
+	_check_achievements()
 	_save_game()
 	_refresh_ui()
 
@@ -288,6 +298,7 @@ func _on_customer_tick() -> void:
 	# Eventos raros podem acontecer mesmo quando a loja está sem estoque.
 	if randi() % 100 < 7:
 		_trigger_random_event()
+		_check_achievements()
 		_save_game()
 		_refresh_ui()
 		return
@@ -341,6 +352,7 @@ func _on_customer_tick() -> void:
 		elif affection > 0 and affection % 5 == 0:
 			last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor, querido.”"
 
+	_check_achievements()
 	_save_game()
 	_refresh_ui()
 
@@ -398,6 +410,8 @@ func _refresh_ui() -> void:
 	customers_label.text = "Clientes: %d" % customers_served
 	affection_label.text = "Afinidade: %d/100" % affection
 	event_label.text = last_event
+	if is_instance_valid(achievement_label):
+		achievement_label.text = _get_achievement_summary()
 	for i in range(products.size()):
 		var item: Dictionary = products[i]
 		product_labels[i].text = "%s  |  Estoque: %d  |  Venda: %d ouro" % [item["name"], item["stock"], item["price"]]
@@ -427,6 +441,7 @@ func _save_game() -> void:
 	config.set_value("game", "ad_level", ad_level)
 	config.set_value("game", "imp_hired", imp_hired)
 	config.set_value("game", "rare_events_found", rare_events_found)
+	config.set_value("game", "unlocked_achievements", unlocked_achievements)
 	config.set_value("game", "products", products)
 	config.save(SAVE_PATH)
 
@@ -443,10 +458,51 @@ func _load_game() -> void:
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
 	imp_hired = bool(config.get_value("game", "imp_hired", imp_hired))
 	rare_events_found = int(config.get_value("game", "rare_events_found", rare_events_found))
+	var saved_achievements = config.get_value("game", "unlocked_achievements", [])
+	if saved_achievements is Array:
+		unlocked_achievements.clear()
+		for achievement in saved_achievements:
+			unlocked_achievements.append(str(achievement))
 	var saved_products = config.get_value("game", "products", products)
 	if saved_products is Array and saved_products.size() == products.size():
 		products = saved_products
 
+
+
+func _check_achievements() -> void:
+	var definitions: Array[Dictionary] = [
+		{"id": "first_sale", "name": "Primeira venda", "condition": customers_served >= 1, "gold": 10, "rep": 1},
+		{"id": "regulars_10", "name": "Já pode pedir pelo nome (10 clientes)", "condition": customers_served >= 10, "gold": 25, "rep": 2},
+		{"id": "regulars_25", "name": "A clientela conhece a casa (25)", "condition": customers_served >= 25, "gold": 40, "rep": 3},
+		{"id": "regulars_50", "name": "Lenda comercial do submundo (50)", "condition": customers_served >= 50, "gold": 75, "rep": 5},
+		{"id": "chaos_3", "name": "Caos com recibo (3 eventos raros)", "condition": rare_events_found >= 3, "gold": 35, "rep": 2},
+		{"id": "marketing_3", "name": "Propaganda em todo plano astral (nível 3)", "condition": ad_level >= 3, "gold": 30, "rep": 2}
+	]
+	for achievement in definitions:
+		var achievement_id: String = str(achievement["id"])
+		if bool(achievement["condition"]) and not unlocked_achievements.has(achievement_id):
+			unlocked_achievements.append(achievement_id)
+			gold += int(achievement["gold"])
+			reputation += int(achievement["rep"])
+			last_event = "CONQUISTA DESBLOQUEADA: %s! Recompensa: %d ouro e %d reputação." % [
+				achievement["name"], achievement["gold"], achievement["rep"]
+			]
+
+
+func _get_achievement_summary() -> String:
+	var names := {
+		"first_sale": "Primeira venda",
+		"regulars_10": "Já pode pedir pelo nome",
+		"regulars_25": "A clientela conhece a casa",
+		"regulars_50": "Lenda comercial do submundo",
+		"chaos_3": "Caos com recibo",
+		"marketing_3": "Propaganda astral"
+	}
+	var lines: Array[String] = ["CONQUISTAS: %d/6" % unlocked_achievements.size()]
+	for achievement_id in names.keys():
+		var marker := "✓" if unlocked_achievements.has(achievement_id) else "○"
+		lines.append("%s %s" % [marker, names[achievement_id]])
+	return "\n".join(lines)
 
 func _show_private_moment() -> void:
 	if affection < 5:
