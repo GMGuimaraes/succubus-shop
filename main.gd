@@ -36,7 +36,10 @@ var products: Array = [
 	{"name": "Pato Amaldiçoado Premium", "cost": 10, "price": 24, "stock": 1, "desc": "Ele não faz nada. Mas julga suas decisões."},
 	{"name": "Lágrimas de Jogador Derrotado", "cost": 12, "price": 30, "stock": 1, "desc": "Ingrediente raro. Salgado. Muito salgado."},
 	{"name": "Caixa Misteriosa Vazia", "cost": 5, "price": 12, "stock": 1, "desc": "A surpresa é perceber que você pagou por uma caixa."},
-	{"name": "Poção de Confiança Instantânea", "cost": 9, "price": 22, "stock": 1, "desc": "Funciona até alguém pedir para você explicar."}
+	{"name": "Poção de Confiança Instantânea", "cost": 9, "price": 22, "stock": 1, "desc": "Funciona até alguém pedir para você explicar."},
+	{"name": "Elixir de Memória de Peixe", "cost": 18, "price": 48, "stock": 0, "required_level": 3, "desc": "Você esquece por que comprou. E compra de novo."},
+	{"name": "Incenso de Teletransporte Barato", "cost": 26, "price": 68, "stock": 0, "required_level": 5, "desc": "Leva você a três metros dali. Às vezes quatro."},
+	{"name": "Cristal de Crédito Cósmico", "cost": 42, "price": 115, "stock": 0, "required_level": 8, "desc": "Converte promessas vagas em dívidas muito concretas."}
 ]
 
 var gold_label: Label
@@ -169,10 +172,15 @@ func _build_ui() -> void:
 	hint.add_theme_color_override("font_color", Color(0.75, 0.71, 0.81))
 	left.add_child(hint)
 
+	var product_scroll := ScrollContainer.new()
+	product_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	product_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left.add_child(product_scroll)
+
 	products_box = VBoxContainer.new()
-	products_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	products_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	products_box.add_theme_constant_override("separation", 8)
-	left.add_child(products_box)
+	product_scroll.add_child(products_box)
 
 	for i in range(products.size()):
 		var card := PanelContainer.new()
@@ -310,6 +318,10 @@ func _make_stat_label(text_value: String) -> Label:
 
 func _craft_product(index: int) -> void:
 	var item: Dictionary = products[index]
+	if not _is_product_unlocked(item):
+		last_event = "Essa receita ainda está bloqueada. Continue subindo de nível para pesquisá-la."
+		_refresh_ui()
+		return
 	var cost: int = maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
 	if gold < cost:
 		last_event = "A caixa registradora está tão vazia que até o eco pediu demissão. Falta ouro."
@@ -378,7 +390,7 @@ func _on_customer_tick() -> void:
 
 	var available: Array[int] = []
 	for i in range(products.size()):
-		if int(products[i]["stock"]) > 0:
+		if _is_product_unlocked(products[i]) and int(products[i]["stock"]) > 0:
 			available.append(i)
 
 	if available.is_empty():
@@ -516,9 +528,11 @@ func _refresh_ui() -> void:
 		achievement_label.text = _get_achievement_summary()
 	for i in range(products.size()):
 		var item: Dictionary = products[i]
-		product_labels[i].text = "%s  |  Estoque: %d  |  Venda: %d ouro" % [item["name"], item["stock"], item["price"]]
-		craft_buttons[i].text = "Fabricar (%d)" % maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
-		craft_buttons[i].disabled = gold < int(item["cost"])
+		var unlocked := _is_product_unlocked(item)
+		var required_level: int = int(item.get("required_level", 1))
+		product_labels[i].text = "%s%s  |  Estoque: %d  |  Venda: %d ouro" % ["" if unlocked else "🔒 ", item["name"], item["stock"], item["price"]] if unlocked else "%s  |  Desbloqueia no nível %d" % [item["name"], required_level]
+		craft_buttons[i].text = "Fabricar (%d)" % maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank)))) if unlocked else "Receita bloqueada"
+		craft_buttons[i].disabled = not unlocked or gold < maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
 	var ad_cost := 75 + ad_level * 60
 	upgrade_button.text = "Propaganda infernal • %d ouro (nível %d)" % [ad_cost, ad_level]
 	upgrade_button.disabled = gold < ad_cost
@@ -589,13 +603,23 @@ func _load_game() -> void:
 		unlocked_achievements.clear()
 		for achievement in saved_achievements:
 			unlocked_achievements.append(str(achievement))
-	var saved_products = config.get_value("game", "products", products)
-	if saved_products is Array and saved_products.size() == products.size():
-		products = saved_products
+	var saved_products = config.get_value("game", "products", [])
+	if saved_products is Array:
+		for saved_item in saved_products:
+			if not saved_item is Dictionary:
+				continue
+			for current_index in range(products.size()):
+				if str(products[current_index]["name"]) == str(saved_item.get("name", "")):
+					products[current_index]["stock"] = maxi(0, int(saved_item.get("stock", products[current_index]["stock"])))
+					break
 
 
 
 
+
+
+func _is_product_unlocked(item: Dictionary) -> bool:
+	return player_level >= int(item.get("required_level", 1))
 
 func _buy_talent(kind: String) -> void:
 	if skill_points <= 0:
@@ -627,6 +651,7 @@ func _xp_required() -> int:
 	return 40 + player_level * 25
 
 func _add_xp(amount: int) -> void:
+	var previous_level := player_level
 	player_xp += amount
 	var levels_gained := 0
 	while player_xp >= _xp_required():
@@ -637,7 +662,14 @@ func _add_xp(amount: int) -> void:
 		reputation += 2
 		levels_gained += 1
 	if levels_gained > 0:
-		last_event = "SUBIU DE NÍVEL! Nível %d: +%d ponto(s) de talento, ouro e reputação. Novas oportunidades de negócio aguardam." % [player_level, levels_gained]
+		var newly_unlocked: Array[String] = []
+		for item in products:
+			var required_level: int = int(item.get("required_level", 1))
+			if required_level > previous_level and required_level <= player_level:
+				newly_unlocked.append(str(item["name"]))
+		last_event = "SUBIU DE NÍVEL! Nível %d: +%d ponto(s) de talento, ouro e reputação." % [player_level, levels_gained]
+		if not newly_unlocked.is_empty():
+			last_event += "\nNOVAS RECEITAS: " + ", ".join(newly_unlocked)
 
 func _get_daily_quest() -> Dictionary:
 	var quests: Array[Dictionary] = [
