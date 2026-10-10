@@ -1,12 +1,12 @@
 # Succubus Shop
 
-**Uma loja de fantasia, clientes excêntricos e decisões comerciais questionáveis.** Succubus Shop é um jogo de gerenciamento e RPG em desenvolvimento, feito em Godot 4.7.2. A ideia é construir uma experiência de longa duração: começar com uma lojinha quebrada e, com planejamento, transformar o negócio em um império mágico.
+**Uma loja de fantasia, clientes excêntricos e decisões comerciais questionáveis.** Succubus Shop é um jogo de gerenciamento e RPG em desenvolvimento, feito em Godot 4.7.2. A ideia é começar com uma pequena loja e evoluir até um império mágico por meio de planejamento, especialização, exploração e decisões econômicas.
 
 O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvimento com orçamento zero.
 
 ## Estado do projeto
 
-**Protótipo jogável em desenvolvimento.** O ciclo principal funciona: fabricar e vender produtos, administrar estoque e ouro, atender clientes, melhorar a loja e contratar ajuda. A versão 0.4 acrescenta uma camada inicial de RPG com níveis, experiência, pontos de talento e contratos diários. Ainda não é um lançamento final e precisa de testes visuais e balanceamento.
+**Protótipo jogável em desenvolvimento.** Já há fabricação e venda de produtos, clientes automáticos, ouro, reputação, melhorias, funcionários, eventos raros, conquistas, progressão por nível, pontos de talento e contratos de loja. A versão atual também inclui receitas desbloqueadas por nível. Ainda não é um lançamento final; interface, balanceamento e conteúdo precisam de mais testes.
 
 ## Como jogar
 
@@ -17,40 +17,40 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 
 ## Recursos atuais
 
-- **Cinco produtos mágicos** para fabricar, estocar e vender, cada um com custo, preço e descrição humorística.
+- **Oito produtos planejados no catálogo atual**, com três receitas que são desbloqueadas nos níveis 3, 5 e 8.
 - **Clientes com personalidade**, falas próprias e preferências por produtos.
-- **Bônus de venda** quando um cliente encontra seu item favorito.
-- **Eventos raros** com efeitos no ouro e na reputação, incluindo o Pombo do Fim dos Tempos, Café Quântico e Atualização de Segunda-feira.
 - **Economia de loja** com ouro, reputação, estoque, custos de fabricação, propaganda e produção automática.
+- **Eventos raros** com consequências positivas ou negativas.
+- **Progressão de RPG**: vendas, fabricação e eventos rendem experiência; subir de nível concede ouro, reputação e pontos de talento.
+- **Três trilhas de talentos**, cada uma com até cinco níveis: Alquimia reduz custos, Comércio aumenta receita e Carisma acelera a afinidade.
+- **Contratos rotativos** para atender clientes, faturar, fabricar ou encontrar eventos raros. As recompensas aumentam conforme os dias de loja avançam.
 - **Diabrete estagiário** que produz poções automaticamente.
-- **RPG de progressão longa**: ganhar experiência em vendas, fabricação e eventos; subir de nível; receber ouro, reputação e pontos de talento.
-- **Três trilhas de talentos** com até cinco melhorias cada: Alquimia reduz custos de fabricação, Comércio aumenta a receita das vendas e Carisma acelera a afinidade.
-- **Contratos diários** que alternam entre atender clientes, faturar ouro, fabricar itens e encontrar eventos raros. Cumprir e resgatar contratos rende ouro, XP e reputação; as recompensas escalam com os dias de loja.
 - **Afinidade com a protagonista**, diálogos sugestivos e momentos especiais desbloqueáveis.
-- **Seis conquistas** com recompensas em ouro e reputação.
-- **Salvamento local** de progresso, estoque, nível, XP, talentos, contratos, melhorias e opções.
+- **Seis conquistas** com recompensas.
+- **Salvamento local** de progresso, nível, XP, talentos, contratos, estoque, melhorias e opções.
+- **Compatibilidade de estoque por nome de produto** para que saves antigos preservem os itens que continuam no catálogo.
 - **Opção de desativar o conteúdo sensual**, sem bloquear a progressão normal.
 
 ## Direção de longo prazo
 
-A intenção é fazer Succubus Shop crescer para além de um jogo ocioso curto, com objetivos de médio e longo prazo e escolhas que mudem a forma de administrar a loja. A progressão poderá ser expandida com:
+A visão é construir uma experiência de longa duração, com sistemas que se alimentem entre si. Os itens abaixo são ideias para etapas futuras, não funcionalidades já concluídas:
 
-1. **Capítulos e reputação por facção** — ganhar a confiança de guildas, nobres, aventureiros, mercadores e criaturas do submundo.
-2. **Árvore de talentos maior** — especializações de alquimia, negociação, encantamento, logística e relacionamento.
-3. **Catálogo e cadeia de produção** — ingredientes, receitas raras, qualidade, fornecedores, pesquisa e produtos desbloqueados por nível.
-4. **Clientes recorrentes e missões pessoais** — histórias, preferências, pedidos especiais e recompensas por construir relacionamentos.
-5. **Expansão comercial** — melhorar salas, contratar funcionários, automatizar tarefas, abrir filiais e investir em negócios concorrentes.
-6. **Economia dinâmica** — oferta e procura, eventos sazonais, inflação controlada, reputação de marca, risco e oportunidade.
-7. **Exploração e aventura** — expedições para encontrar ingredientes, artefatos e receitas, com decisões e resultados variáveis.
-8. **Campanha narrativa e finais** — decisões comerciais, alianças, segredos da protagonista e objetivos de longo prazo.
-9. **Prestígio opcional e desafios avançados** — reinvestir parte do progresso para obter bônus permanentes, sem obrigar o jogador a recomeçar.
-10. **Mais conteúdo original** — retratos, expressões, animações, trilha sonora, efeitos e eventos, usando recursos gratuitos ou licenciados corretamente.
+1. **Capítulos e reputação por facção** — guildas, nobres, aventureiros, mercadores e criaturas do submundo.
+2. **Árvore de talentos maior** — alquimia, negociação, encantamento, logística e relacionamento.
+3. **Cadeias de produção** — ingredientes, receitas raras, qualidade, fornecedores e pesquisa.
+4. **Clientes recorrentes e missões pessoais** — histórias, pedidos especiais e recompensas por relacionamento.
+5. **Expansão comercial** — salas, funcionários, automação, filiais e investimentos.
+6. **Economia dinâmica** — oferta e procura, eventos sazonais, reputação de marca e oportunidades de mercado.
+7. **Exploração e aventura** — expedições para ingredientes e artefatos, com decisões e resultados variáveis.
+8. **Campanha narrativa e finais** — alianças, segredos e escolhas comerciais.
+9. **Prestígio opcional e desafios avançados** — objetivos de fim de jogo sem obrigar o jogador a recomeçar.
+10. **Arte, áudio e animação originais** — retratos, expressões, efeitos e música com recursos gratuitos ou licenças verificadas.
 
-Esses itens são a visão de desenvolvimento, não recursos já implementados. A prioridade é acrescentá-los em etapas pequenas, testáveis e compatíveis com os saves antigos.
+A prioridade é implementar sistemas em etapas pequenas, testáveis e compatíveis com os saves anteriores.
 
 ## Conteúdo e direção criativa
 
-A protagonista é uma personagem fictícia adulta. O protótipo atual usa humor e diálogos sugestivos, sem imagens explícitas. Futuras ilustrações serão originais ou terão licenças verificadas.
+A protagonista é uma personagem fictícia adulta. O protótipo usa humor e diálogos sugestivos, sem imagens explícitas. Futuras ilustrações serão originais ou terão licenças verificadas.
 
 ## Desenvolvimento
 
