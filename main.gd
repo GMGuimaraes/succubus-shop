@@ -13,6 +13,22 @@ var imp_hired: bool = false
 var ticks: int = 0
 var rare_events_found: int = 0
 var unlocked_achievements: Array[String] = []
+var player_level: int = 1
+var player_xp: int = 0
+var skill_points: int = 0
+var shop_day: int = 1
+var daily_quest_index: int = 0
+var daily_quest_progress: int = 0
+var daily_quest_claimed: bool = false
+var daily_gold_earned: int = 0
+var daily_crafts: int = 0
+var alchemy_rank: int = 0
+var trade_rank: int = 0
+var charm_rank: int = 0
+var talent_label: Label
+var alchemy_button: Button
+var trade_button: Button
+var charm_button: Button
 var last_event: String = "Bem-vindo! Vamos transformar esta espelunca em um império."
 
 var products: Array = [
@@ -30,6 +46,9 @@ var affection_label: Label
 var status_label: Label
 var event_label: Label
 var achievement_label: Label
+var progression_label: Label
+var quest_label: Label
+var quest_button: Button
 var products_box: VBoxContainer
 var craft_buttons: Array = []
 var product_labels: Array = []
@@ -92,6 +111,30 @@ func _build_ui() -> void:
 	stats.add_child(customers_label)
 	affection_label = _make_stat_label("Afinidade: 0/10")
 	stats.add_child(affection_label)
+
+	progression_label = Label.new()
+	progression_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	progression_label.add_theme_font_size_override("font_size", 16)
+	progression_label.add_theme_color_override("font_color", Color(0.78, 0.95, 1.0))
+	root.add_child(progression_label)
+
+	talent_label = Label.new()
+	talent_label.add_theme_font_size_override("font_size", 14)
+	talent_label.add_theme_color_override("font_color", Color(0.88, 0.83, 1.0))
+	root.add_child(talent_label)
+
+	var talent_row := HBoxContainer.new()
+	talent_row.add_theme_constant_override("separation", 8)
+	root.add_child(talent_row)
+	alchemy_button = Button.new()
+	alchemy_button.pressed.connect(_buy_talent.bind("alchemy"))
+	talent_row.add_child(alchemy_button)
+	trade_button = Button.new()
+	trade_button.pressed.connect(_buy_talent.bind("trade"))
+	talent_row.add_child(trade_button)
+	charm_button = Button.new()
+	charm_button.pressed.connect(_buy_talent.bind("charm"))
+	talent_row.add_child(charm_button)
 
 	var intro := Label.new()
 	intro.text = "A dona da loja está convencida de que qualquer porcaria pode virar um produto premium."
@@ -173,11 +216,16 @@ func _build_ui() -> void:
 		row.add_child(craft)
 		craft_buttons.append(craft)
 
+	var right_scroll := ScrollContainer.new()
+	right_scroll.custom_minimum_size.x = 300
+	right_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(right_scroll)
+
 	var right := VBoxContainer.new()
-	right.custom_minimum_size.x = 300
-	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_theme_constant_override("separation", 12)
-	body.add_child(right)
+	right_scroll.add_child(right)
 
 	var shop_title := Label.new()
 	shop_title.text = "ESCRITÓRIO DA CHEFE"
@@ -212,6 +260,18 @@ func _build_ui() -> void:
 	achievement_label.add_theme_font_size_override("font_size", 13)
 	right.add_child(achievement_label)
 
+	quest_label = Label.new()
+	quest_label.custom_minimum_size = Vector2(280, 78)
+	quest_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	quest_label.add_theme_color_override("font_color", Color(0.78, 0.95, 1.0))
+	right.add_child(quest_label)
+
+	quest_button = Button.new()
+	quest_button.custom_minimum_size.y = 42
+	quest_button.text = "Resgatar contrato"
+	quest_button.pressed.connect(_claim_daily_quest)
+	right.add_child(quest_button)
+
 	upgrade_button = Button.new()
 	upgrade_button.custom_minimum_size.y = 48
 	upgrade_button.text = "Comprar propaganda infernal"
@@ -236,7 +296,7 @@ func _build_ui() -> void:
 	right.add_child(adult_toggle_button)
 
 	var footer := Label.new()
-	footer.text = "Protótipo 0.3 • Clientes especiais e eventos raros • Conteúdo sensual opcional"
+	footer.text = "Protótipo 0.4 • RPG, contratos diários e progressão longa • Conteúdo sensual opcional"
 	footer.add_theme_font_size_override("font_size", 12)
 	footer.add_theme_color_override("font_color", Color(0.62, 0.57, 0.68))
 	root.add_child(footer)
@@ -250,13 +310,16 @@ func _make_stat_label(text_value: String) -> Label:
 
 func _craft_product(index: int) -> void:
 	var item: Dictionary = products[index]
-	var cost: int = int(item["cost"])
+	var cost: int = maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
 	if gold < cost:
 		last_event = "A caixa registradora está tão vazia que até o eco pediu demissão. Falta ouro."
 		_refresh_ui()
 		return
 	gold -= cost
 	item["stock"] = int(item["stock"]) + 1
+	daily_crafts += 1
+	_add_xp(5)
+	_progress_daily_quest("craft", 1)
 	last_event = "Produzido: %s. A qualidade foi inspecionada por alguém que não entende do assunto." % item["name"]
 	_save_game()
 	_refresh_ui()
@@ -291,6 +354,14 @@ func _hire_imp() -> void:
 
 func _on_customer_tick() -> void:
 	ticks += 1
+	if ticks % 20 == 0:
+		shop_day += 1
+		daily_quest_index = (daily_quest_index + 1) % 4
+		daily_quest_progress = 0
+		daily_quest_claimed = false
+		daily_gold_earned = 0
+		daily_crafts = 0
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou." % shop_day
 	if imp_hired and ticks % 3 == 0:
 		products[0]["stock"] = int(products[0]["stock"]) + 1
 		last_event = "Seu diabrete fabricou uma poção. Ele perguntou se isso conta como experiência profissional."
@@ -298,6 +369,8 @@ func _on_customer_tick() -> void:
 	# Eventos raros podem acontecer mesmo quando a loja está sem estoque.
 	if randi() % 100 < 7:
 		_trigger_random_event()
+		_add_xp(20)
+		_progress_daily_quest("rare", 1)
 		_check_achievements()
 		_save_game()
 		_refresh_ui()
@@ -329,7 +402,7 @@ func _on_customer_tick() -> void:
 
 		var item: Dictionary = products[chosen_index]
 		item["stock"] = int(item["stock"]) - 1
-		var price_multiplier: float = 1.0 + 0.20 * ad_level
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank)
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
 			preference_bonus = maxi(2, int(round(float(item["price"]) * 0.25)))
@@ -344,7 +417,11 @@ func _on_customer_tick() -> void:
 		gold += sale_price
 		reputation += 1
 		customers_served += 1
-		affection = mini(100, affection + 1)
+		daily_gold_earned += sale_price
+		_add_xp(12)
+		_progress_daily_quest("customers", 1)
+		_progress_daily_quest("gold", sale_price)
+		affection = mini(100, affection + 1 + charm_rank)
 		status_label.text = "CLIENTE: %s" % profile["name"]
 
 		if adult_content_enabled and affection >= 10 and affection % 10 == 0:
@@ -410,12 +487,37 @@ func _refresh_ui() -> void:
 	customers_label.text = "Clientes: %d" % customers_served
 	affection_label.text = "Afinidade: %d/100" % affection
 	event_label.text = last_event
+	if is_instance_valid(progression_label):
+		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Pontos de talento: %d  •  Dia %d" % [player_level, player_xp, _xp_required(), skill_points, shop_day]
+	if is_instance_valid(talent_label):
+		talent_label.text = "TALENTOS • Alquimia %d/5 | Comércio %d/5 | Carisma %d/5" % [alchemy_rank, trade_rank, charm_rank]
+	for talent_button in [alchemy_button, trade_button, charm_button]:
+		if is_instance_valid(talent_button):
+			talent_button.disabled = skill_points <= 0
+	if is_instance_valid(alchemy_button):
+		alchemy_button.text = "Alquimia %d/5" % alchemy_rank
+		alchemy_button.disabled = skill_points <= 0 or alchemy_rank >= 5
+	if is_instance_valid(trade_button):
+		trade_button.text = "Comércio %d/5" % trade_rank
+		trade_button.disabled = skill_points <= 0 or trade_rank >= 5
+	if is_instance_valid(charm_button):
+		charm_button.text = "Carisma %d/5" % charm_rank
+		charm_button.disabled = skill_points <= 0 or charm_rank >= 5
+	if is_instance_valid(quest_label):
+		var quest := _get_daily_quest()
+		var target: int = int(quest["target"])
+		var progress_text := "%d/%d" % [mini(daily_quest_progress, target), target]
+		quest_label.text = "CONTRATO DO DIA\n%s\nProgresso: %s%s" % [quest["name"], progress_text, "\nConcluído! Resgate a recompensa." if daily_quest_progress >= target and not daily_quest_claimed else "\nRecompensa resgatada." if daily_quest_claimed else ""]
+	if is_instance_valid(quest_button):
+		var quest_ready: bool = daily_quest_progress >= int(_get_daily_quest()["target"]) and not daily_quest_claimed
+		quest_button.disabled = not quest_ready
+		quest_button.text = "Resgatar contrato" if quest_ready else "Contrato resgatado ✓" if daily_quest_claimed else "Contrato em andamento"
 	if is_instance_valid(achievement_label):
 		achievement_label.text = _get_achievement_summary()
 	for i in range(products.size()):
 		var item: Dictionary = products[i]
 		product_labels[i].text = "%s  |  Estoque: %d  |  Venda: %d ouro" % [item["name"], item["stock"], item["price"]]
-		craft_buttons[i].text = "Fabricar (%d)" % item["cost"]
+		craft_buttons[i].text = "Fabricar (%d)" % maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
 		craft_buttons[i].disabled = gold < int(item["cost"])
 	var ad_cost := 75 + ad_level * 60
 	upgrade_button.text = "Propaganda infernal • %d ouro (nível %d)" % [ad_cost, ad_level]
@@ -442,6 +544,18 @@ func _save_game() -> void:
 	config.set_value("game", "imp_hired", imp_hired)
 	config.set_value("game", "rare_events_found", rare_events_found)
 	config.set_value("game", "unlocked_achievements", unlocked_achievements)
+	config.set_value("game", "player_level", player_level)
+	config.set_value("game", "player_xp", player_xp)
+	config.set_value("game", "skill_points", skill_points)
+	config.set_value("game", "shop_day", shop_day)
+	config.set_value("game", "daily_quest_index", daily_quest_index)
+	config.set_value("game", "daily_quest_progress", daily_quest_progress)
+	config.set_value("game", "daily_quest_claimed", daily_quest_claimed)
+	config.set_value("game", "daily_gold_earned", daily_gold_earned)
+	config.set_value("game", "daily_crafts", daily_crafts)
+	config.set_value("game", "alchemy_rank", alchemy_rank)
+	config.set_value("game", "trade_rank", trade_rank)
+	config.set_value("game", "charm_rank", charm_rank)
 	config.set_value("game", "products", products)
 	config.save(SAVE_PATH)
 
@@ -458,6 +572,18 @@ func _load_game() -> void:
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
 	imp_hired = bool(config.get_value("game", "imp_hired", imp_hired))
 	rare_events_found = int(config.get_value("game", "rare_events_found", rare_events_found))
+	player_level = int(config.get_value("game", "player_level", player_level))
+	player_xp = int(config.get_value("game", "player_xp", player_xp))
+	skill_points = int(config.get_value("game", "skill_points", skill_points))
+	shop_day = int(config.get_value("game", "shop_day", shop_day))
+	daily_quest_index = int(config.get_value("game", "daily_quest_index", daily_quest_index))
+	daily_quest_progress = int(config.get_value("game", "daily_quest_progress", daily_quest_progress))
+	daily_quest_claimed = bool(config.get_value("game", "daily_quest_claimed", daily_quest_claimed))
+	daily_gold_earned = int(config.get_value("game", "daily_gold_earned", daily_gold_earned))
+	daily_crafts = int(config.get_value("game", "daily_crafts", daily_crafts))
+	alchemy_rank = int(config.get_value("game", "alchemy_rank", alchemy_rank))
+	trade_rank = int(config.get_value("game", "trade_rank", trade_rank))
+	charm_rank = int(config.get_value("game", "charm_rank", charm_rank))
 	var saved_achievements = config.get_value("game", "unlocked_achievements", [])
 	if saved_achievements is Array:
 		unlocked_achievements.clear()
@@ -468,6 +594,80 @@ func _load_game() -> void:
 		products = saved_products
 
 
+
+
+
+func _buy_talent(kind: String) -> void:
+	if skill_points <= 0:
+		last_event = "Você ainda não tem pontos de talento. Suba de nível para ganhar mais."
+		_refresh_ui()
+		return
+	match kind:
+		"alchemy":
+			if alchemy_rank >= 5:
+				return
+			alchemy_rank += 1
+			last_event = "Talento Alquimia melhorado! Fabricar mercadorias fica 5% mais barato por nível."
+		"trade":
+			if trade_rank >= 5:
+				return
+			trade_rank += 1
+			last_event = "Talento Comércio melhorado! O valor das vendas aumenta 8% por nível."
+		"charm":
+			if charm_rank >= 5:
+				return
+			charm_rank += 1
+			last_event = "Talento Carisma melhorado! Cada venda aumenta mais sua afinidade com a chefe."
+			
+	skill_points -= 1
+	_save_game()
+	_refresh_ui()
+
+func _xp_required() -> int:
+	return 40 + player_level * 25
+
+func _add_xp(amount: int) -> void:
+	player_xp += amount
+	var levels_gained := 0
+	while player_xp >= _xp_required():
+		player_xp -= _xp_required()
+		player_level += 1
+		skill_points += 1
+		gold += 20 + player_level * 5
+		reputation += 2
+		levels_gained += 1
+	if levels_gained > 0:
+		last_event = "SUBIU DE NÍVEL! Nível %d: +%d ponto(s) de talento, ouro e reputação. Novas oportunidades de negócio aguardam." % [player_level, levels_gained]
+
+func _get_daily_quest() -> Dictionary:
+	var quests: Array[Dictionary] = [
+		{"name": "Atenda 5 clientes hoje", "type": "customers", "target": 5, "gold": 45, "xp": 25},
+		{"name": "Fature 100 de ouro hoje", "type": "gold", "target": 100, "gold": 55, "xp": 30},
+		{"name": "Fabrique 3 produtos hoje", "type": "craft", "target": 3, "gold": 40, "xp": 35},
+		{"name": "Encontre 1 evento raro hoje", "type": "rare", "target": 1, "gold": 65, "xp": 40}
+	]
+	return quests[posmod(daily_quest_index, quests.size())]
+
+func _progress_daily_quest(kind: String, amount: int) -> void:
+	if daily_quest_claimed:
+		return
+	var quest := _get_daily_quest()
+	if str(quest["type"]) == kind:
+		daily_quest_progress += amount
+
+func _claim_daily_quest() -> void:
+	var quest := _get_daily_quest()
+	if daily_quest_claimed or daily_quest_progress < int(quest["target"]):
+		return
+	daily_quest_claimed = true
+	var gold_reward: int = int(quest["gold"]) + shop_day * 3
+	var xp_reward: int = int(quest["xp"]) + shop_day
+	gold += gold_reward
+	reputation += 3
+	_add_xp(xp_reward)
+	last_event = "Contrato concluído: %s. Recompensa: %d ouro, %d XP e 3 de reputação." % [quest["name"], gold_reward, xp_reward]
+	_save_game()
+	_refresh_ui()
 
 func _check_achievements() -> void:
 	var definitions: Array[Dictionary] = [
