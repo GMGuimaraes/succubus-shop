@@ -83,15 +83,18 @@ func _build_ui() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.theme = _build_visual_theme()
+	margin.add_theme_constant_override("margin_left", 28)
+	margin.add_theme_constant_override("margin_right", 28)
+	margin.add_theme_constant_override("margin_top", 22)
+	margin.add_theme_constant_override("margin_bottom", 22)
+	add_child(margin)
+
 	var root := VBoxContainer.new()
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.theme = _build_visual_theme()
 	root.add_theme_constant_override("separation", 12)
-	root.add_theme_constant_override("margin_left", 28)
-	root.add_theme_constant_override("margin_right", 28)
-	root.add_theme_constant_override("margin_top", 22)
-	root.add_theme_constant_override("margin_bottom", 22)
-	add_child(root)
+	margin.add_child(root)
 
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 18)
@@ -120,7 +123,7 @@ func _build_ui() -> void:
 	stats.add_child(rep_label)
 	customers_label = _make_stat_label("Clientes: 0")
 	stats.add_child(customers_label)
-	affection_label = _make_stat_label("Afinidade: 0/10")
+	affection_label = _make_stat_label("Afinidade: 0/100")
 	stats.add_child(affection_label)
 
 	progression_label = Label.new()
@@ -283,7 +286,7 @@ func _build_ui() -> void:
 	portrait_row.add_child(customer_portrait)
 
 	var mascot := Label.new()
-	mascot.text = "A CHEFE DIZ: \"Amor, nao e golpe se voce leu a descricao.\""
+	mascot.text = "A CHEFE DIZ: “Amor, não é golpe se você leu a descrição.”"
 	mascot.custom_minimum_size = Vector2(260, 48)
 	mascot.add_theme_font_size_override("font_size", 15)
 	mascot.add_theme_color_override("font_color", Color(1.0, 0.83, 0.92))
