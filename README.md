@@ -17,7 +17,7 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 
 ## Recursos atuais
 
-- **Oito produtos planejados no catálogo atual**, com três receitas que são desbloqueadas nos níveis 3, 5 e 8.
+- **Oito produtos no catálogo atual**, com três receitas desbloqueadas nos níveis 3, 5 e 8.
 - **Clientes com personalidade**, falas próprias e preferências por produtos.
 - **Economia de loja** com ouro, reputação, estoque, custos de fabricação, propaganda e produção automática.
 - **Eventos raros** com consequências positivas ou negativas.
