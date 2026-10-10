@@ -395,8 +395,7 @@ func _on_customer_tick() -> void:
 
 	if available.is_empty():
 		status_label.text = "CLIENTE: foi embora"
-		last_event = "Um cliente entrou, viu as prateleiras vazias e foi comprar em outro plano de existência."
-		reputation = maxi(0, reputation - 1)
+		last_event = "Um cliente entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. Reabasteça a loja para não perder vendas."
 	else:
 		var profiles: Array[Dictionary] = [
 			{"name": "Speedrunner", "favorite": 3, "line": "“Compra feita. Onde fica o botão de pular diálogo?”"},
