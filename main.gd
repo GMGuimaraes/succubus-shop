@@ -59,6 +59,10 @@ var upgrade_button: Button
 var imp_button: Button
 var private_button: Button
 var adult_toggle_button: Button
+var seller_portrait: TextureRect
+var customer_portrait: TextureRect
+var customer_portrait_paths: Array[String] = ["res://assets/customer_adventurer.svg", "res://assets/customer_mage.svg", "res://assets/customer_goth.svg"]
+var seller_portrait_paths: Dictionary = {"happy": "res://assets/seller_happy.svg", "neutral": "res://assets/seller_neutral.svg", "surprised": "res://assets/seller_surprised.svg"}
 
 func _ready() -> void:
 	_load_game()
@@ -71,13 +75,17 @@ func _ready() -> void:
 	add_child(timer)
 
 func _build_ui() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.075, 0.055, 0.11, 1)
+	var bg := TextureRect.new()
+	bg.texture = load("res://assets/shop_scene.svg")
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_SCALE
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 
 	var root := VBoxContainer.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root.theme = _build_visual_theme()
 	root.add_theme_constant_override("separation", 12)
 	root.add_theme_constant_override("margin_left", 28)
 	root.add_theme_constant_override("margin_right", 28)
@@ -230,10 +238,24 @@ func _build_ui() -> void:
 	right_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	body.add_child(right_scroll)
 
+	var right_panel := PanelContainer.new()
+	var right_panel_style := StyleBoxFlat.new()
+	right_panel_style.bg_color = Color(0.025, 0.018, 0.055, 0.90)
+	right_panel_style.border_color = Color(0.43, 0.25, 0.68, 0.95)
+	right_panel_style.set_border_width_all(1)
+	right_panel_style.set_corner_radius_all(10)
+	right_panel_style.content_margin_left = 12
+	right_panel_style.content_margin_right = 12
+	right_panel_style.content_margin_top = 12
+	right_panel_style.content_margin_bottom = 12
+	right_panel.add_theme_stylebox_override("panel", right_panel_style)
+	right_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_scroll.add_child(right_panel)
+
 	var right := VBoxContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_theme_constant_override("separation", 12)
-	right_scroll.add_child(right)
+	right_panel.add_child(right)
 
 	var shop_title := Label.new()
 	shop_title.text = "ESCRITÓRIO DA CHEFE"
@@ -241,10 +263,29 @@ func _build_ui() -> void:
 	shop_title.add_theme_color_override("font_color", Color(1.0, 0.78, 0.9))
 	right.add_child(shop_title)
 
+	var portrait_row := HBoxContainer.new()
+	portrait_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	portrait_row.add_theme_constant_override("separation", 10)
+	right.add_child(portrait_row)
+
+	seller_portrait = TextureRect.new()
+	seller_portrait.custom_minimum_size = Vector2(132, 142)
+	seller_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	seller_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	seller_portrait.texture = load(seller_portrait_paths["neutral"])
+	portrait_row.add_child(seller_portrait)
+
+	customer_portrait = TextureRect.new()
+	customer_portrait.custom_minimum_size = Vector2(112, 122)
+	customer_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	customer_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	customer_portrait.texture = load(customer_portrait_paths[0])
+	portrait_row.add_child(customer_portrait)
+
 	var mascot := Label.new()
-	mascot.text = "  (•̀ᴗ•́)و\n\n  A CHEFE DIZ:\n  “Amor, não é golpe\n  se você leu a descrição.”"
-	mascot.custom_minimum_size = Vector2(280, 120)
-	mascot.add_theme_font_size_override("font_size", 19)
+	mascot.text = "A CHEFE DIZ: \"Amor, nao e golpe se voce leu a descricao.\""
+	mascot.custom_minimum_size = Vector2(260, 48)
+	mascot.add_theme_font_size_override("font_size", 15)
 	mascot.add_theme_color_override("font_color", Color(1.0, 0.83, 0.92))
 	mascot.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	right.add_child(mascot)
@@ -309,6 +350,38 @@ func _build_ui() -> void:
 	footer.add_theme_color_override("font_color", Color(0.62, 0.57, 0.68))
 	root.add_child(footer)
 
+func _build_visual_theme() -> Theme:
+	var visual_theme := Theme.new()
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.035, 0.025, 0.075, 0.94)
+	normal.border_color = Color(0.43, 0.25, 0.68, 1.0)
+	normal.set_border_width_all(1)
+	normal.set_corner_radius_all(8)
+	normal.content_margin_left = 12
+	normal.content_margin_right = 12
+	normal.content_margin_top = 7
+	normal.content_margin_bottom = 7
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(0.15, 0.06, 0.22, 0.98)
+	hover.border_color = Color(1.0, 0.56, 0.82, 1.0)
+	var pressed := normal.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color(0.28, 0.08, 0.38, 1.0)
+	var disabled := normal.duplicate() as StyleBoxFlat
+	disabled.bg_color = Color(0.07, 0.055, 0.09, 0.88)
+	disabled.border_color = Color(0.22, 0.18, 0.28, 1.0)
+	visual_theme.set_stylebox("normal", "Button", normal)
+	visual_theme.set_stylebox("hover", "Button", hover)
+	visual_theme.set_stylebox("pressed", "Button", pressed)
+	visual_theme.set_stylebox("disabled", "Button", disabled)
+	visual_theme.set_color("font_color", "Button", Color(0.97, 0.91, 1.0))
+	visual_theme.set_color("font_hover_color", "Button", Color(1.0, 0.78, 0.9))
+	visual_theme.set_color("font_pressed_color", "Button", Color(1.0, 0.9, 1.0))
+	visual_theme.set_color("font_disabled_color", "Button", Color(0.48, 0.43, 0.55))
+	visual_theme.set_font_size("font_size", "Button", 15)
+	visual_theme.set_constant("outline_size", "Label", 1)
+	visual_theme.set_color("font_outline_color", "Label", Color(0.025, 0.015, 0.05, 0.8))
+	return visual_theme
+
 func _make_stat_label(text_value: String) -> Label:
 	var label := Label.new()
 	label.text = text_value
@@ -366,6 +439,7 @@ func _hire_imp() -> void:
 
 func _on_customer_tick() -> void:
 	ticks += 1
+	_set_seller_mood("neutral")
 	if ticks % 20 == 0:
 		shop_day += 1
 		daily_quest_index = (daily_quest_index + 1) % 4
@@ -394,7 +468,9 @@ func _on_customer_tick() -> void:
 			available.append(i)
 
 	if available.is_empty():
+		_animate_customer_arrival("Cliente Misterioso")
 		status_label.text = "CLIENTE: foi embora"
+		_set_seller_mood("surprised")
 		last_event = "Um cliente entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. Reabasteça a loja para não perder vendas."
 	else:
 		var profiles: Array[Dictionary] = [
@@ -406,6 +482,7 @@ func _on_customer_tick() -> void:
 			{"name": "Cliente Misterioso", "favorite": -1, "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”"}
 		]
 		var profile: Dictionary = profiles[randi() % profiles.size()]
+		_animate_customer_arrival(str(profile["name"]))
 		var preferred_index: int = int(profile["favorite"])
 		var chosen_index: int = available[randi() % available.size()]
 		if preferred_index >= 0 and available.has(preferred_index) and randi() % 100 < 70:
@@ -434,6 +511,7 @@ func _on_customer_tick() -> void:
 		_progress_daily_quest("gold", sale_price)
 		affection = mini(100, affection + 1 + charm_rank)
 		status_label.text = "CLIENTE: %s" % profile["name"]
+		_set_seller_mood("happy")
 
 		if adult_content_enabled and affection >= 10 and affection % 10 == 0:
 			last_event = "A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”"
@@ -490,6 +568,29 @@ func _trigger_random_event() -> void:
 	last_event = "EVENTO: %s! %s" % [event["name"], event["message"]]
 	if adult_content_enabled and affection >= 5 and randi() % 2 == 0:
 		last_event += "\nA súcubo ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui, querido.”"
+func _animate_customer_arrival(profile_name: String) -> void:
+	if not is_instance_valid(customer_portrait):
+		return
+	var portrait_index := 0
+	match profile_name:
+		"Especialista em Tudo", "Coach Interdimensional":
+			portrait_index = 1
+		"Gótico Econômico", "Cliente Misterioso":
+			portrait_index = 2
+		"Colecionador de Patos":
+			portrait_index = 0
+		_:
+			portrait_index = 0
+	customer_portrait.texture = load(customer_portrait_paths[portrait_index])
+	customer_portrait.pivot_offset = customer_portrait.size / 2.0
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(customer_portrait, "modulate:a", 1.0, 0.24).from(0.0)
+	tween.tween_property(customer_portrait, "scale", Vector2.ONE, 0.28).from(Vector2(0.78, 0.78))
+
+func _set_seller_mood(mood: String) -> void:
+	if is_instance_valid(seller_portrait) and seller_portrait_paths.has(mood):
+		seller_portrait.texture = load(str(seller_portrait_paths[mood]))
+
 func _refresh_ui() -> void:
 	if not is_instance_valid(gold_label):
 		return
