@@ -2,6 +2,7 @@ extends Control
 
 const SAVE_PATH := "user://succubus_shop_save.cfg"
 const Regulars = preload("res://regulars.gd")
+const GameAudio = preload("res://audio.gd")
 const Factions = preload("res://factions.gd")
 const Ingredients = preload("res://ingredients.gd")
 
@@ -82,6 +83,8 @@ var upgrade_button: Button
 var imp_button: Button
 var private_button: Button
 var adult_toggle_button: Button
+var audio: Node
+var mute_button: Button
 var seller_portrait: TextureRect
 var reaction_label: Label
 var seller_speech_label: Label
@@ -114,6 +117,8 @@ const SELLER_CHARMED_LINES := [
 ]
 
 func _ready() -> void:
+	audio = GameAudio.new()
+	add_child(audio)
 	_load_game()
 	_build_ui()
 	_refresh_ui()
@@ -175,6 +180,7 @@ func _build_ui() -> void:
 	subtitle.add_theme_color_override("font_color", Color(0.80, 0.75, 0.88))
 	subtitle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	header.add_child(subtitle)
+	_build_audio_controls(header)
 
 	var stats := HBoxContainer.new()
 	stats.add_theme_constant_override("separation", 24)
@@ -549,6 +555,37 @@ func _build_ui() -> void:
 	footer.add_theme_color_override("font_color", Color(0.62, 0.57, 0.68))
 	root.add_child(footer)
 
+func _build_audio_controls(parent: Control) -> void:
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	parent.add_child(spacer)
+	mute_button = Button.new()
+	mute_button.custom_minimum_size = Vector2(96, 34)
+	mute_button.pressed.connect(_on_mute_pressed)
+	parent.add_child(mute_button)
+	var slider := HSlider.new()
+	slider.custom_minimum_size = Vector2(110, 24)
+	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.value = audio.volume
+	slider.value_changed.connect(_on_volume_changed)
+	parent.add_child(slider)
+	_update_mute_button()
+
+func _on_mute_pressed() -> void:
+	audio.toggle_muted()
+	audio.play("click")
+	_update_mute_button()
+
+func _on_volume_changed(value: float) -> void:
+	audio.set_volume(value)
+
+func _update_mute_button() -> void:
+	if is_instance_valid(mute_button):
+		mute_button.text = "♪ Som: mudo" if audio.muted else "♪ Som: ligado"
+
 func _build_visual_theme() -> Theme:
 	var visual_theme := Theme.new()
 	var normal := StyleBoxFlat.new()
@@ -608,6 +645,7 @@ func _craft_product(index: int) -> void:
 	_consume_ingredients(item)
 	item["stock"] = int(item["stock"]) + 1
 	daily_crafts += 1
+	audio.play("craft")
 	_add_xp(5)
 	_progress_daily_quest("craft", 1)
 	var premium_chance := 8 + 4 * alchemy_rank
@@ -615,6 +653,7 @@ func _craft_product(index: int) -> void:
 		var product_name := str(item["name"])
 		premium_stock[product_name] = int(premium_stock.get(product_name, 0)) + 1
 		premium_crafted += 1
+		audio.play("rare")
 		last_event = "OBRA-PRIMA! %s saiu impecável e vale 50%% a mais. A chefe finge que foi de propósito." % product_name
 	else:
 		last_event = "Produzido: %s. A qualidade foi inspecionada por alguém que não entende do assunto." % item["name"]
@@ -661,6 +700,7 @@ func _buy_ingredient(ingredient_id: String) -> void:
 	gold -= price
 	ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) + 1
 	total_ingredients_bought += 1
+	audio.play("buy")
 	last_event = "Comprado: %s por %d ouro. O fornecedor jurou que era o preço de amigo." % [str(Ingredients.find(ingredient_id).get("name", ingredient_id)), price]
 	_check_achievements()
 	_save_game()
@@ -678,6 +718,7 @@ func _buy_advertising() -> void:
 		return
 	gold -= cost
 	ad_level += 1
+	audio.play("buy")
 	last_event = "Campanha lançada! Agora os clientes pagam mais porque o anúncio tinha letras brilhantes."
 	_check_achievements()
 	_save_game()
@@ -694,6 +735,7 @@ func _hire_imp() -> void:
 		return
 	gold -= 125
 	imp_hired = true
+	audio.play("buy")
 	last_event = "Contratado! O diabrete produz uma Poção de Dano Emocional a cada 9 segundos."
 	_save_game()
 	_refresh_ui()
@@ -718,6 +760,7 @@ func _on_customer_tick() -> void:
 	# Eventos raros podem acontecer mesmo quando a loja está sem estoque.
 	if randi() % 100 < 7:
 		_trigger_random_event()
+		audio.play("rare")
 		_add_xp(20)
 		_progress_daily_quest("rare", 1)
 		_check_achievements()
@@ -813,6 +856,7 @@ func _on_customer_tick() -> void:
 			_add_xp(10)
 			headline_locked = true
 		gold += sale_price
+		audio.play("coin")
 		reputation += 1
 		customers_served += 1
 		if profile.has("regular_id"):
@@ -960,6 +1004,7 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 		"delighted":
 			happy_customers += 1
 			reputation += 1
+			audio.play("happy")
 			text = "♥ Cliente encantado! +1 de reputação"
 			color = Color(1.0, 0.78, 0.9)
 			line = SELLER_DELIGHTED_LINES.pick_random()
@@ -973,9 +1018,11 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 				color = Color(1.0, 0.78, 0.9)
 				line = SELLER_CHARMED_LINES.pick_random()
 				animation = "delighted"
+				audio.play("happy")
 				_set_seller_mood("happy")
 			else:
 				disappointed_customers += 1
+				audio.play("sad")
 				reputation = maxi(0, reputation - 1)
 				text = "… Cliente decepcionado. -1 de reputação"
 				color = Color(1.0, 0.55, 0.55)
@@ -1268,6 +1315,7 @@ func _buy_talent(kind: String) -> void:
 			last_event = "Talento Logística melhorado! Ingredientes ficam 5% mais baratos por nível."
 
 	skill_points -= 1
+	audio.play("talent")
 	_save_game()
 	_refresh_ui()
 
@@ -1286,6 +1334,7 @@ func _add_xp(amount: int) -> void:
 		reputation += 2
 		levels_gained += 1
 	if levels_gained > 0:
+		audio.play("levelup")
 		var newly_unlocked: Array[String] = []
 		for item in products:
 			var required_level: int = int(item.get("required_level", 1))
@@ -1316,6 +1365,7 @@ func _claim_daily_quest() -> void:
 	if daily_quest_claimed or daily_quest_progress < int(quest["target"]):
 		return
 	daily_quest_claimed = true
+	audio.play("coin")
 	var gold_reward: int = int(quest["gold"]) + shop_day * 3
 	var xp_reward: int = int(quest["xp"]) + shop_day
 	gold += gold_reward
