@@ -8,6 +8,7 @@ var reputation: int = 0
 var customers_served: int = 0
 var affection: int = 0
 var regular_bonds: Dictionary = {}
+var regular_orders_completed: Dictionary = {}
 var adult_content_enabled: bool = true
 var private_moments_unlocked: int = 0
 var ad_level: int = 0
@@ -537,7 +538,11 @@ func _on_customer_tick() -> void:
 			var bond := int(regular_bonds.get(regular_id, 0))
 			var tier := Regulars.tier_for(bond)
 			var lines_by_tier: Array = regular["lines"][tier]
-			profile = {"name": regular["name"], "favorite": int(regular["favorite"]), "line": str(lines_by_tier[randi() % lines_by_tier.size()]), "regular_id": regular_id, "portrait": int(regular["portrait"]), "tier": tier}
+			var regular_line := str(lines_by_tier[randi() % lines_by_tier.size()])
+			var personal_request := tier >= 1 and randi() % 100 < 35
+			if personal_request:
+				regular_line = str(regular["request"])
+			profile = {"name": regular["name"], "favorite": int(regular["favorite"]), "line": regular_line, "regular_id": regular_id, "portrait": int(regular["portrait"]), "tier": tier, "personal_request": personal_request}
 		_animate_customer_arrival(str(profile["name"]))
 		var preferred_index: int = int(profile["favorite"])
 		var chosen_index: int = available[randi() % available.size()]
@@ -558,6 +563,14 @@ func _on_customer_tick() -> void:
 				profile["name"], item["name"], profile["line"]
 			]
 		var sale_price: int = int(round(float(item["price"]) * price_multiplier)) + preference_bonus
+		var fulfilled_personal_request := profile.has("personal_request") and bool(profile["personal_request"]) and preferred_index == chosen_index
+		if fulfilled_personal_request:
+			var request_bonus := maxi(8, int(round(float(item["price"]) * 0.5)))
+			sale_price += request_bonus
+			var completed_id := str(profile["regular_id"])
+			regular_orders_completed[completed_id] = int(regular_orders_completed.get(completed_id, 0)) + 1
+			last_event = "PEDIDO ESPECIAL concluído para %s! +%d ouro e +10 XP. %s" % [profile["name"], request_bonus, profile["line"]]
+			_add_xp(10)
 		gold += sale_price
 		reputation += 1
 		customers_served += 1
@@ -565,7 +578,7 @@ func _on_customer_tick() -> void:
 			var regular_id := str(profile["regular_id"])
 			var old_bond := int(regular_bonds.get(regular_id, 0))
 			var old_tier := Regulars.tier_for(old_bond)
-			var new_bond := old_bond + 1
+			var new_bond := old_bond + 1 + (2 if fulfilled_personal_request else 0)
 			regular_bonds[regular_id] = new_bond
 			var new_tier := Regulars.tier_for(new_bond)
 			if new_tier > old_tier:
@@ -739,7 +752,8 @@ func _refresh_ui() -> void:
 			var regular_id := str(regular["id"])
 			var bond := int(regular_bonds.get(regular_id, 0))
 			var tier := Regulars.tier_for(bond)
-			regular_lines.append("%s — %s (%d visitas)" % [regular["short"], Regulars.TIER_NAMES[tier], bond])
+			var orders_done := int(regular_orders_completed.get(regular_id, 0))
+			regular_lines.append("%s — %s (%d visitas, %d pedidos)" % [regular["short"], Regulars.TIER_NAMES[tier], bond, orders_done])
 		regulars_label.text = "\n".join(regular_lines)
 	if is_instance_valid(progression_label):
 		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Pontos de talento: %d  •  Dia %d" % [player_level, player_xp, _xp_required(), skill_points, shop_day]
@@ -795,6 +809,7 @@ func _save_game() -> void:
 	config.set_value("game", "customers_served", customers_served)
 	config.set_value("game", "affection", affection)
 	config.set_value("game", "regular_bonds", regular_bonds)
+	config.set_value("game", "regular_orders_completed", regular_orders_completed)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
 	config.set_value("game", "ad_level", ad_level)
@@ -829,6 +844,9 @@ func _load_game() -> void:
 	var saved_bonds = config.get_value("game", "regular_bonds", {})
 	if saved_bonds is Dictionary:
 		regular_bonds = saved_bonds.duplicate(true)
+	var saved_orders = config.get_value("game", "regular_orders_completed", {})
+	if saved_orders is Dictionary:
+		regular_orders_completed = saved_orders.duplicate(true)
 	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
