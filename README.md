@@ -6,7 +6,7 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 
 ## Estado do projeto
 
-**Protótipo jogável em desenvolvimento.** Já há fabricação e venda de produtos, clientes automáticos, ouro, reputação, melhorias, funcionários, eventos raros, conquistas, progressão por nível, pontos de talento e contratos de loja. A versão atual também inclui receitas desbloqueadas por nível. Ainda não é um lançamento final; interface, balanceamento e conteúdo precisam de mais testes.
+**Protótipo jogável em desenvolvimento.** Já há fabricação e venda de produtos, clientes automáticos, ouro, reputação, melhorias, funcionários, eventos raros, conquistas, progressão por nível, pontos de talento, contratos de loja e reputação por facção. A versão atual também inclui receitas desbloqueadas por nível. Ainda não é um lançamento final; interface, balanceamento e conteúdo precisam de mais testes.
 
 ## Como jogar
 
@@ -29,10 +29,11 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 - **Fregueses recorrentes**: cinco personagens nomeados podem voltar à loja; o progresso de amizade é salvo, há quatro níveis de vínculo, diálogos que mudam conforme a relação e falas especiais ao subir de nível. O painel lateral acompanha visitas, nível de vínculo e pedidos concluídos.
 - **Pedidos pessoais**: fregueses conhecidos podem pedir seu produto favorito. Atender ao pedido rende bônus de ouro, experiência extra e mais amizade; o total de pedidos especiais concluídos por personagem fica salvo.
 - **Missões de história dos fregueses**: ao alcançar 3 pontos de amizade, cada personagem inicia uma missão acompanhada por compras do item favorito. Três compras favoritas concluem o capítulo, concedem ouro escalável com o nível, +30 XP e +2 de reputação; progresso e capítulos concluídos são salvos.
+- **Reputação por facção**: guildas, nobres, aventureiros, mercadores e o submundo lembram negócios concluídos. Cada venda aumenta o prestígio da facção do cliente; quatro níveis (Desconhecida, Notada, Respeitada, Lenda) dão bônus de preço de 0% a 20%, ouro ao subir de patamar e duas conquistas novas. Saves antigos começam com todas as facções em zero.
 - **Polimento visual da loja**: cartões de mercadorias com bordas violeta mais legíveis, cantos arredondados e sombra sutil para separar melhor os itens do fundo gótico.
 - **Afinidade com a protagonista**, diálogos sugestivos e momentos especiais desbloqueáveis.
-- **Sete conquistas** com recompensas.
-- **Salvamento local** de progresso, nível, XP, talentos, contratos, estoque, melhorias e opções.
+- **Nove conquistas** com recompensas.
+- **Salvamento local** de progresso, nível, XP, talentos, contratos, estoque, melhorias, reputação por facção e opções.
 - **Compatibilidade de estoque por nome de produto** para que saves antigos preservem os itens que continuam no catálogo.
 - **Opção de desativar o conteúdo sensual**, sem bloquear a progressão normal.
 
@@ -40,10 +41,10 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 
 A visão é construir uma experiência de longa duração, com sistemas que se alimentem entre si. Os itens abaixo são ideias para etapas futuras, não funcionalidades já concluídas:
 
-1. **Capítulos e reputação por facção** — guildas, nobres, aventureiros, mercadores e criaturas do submundo.
+1. **Capítulos narrativos por facção** — pedidos de guilda, intriga da corte e contratos do submundo além da reputação já existente.
 2. **Árvore de talentos maior** — alquimia, negociação, encantamento, logística e relacionamento.
 3. **Cadeias de produção** — ingredientes, receitas raras, qualidade, fornecedores e pesquisa.
-4. **Clientes recorrentes e missões pessoais** — histórias, pedidos especiais e recompensas por relacionamento.
+4. **Mais fregueses e capítulos extras** — novos personagens, pedidos especiais e recompensas por relacionamento.
 5. **Expansão comercial** — salas, funcionários, automação, filiais e investimentos.
 6. **Economia dinâmica** — oferta e procura, eventos sazonais, reputação de marca e oportunidades de mercado.
 7. **Exploração e aventura** — expedições para ingredientes e artefatos, com decisões e resultados variáveis.

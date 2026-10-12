@@ -2,6 +2,7 @@ extends Control
 
 const SAVE_PATH := "user://succubus_shop_save.cfg"
 const Regulars = preload("res://regulars.gd")
+const Factions = preload("res://factions.gd")
 
 var gold: int = 80
 var reputation: int = 0
@@ -11,6 +12,7 @@ var regular_bonds: Dictionary = {}
 var regular_orders_completed: Dictionary = {}
 var regular_story_progress: Dictionary = {}
 var regular_story_completed: Array[String] = []
+var faction_standing: Dictionary = {}
 var adult_content_enabled: bool = true
 var private_moments_unlocked: int = 0
 var ad_level: int = 0
@@ -53,6 +55,7 @@ var customers_label: Label
 var affection_label: Label
 var status_label: Label
 var regulars_label: Label
+var faction_label: Label
 var event_label: Label
 var achievement_label: Label
 var progression_label: Label
@@ -362,6 +365,12 @@ func _build_ui() -> void:
 	regulars_label.add_theme_color_override("font_color", Color(0.82, 0.78, 1.0))
 	right.add_child(regulars_label)
 
+	faction_label = Label.new()
+	faction_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	faction_label.add_theme_font_size_override("font_size", 13)
+	faction_label.add_theme_color_override("font_color", Color(0.95, 0.86, 0.72))
+	right.add_child(faction_label)
+
 	event_label = Label.new()
 	event_label.custom_minimum_size = Vector2(280, 110)
 	event_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -411,7 +420,7 @@ func _build_ui() -> void:
 	right.add_child(adult_toggle_button)
 
 	var footer := Label.new()
-	footer.text = "Protótipo 0.5 • Reações dos clientes, RPG e contratos diários • Conteúdo sensual opcional"
+	footer.text = "Protótipo 0.6 • Facções, fregueses e contratos • Conteúdo sensual opcional"
 	footer.add_theme_font_size_override("font_size", 12)
 	footer.add_theme_color_override("font_color", Color(0.62, 0.57, 0.68))
 	root.add_child(footer)
@@ -536,19 +545,19 @@ func _on_customer_tick() -> void:
 			available.append(i)
 
 	if available.is_empty():
-		_animate_customer_arrival("Cliente Misterioso")
+		_animate_customer_arrival({"name": "Cliente Misterioso", "portrait": 2, "faction": "mercadores"})
 		status_label.text = "CLIENTE: foi embora"
 		_set_seller_mood("surprised")
 		last_event = "Um cliente entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. Reabasteça a loja para não perder vendas."
 		_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank)
 	else:
 		var profiles: Array[Dictionary] = [
-			{"name": "Speedrunner", "favorite": 3, "line": "“Compra feita. Onde fica o botão de pular diálogo?”"},
-			{"name": "Especialista em Tudo", "favorite": 0, "line": "“Vi um tutorial de 12 segundos e agora sou consultor.”"},
-			{"name": "Gótico Econômico", "favorite": 2, "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”"},
-			{"name": "Colecionador de Patos", "favorite": 1, "line": "“Este pato combina com os outros 47 que não me julgam.”"},
-			{"name": "Coach Interdimensional", "favorite": 4, "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”"},
-			{"name": "Cliente Misterioso", "favorite": -1, "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”"}
+			{"name": "Speedrunner", "favorite": 3, "line": "“Compra feita. Onde fica o botão de pular diálogo?”", "faction": "aventureiros", "portrait": 0},
+			{"name": "Especialista em Tudo", "favorite": 0, "line": "“Vi um tutorial de 12 segundos e agora sou consultor.”", "faction": "guildas", "portrait": 1},
+			{"name": "Gótico Econômico", "favorite": 2, "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”", "faction": "submundo", "portrait": 2},
+			{"name": "Colecionador de Patos", "favorite": 1, "line": "“Este pato combina com os outros 47 que não me julgam.”", "faction": "mercadores", "portrait": 0},
+			{"name": "Coach Interdimensional", "favorite": 4, "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”", "faction": "guildas", "portrait": 1},
+			{"name": "Cliente Misterioso", "favorite": -1, "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”", "faction": "nobres", "portrait": 2}
 		]
 		var profile: Dictionary = profiles[randi() % profiles.size()]
 		if randi() % 100 < 35:
@@ -561,8 +570,17 @@ func _on_customer_tick() -> void:
 			var personal_request := tier >= 1 and randi() % 100 < 35
 			if personal_request:
 				regular_line = str(regular["request"])
-			profile = {"name": regular["name"], "favorite": int(regular["favorite"]), "line": regular_line, "regular_id": regular_id, "portrait": int(regular["portrait"]), "tier": tier, "personal_request": personal_request}
-		_animate_customer_arrival(str(profile["name"]))
+			profile = {
+				"name": regular["name"],
+				"favorite": int(regular["favorite"]),
+				"line": regular_line,
+				"regular_id": regular_id,
+				"portrait": int(regular["portrait"]),
+				"tier": tier,
+				"personal_request": personal_request,
+				"faction": str(regular.get("faction", "aventureiros"))
+			}
+		_animate_customer_arrival(profile)
 		var preferred_index: int = int(profile["favorite"])
 		var chosen_index: int = available[randi() % available.size()]
 		if preferred_index >= 0 and available.has(preferred_index) and randi() % 100 < 70:
@@ -582,7 +600,14 @@ func _on_customer_tick() -> void:
 				profile["name"], item["name"], profile["line"]
 			]
 		var sale_price: int = int(round(float(item["price"]) * price_multiplier)) + preference_bonus
+		var faction_id := str(profile.get("faction", ""))
+		var faction_bonus := 0
+		if not faction_id.is_empty():
+			var faction_tier := Factions.tier_for(int(faction_standing.get(faction_id, 0)))
+			faction_bonus = int(round(float(item["price"]) * Factions.price_bonus(faction_tier)))
+			sale_price += faction_bonus
 		var fulfilled_personal_request := profile.has("personal_request") and bool(profile["personal_request"]) and preferred_index == chosen_index
+		var headline_locked := false
 		if fulfilled_personal_request:
 			var request_bonus := maxi(8, int(round(float(item["price"]) * 0.5)))
 			sale_price += request_bonus
@@ -590,6 +615,7 @@ func _on_customer_tick() -> void:
 			regular_orders_completed[completed_id] = int(regular_orders_completed.get(completed_id, 0)) + 1
 			last_event = "PEDIDO ESPECIAL concluído para %s! +%d ouro e +10 XP. %s" % [profile["name"], request_bonus, profile["line"]]
 			_add_xp(10)
+			headline_locked = true
 		gold += sale_price
 		reputation += 1
 		customers_served += 1
@@ -605,6 +631,7 @@ func _on_customer_tick() -> void:
 				var tier_lines: Array = regular_data.get("tier_up", [])
 				var tier_line := str(tier_lines[new_tier - 1]) if tier_lines.size() >= new_tier else "Este freguês agora confia mais na sua loja."
 				last_event = "%s agora é %s! %s" % [regular_data.get("short", regular_data.get("name", "Freguês")), Regulars.TIER_NAMES[new_tier], tier_line]
+				headline_locked = true
 			if preferred_index == chosen_index and new_bond >= 3 and not regular_story_completed.has(regular_id):
 				var story_progress := int(regular_story_progress.get(regular_id, 0)) + 1
 				regular_story_progress[regular_id] = story_progress
@@ -615,8 +642,30 @@ func _on_customer_tick() -> void:
 					reputation += 2
 					_add_xp(30)
 					last_event = "CAPÍTULO CONCLUÍDO: a história de %s avança! Recompensa: %d ouro, +30 XP e +2 reputação." % [regular_data.get("short", regular_data.get("name", "Freguês")), story_reward]
+					headline_locked = true
 				else:
 					last_event += "\nMissão pessoal: %d/3 compras favoritas." % story_progress
+		if not faction_id.is_empty():
+			var old_standing := int(faction_standing.get(faction_id, 0))
+			var old_faction_tier := Factions.tier_for(old_standing)
+			var standing_gain := 1 + (1 if preferred_index == chosen_index else 0)
+			var new_standing := old_standing + standing_gain
+			faction_standing[faction_id] = new_standing
+			var new_faction_tier := Factions.tier_for(new_standing)
+			if new_faction_tier > old_faction_tier:
+				var faction_data: Dictionary = Factions.find(faction_id)
+				var faction_lines: Array = faction_data.get("tier_up", [])
+				var faction_line := str(faction_lines[new_faction_tier - 1]) if faction_lines.size() >= new_faction_tier else "Essa facção agora respeita mais a loja."
+				var faction_reward := 25 + player_level * 4 + new_faction_tier * 10
+				gold += faction_reward
+				reputation += new_faction_tier
+				_add_xp(15)
+				var faction_msg := "FACÇÃO: %s agora é %s! +%d ouro. %s" % [
+					faction_data.get("short", faction_id), Factions.TIER_NAMES[new_faction_tier], faction_reward, faction_line
+				]
+				last_event = last_event + "\n" + faction_msg if headline_locked else faction_msg
+			elif faction_bonus > 0:
+				last_event += "\nBônus de facção (%s): +%d ouro." % [Factions.find(faction_id).get("short", faction_id), faction_bonus]
 		daily_gold_earned += sale_price
 		_add_xp(12)
 		_progress_daily_quest("customers", 1)
@@ -681,19 +730,21 @@ func _trigger_random_event() -> void:
 	last_event = "EVENTO: %s! %s" % [event["name"], event["message"]]
 	if adult_content_enabled and affection >= 5 and randi() % 2 == 0:
 		last_event += "\nA súcubo ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui, querido.”"
-func _animate_customer_arrival(profile_name: String) -> void:
+
+func _animate_customer_arrival(profile: Dictionary) -> void:
 	if not is_instance_valid(customer_portrait):
 		return
-	var portrait_index := 0
-	match profile_name:
-		"Especialista em Tudo", "Coach Interdimensional", "Lyra Cinzalume":
-			portrait_index = 1
-		"Gótico Econômico", "Cliente Misterioso", "Korvax, o Bárbaro Sensível", "Mina Duas-Adagas":
-			portrait_index = 2
-		"Colecionador de Patos", "Sir Aldric, o Nível 1", "Frei Tuck Sem-Mana":
-			portrait_index = 0
-		_:
-			portrait_index = 0
+	var portrait_index := int(profile.get("portrait", -1))
+	if portrait_index < 0 or portrait_index >= customer_portrait_paths.size():
+		portrait_index = 0
+		var profile_name := str(profile.get("name", ""))
+		match profile_name:
+			"Especialista em Tudo", "Coach Interdimensional", "Lyra Cinzalume":
+				portrait_index = 1
+			"Gótico Econômico", "Cliente Misterioso", "Korvax, o Bárbaro Sensível", "Mina Duas-Adagas":
+				portrait_index = 2
+			_:
+				portrait_index = 0
 	if customer_tween != null and customer_tween.is_valid():
 		customer_tween.kill()
 	customer_portrait.modulate = Color.WHITE
@@ -790,6 +841,16 @@ func _refresh_ui() -> void:
 			elif bond >= 3:
 				regular_lines.append("  ◇ Missão pessoal: %d/3 compras favoritas" % int(regular_story_progress.get(regular_id, 0)))
 		regulars_label.text = "\n".join(regular_lines)
+	if is_instance_valid(faction_label):
+		var faction_lines: Array[String] = ["REPUTAÇÃO POR FACÇÃO"]
+		for faction in Factions.DATA:
+			var faction_id := str(faction["id"])
+			var standing := int(faction_standing.get(faction_id, 0))
+			var tier := Factions.tier_for(standing)
+			var bonus_pct := int(round(Factions.price_bonus(tier) * 100.0))
+			var bonus_text := "  +%d%%" % bonus_pct if bonus_pct > 0 else ""
+			faction_lines.append("%s — %s (%d)%s" % [faction["short"], Factions.TIER_NAMES[tier], standing, bonus_text])
+		faction_label.text = "\n".join(faction_lines)
 	if is_instance_valid(progression_label):
 		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Pontos de talento: %d  •  Dia %d" % [player_level, player_xp, _xp_required(), skill_points, shop_day]
 	if is_instance_valid(talent_label):
@@ -847,6 +908,7 @@ func _save_game() -> void:
 	config.set_value("game", "regular_orders_completed", regular_orders_completed)
 	config.set_value("game", "regular_story_progress", regular_story_progress)
 	config.set_value("game", "regular_story_completed", regular_story_completed)
+	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
 	config.set_value("game", "ad_level", ad_level)
@@ -892,6 +954,9 @@ func _load_game() -> void:
 		for completed_id in saved_story_completed:
 			if not regular_story_completed.has(str(completed_id)):
 				regular_story_completed.append(str(completed_id))
+	var saved_factions = config.get_value("game", "faction_standing", {})
+	if saved_factions is Dictionary:
+		faction_standing = saved_factions.duplicate(true)
 	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
@@ -930,6 +995,12 @@ func _load_game() -> void:
 
 
 
+
+func _max_faction_tier() -> int:
+	var highest := 0
+	for faction in Factions.DATA:
+		highest = maxi(highest, Factions.tier_for(int(faction_standing.get(str(faction["id"]), 0))))
+	return highest
 
 func _is_product_unlocked(item: Dictionary) -> bool:
 	return player_level >= int(item.get("required_level", 1))
@@ -1022,7 +1093,9 @@ func _check_achievements() -> void:
 		{"id": "regulars_50", "name": "Lenda comercial do submundo (50)", "condition": customers_served >= 50, "gold": 75, "rep": 5},
 		{"id": "chaos_3", "name": "Caos com recibo (3 eventos raros)", "condition": rare_events_found >= 3, "gold": 35, "rep": 2},
 		{"id": "marketing_3", "name": "Propaganda em todo plano astral (nível 3)", "condition": ad_level >= 3, "gold": 30, "rep": 2},
-		{"id": "delighted_10", "name": "Coração conquistado (10 clientes encantados)", "condition": happy_customers >= 10, "gold": 40, "rep": 3}
+		{"id": "delighted_10", "name": "Coração conquistado (10 clientes encantados)", "condition": happy_customers >= 10, "gold": 40, "rep": 3},
+		{"id": "faction_noted", "name": "Diplomacia do balcão (facção Notada)", "condition": _max_faction_tier() >= 1, "gold": 35, "rep": 2},
+		{"id": "faction_respected", "name": "Embaixadora infernal (facção Respeitada)", "condition": _max_faction_tier() >= 2, "gold": 60, "rep": 4}
 	]
 	for achievement in definitions:
 		var achievement_id: String = str(achievement["id"])
@@ -1043,7 +1116,9 @@ func _get_achievement_summary() -> String:
 		"regulars_50": "Lenda comercial do submundo",
 		"chaos_3": "Caos com recibo",
 		"marketing_3": "Propaganda astral",
-		"delighted_10": "Coração conquistado"
+		"delighted_10": "Coração conquistado",
+		"faction_noted": "Diplomacia do balcão",
+		"faction_respected": "Embaixadora infernal"
 	}
 	var lines: Array[String] = ["CONQUISTAS: %d/%d" % [unlocked_achievements.size(), names.size()]]
 	for achievement_id in names.keys():

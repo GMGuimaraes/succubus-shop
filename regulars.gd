@@ -7,10 +7,11 @@ const TIER_NAMES: Array[String] = ["Novo rosto", "Conhecido", "Freguês", "Devot
 
 # "favorite" é o índice do produto em main.gd (0 Dano Emocional, 1 Pato, 2 Lágrimas,
 # 3 Caixa Vazia, 4 Confiança). "portrait" é o índice do retrato do cliente.
+# "faction" aponta para um id em factions.gd.
 # "lines" tem uma lista de falas por nível; a primeira fala do nível 0 é a apresentação.
 const DATA: Array = [
 	{
-		"id": "aldric", "name": "Sir Aldric, o Nível 1", "short": "Aldric", "portrait": 0, "favorite": 4,
+		"id": "aldric", "name": "Sir Aldric, o Nível 1", "short": "Aldric", "portrait": 0, "favorite": 4, "faction": "nobres",
 		"lines": [
 			["“Disseram que esta loja vende confiança em frasco. Eu aceito dois. Ontem eu morri para uma porta.”",
 			 "“Sir Aldric, paladino nível 1! E antes que perguntem: sim, ainda é o tutorial.”"],
@@ -30,7 +31,7 @@ const DATA: Array = [
 		]
 	},
 	{
-		"id": "lyra", "name": "Lyra Cinzalume", "short": "Lyra", "portrait": 1, "favorite": 0,
+		"id": "lyra", "name": "Lyra Cinzalume", "short": "Lyra", "portrait": 1, "favorite": 0, "faction": "guildas",
 		"lines": [
 			["“Só vim buscar uma poção. Não olhe para mim. Não fale comigo. ...O que você recomenda?”",
 			 "“Dizem que esta loja é cheia de gente esquisita. Já me sinto em casa.”"],
@@ -50,7 +51,7 @@ const DATA: Array = [
 		]
 	},
 	{
-		"id": "korvax", "name": "Korvax, o Bárbaro Sensível", "short": "Korvax", "portrait": 2, "favorite": 2,
+		"id": "korvax", "name": "Korvax, o Bárbaro Sensível", "short": "Korvax", "portrait": 2, "favorite": 2, "faction": "aventureiros",
 		"lines": [
 			["“GRAAAH! ...Desculpa. Assustei alguém? Eu só queria comprar uma coisa bonita.”",
 			 "“Um bárbaro forte também precisa de cuidados. Você tem hidratante para armadura?”"],
@@ -70,7 +71,7 @@ const DATA: Array = [
 		]
 	},
 	{
-		"id": "mina", "name": "Mina Duas-Adagas", "short": "Mina", "portrait": 2, "favorite": 3,
+		"id": "mina", "name": "Mina Duas-Adagas", "short": "Mina", "portrait": 2, "favorite": 3, "faction": "submundo",
 		"lines": [
 			["“Olá, bonita. Quanto custa o desconto? Brincadeira. Mais ou menos.”",
 			 "“Não me olhe assim. Meu bolso só está vazio por motivos estratégicos.”"],
@@ -90,7 +91,7 @@ const DATA: Array = [
 		]
 	},
 	{
-		"id": "tuck", "name": "Frei Tuck Sem-Mana", "short": "Tuck", "portrait": 0, "favorite": 1,
+		"id": "tuck", "name": "Frei Tuck Sem-Mana", "short": "Tuck", "portrait": 0, "favorite": 1, "faction": "guildas",
 		"lines": [
 			["“Que a luz o abençoe! E o desconto também, se possível. Estou sem mana desde terça.”",
 			 "“Sou clérigo de cura. Estou curando uma ressaca. Ela se recusa a sair.”"],
