@@ -26,6 +26,7 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 - **Contratos rotativos** para atender clientes, faturar, fabricar ou encontrar eventos raros. As recompensas aumentam conforme os dias de loja avançam.
 - **Diabrete estagiário** que produz poções automaticamente.
 - **Reações dos clientes**: cada visita termina com o cliente *encantado* (comprou o item favorito: +1 de reputação), *satisfeito* ou *decepcionado* (loja sem estoque: -1 de reputação). O retrato do cliente reage com animação, a chefe responde com falas próprias e o talento Carisma dá chance de salvar a visita no charme.
+- **Fregueses recorrentes**: cinco personagens nomeados podem voltar à loja; o progresso de amizade é salvo, há quatro níveis de vínculo, diálogos que mudam conforme a relação e falas especiais ao subir de nível. O painel lateral acompanha as visitas e o vínculo de cada freguês.
 - **Afinidade com a protagonista**, diálogos sugestivos e momentos especiais desbloqueáveis.
 - **Sete conquistas** com recompensas.
 - **Salvamento local** de progresso, nível, XP, talentos, contratos, estoque, melhorias e opções.

@@ -1,11 +1,13 @@
 extends Control
 
 const SAVE_PATH := "user://succubus_shop_save.cfg"
+const Regulars = preload("res://regulars.gd")
 
 var gold: int = 80
 var reputation: int = 0
 var customers_served: int = 0
 var affection: int = 0
+var regular_bonds: Dictionary = {}
 var adult_content_enabled: bool = true
 var private_moments_unlocked: int = 0
 var ad_level: int = 0
@@ -47,6 +49,7 @@ var rep_label: Label
 var customers_label: Label
 var affection_label: Label
 var status_label: Label
+var regulars_label: Label
 var event_label: Label
 var achievement_label: Label
 var progression_label: Label
@@ -333,6 +336,12 @@ func _build_ui() -> void:
 	status_label.add_theme_color_override("font_color", Color(0.87, 0.72, 1.0))
 	right.add_child(status_label)
 
+	regulars_label = Label.new()
+	regulars_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	regulars_label.add_theme_font_size_override("font_size", 13)
+	regulars_label.add_theme_color_override("font_color", Color(0.82, 0.78, 1.0))
+	right.add_child(regulars_label)
+
 	event_label = Label.new()
 	event_label.custom_minimum_size = Vector2(280, 110)
 	event_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -522,6 +531,13 @@ func _on_customer_tick() -> void:
 			{"name": "Cliente Misterioso", "favorite": -1, "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”"}
 		]
 		var profile: Dictionary = profiles[randi() % profiles.size()]
+		if randi() % 100 < 35:
+			var regular: Dictionary = Regulars.DATA[randi() % Regulars.DATA.size()]
+			var regular_id := str(regular["id"])
+			var bond := int(regular_bonds.get(regular_id, 0))
+			var tier := Regulars.tier_for(bond)
+			var lines_by_tier: Array = regular["lines"][tier]
+			profile = {"name": regular["name"], "favorite": int(regular["favorite"]), "line": str(lines_by_tier[randi() % lines_by_tier.size()]), "regular_id": regular_id, "portrait": int(regular["portrait"]), "tier": tier}
 		_animate_customer_arrival(str(profile["name"]))
 		var preferred_index: int = int(profile["favorite"])
 		var chosen_index: int = available[randi() % available.size()]
@@ -545,6 +561,18 @@ func _on_customer_tick() -> void:
 		gold += sale_price
 		reputation += 1
 		customers_served += 1
+		if profile.has("regular_id"):
+			var regular_id := str(profile["regular_id"])
+			var old_bond := int(regular_bonds.get(regular_id, 0))
+			var old_tier := Regulars.tier_for(old_bond)
+			var new_bond := old_bond + 1
+			regular_bonds[regular_id] = new_bond
+			var new_tier := Regulars.tier_for(new_bond)
+			if new_tier > old_tier:
+				var regular_data: Dictionary = Regulars.find(regular_id)
+				var tier_lines: Array = regular_data.get("tier_up", [])
+				var tier_line := str(tier_lines[new_tier - 1]) if tier_lines.size() >= new_tier else "Este freguês agora confia mais na sua loja."
+				last_event = "%s agora é %s! %s" % [regular_data.get("short", regular_data.get("name", "Freguês")), Regulars.TIER_NAMES[new_tier], tier_line]
 		daily_gold_earned += sale_price
 		_add_xp(12)
 		_progress_daily_quest("customers", 1)
@@ -614,11 +642,11 @@ func _animate_customer_arrival(profile_name: String) -> void:
 		return
 	var portrait_index := 0
 	match profile_name:
-		"Especialista em Tudo", "Coach Interdimensional":
+		"Especialista em Tudo", "Coach Interdimensional", "Lyra Cinzalume":
 			portrait_index = 1
-		"Gótico Econômico", "Cliente Misterioso":
+		"Gótico Econômico", "Cliente Misterioso", "Korvax, o Bárbaro Sensível", "Mina Duas-Adagas":
 			portrait_index = 2
-		"Colecionador de Patos":
+		"Colecionador de Patos", "Sir Aldric, o Nível 1", "Frei Tuck Sem-Mana":
 			portrait_index = 0
 		_:
 			portrait_index = 0
@@ -705,6 +733,14 @@ func _refresh_ui() -> void:
 	customers_label.text = "Clientes: %d  ♥%d  ✗%d" % [customers_served, happy_customers, disappointed_customers]
 	affection_label.text = "Afinidade: %d/100" % affection
 	event_label.text = last_event
+	if is_instance_valid(regulars_label):
+		var regular_lines: Array[String] = ["FREGUESES RECORRENTES"]
+		for regular in Regulars.DATA:
+			var regular_id := str(regular["id"])
+			var bond := int(regular_bonds.get(regular_id, 0))
+			var tier := Regulars.tier_for(bond)
+			regular_lines.append("%s — %s (%d visitas)" % [regular["short"], Regulars.TIER_NAMES[tier], bond])
+		regulars_label.text = "\n".join(regular_lines)
 	if is_instance_valid(progression_label):
 		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Pontos de talento: %d  •  Dia %d" % [player_level, player_xp, _xp_required(), skill_points, shop_day]
 	if is_instance_valid(talent_label):
@@ -758,6 +794,7 @@ func _save_game() -> void:
 	config.set_value("game", "reputation", reputation)
 	config.set_value("game", "customers_served", customers_served)
 	config.set_value("game", "affection", affection)
+	config.set_value("game", "regular_bonds", regular_bonds)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
 	config.set_value("game", "ad_level", ad_level)
@@ -789,6 +826,9 @@ func _load_game() -> void:
 	reputation = int(config.get_value("game", "reputation", reputation))
 	customers_served = int(config.get_value("game", "customers_served", customers_served))
 	affection = int(config.get_value("game", "affection", affection))
+	var saved_bonds = config.get_value("game", "regular_bonds", {})
+	if saved_bonds is Dictionary:
+		regular_bonds = saved_bonds.duplicate(true)
 	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
