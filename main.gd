@@ -100,11 +100,25 @@ func _ready() -> void:
 	_load_game()
 	_build_ui()
 	_refresh_ui()
+	_start_ambient_animations()
 	var timer := Timer.new()
 	timer.wait_time = 3.0
 	timer.autostart = true
 	timer.timeout.connect(_on_customer_tick)
 	add_child(timer)
+
+func _start_ambient_animations() -> void:
+	for portrait in [seller_portrait, customer_portrait]:
+		if not is_instance_valid(portrait):
+			continue
+		portrait.pivot_offset = portrait.custom_minimum_size / 2.0
+		var breathe := create_tween().set_loops()
+		breathe.tween_property(portrait, "scale", Vector2(1.025, 1.025), 1.8).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		breathe.tween_property(portrait, "scale", Vector2.ONE, 1.8).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	if is_instance_valid(seller_portrait):
+		var glow := create_tween().set_loops()
+		glow.tween_property(seller_portrait, "modulate", Color(1.0, 0.91, 1.0, 1.0), 2.2).set_trans(Tween.TRANS_SINE)
+		glow.tween_property(seller_portrait, "modulate", Color.WHITE, 2.2).set_trans(Tween.TRANS_SINE)
 
 func _build_ui() -> void:
 	var bg := TextureRect.new()
