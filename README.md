@@ -28,6 +28,8 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 - **Reações dos clientes**: cada visita termina com o cliente *encantado* (comprou o item favorito: +1 de reputação), *satisfeito* ou *decepcionado* (loja sem estoque: -1 de reputação). O retrato do cliente reage com animação, a chefe responde com falas próprias e o talento Carisma dá chance de salvar a visita no charme.
 - **Fregueses recorrentes**: cinco personagens nomeados podem voltar à loja; o progresso de amizade é salvo, há quatro níveis de vínculo, diálogos que mudam conforme a relação e falas especiais ao subir de nível. O painel lateral acompanha visitas, nível de vínculo e pedidos concluídos.
 - **Pedidos pessoais**: fregueses conhecidos podem pedir seu produto favorito. Atender ao pedido rende bônus de ouro, experiência extra e mais amizade; o total de pedidos especiais concluídos por personagem fica salvo.
+- **Missões de história dos fregueses**: ao alcançar 3 pontos de amizade, cada personagem inicia uma missão acompanhada por compras do item favorito. Três compras favoritas concluem o capítulo, concedem ouro escalável com o nível, +30 XP e +2 de reputação; progresso e capítulos concluídos são salvos.
+- **Polimento visual da loja**: cartões de mercadorias com bordas violeta mais legíveis, cantos arredondados e sombra sutil para separar melhor os itens do fundo gótico.
 - **Afinidade com a protagonista**, diálogos sugestivos e momentos especiais desbloqueáveis.
 - **Sete conquistas** com recompensas.
 - **Salvamento local** de progresso, nível, XP, talentos, contratos, estoque, melhorias e opções.

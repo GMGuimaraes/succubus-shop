@@ -9,6 +9,8 @@ var customers_served: int = 0
 var affection: int = 0
 var regular_bonds: Dictionary = {}
 var regular_orders_completed: Dictionary = {}
+var regular_story_progress: Dictionary = {}
+var regular_story_completed: Array[String] = []
 var adult_content_enabled: bool = true
 var private_moments_unlocked: int = 0
 var ad_level: int = 0
@@ -226,14 +228,17 @@ func _build_ui() -> void:
 	for i in range(products.size()):
 		var card := PanelContainer.new()
 		var style := StyleBoxFlat.new()
-		style.bg_color = Color(0.15, 0.105, 0.20, 1)
-		style.border_color = Color(0.36, 0.22, 0.43, 1)
+		style.bg_color = Color(0.075, 0.045, 0.12, 0.94)
+		style.border_color = Color(0.52, 0.30, 0.65, 0.95)
 		style.set_border_width_all(1)
-		style.set_corner_radius_all(8)
-		style.content_margin_left = 12
-		style.content_margin_right = 12
-		style.content_margin_top = 8
-		style.content_margin_bottom = 8
+		style.set_corner_radius_all(10)
+		style.shadow_color = Color(0.015, 0.005, 0.035, 0.65)
+		style.shadow_size = 5
+		style.shadow_offset = Vector2(0, 2)
+		style.content_margin_left = 14
+		style.content_margin_right = 14
+		style.content_margin_top = 10
+		style.content_margin_bottom = 10
 		card.add_theme_stylebox_override("panel", style)
 		products_box.add_child(card)
 
@@ -581,11 +586,23 @@ func _on_customer_tick() -> void:
 			var new_bond := old_bond + 1 + (2 if fulfilled_personal_request else 0)
 			regular_bonds[regular_id] = new_bond
 			var new_tier := Regulars.tier_for(new_bond)
+			var regular_data: Dictionary = Regulars.find(regular_id)
 			if new_tier > old_tier:
-				var regular_data: Dictionary = Regulars.find(regular_id)
 				var tier_lines: Array = regular_data.get("tier_up", [])
 				var tier_line := str(tier_lines[new_tier - 1]) if tier_lines.size() >= new_tier else "Este freguês agora confia mais na sua loja."
 				last_event = "%s agora é %s! %s" % [regular_data.get("short", regular_data.get("name", "Freguês")), Regulars.TIER_NAMES[new_tier], tier_line]
+			if preferred_index == chosen_index and new_bond >= 3 and not regular_story_completed.has(regular_id):
+				var story_progress := int(regular_story_progress.get(regular_id, 0)) + 1
+				regular_story_progress[regular_id] = story_progress
+				if story_progress >= 3:
+					regular_story_completed.append(regular_id)
+					var story_reward := 60 + player_level * 5
+					gold += story_reward
+					reputation += 2
+					_add_xp(30)
+					last_event = "CAPÍTULO CONCLUÍDO: a história de %s avança! Recompensa: %d ouro, +30 XP e +2 reputação." % [regular_data.get("short", regular_data.get("name", "Freguês")), story_reward]
+				else:
+					last_event += "\nMissão pessoal: %d/3 compras favoritas." % story_progress
 		daily_gold_earned += sale_price
 		_add_xp(12)
 		_progress_daily_quest("customers", 1)
@@ -754,6 +771,10 @@ func _refresh_ui() -> void:
 			var tier := Regulars.tier_for(bond)
 			var orders_done := int(regular_orders_completed.get(regular_id, 0))
 			regular_lines.append("%s — %s (%d visitas, %d pedidos)" % [regular["short"], Regulars.TIER_NAMES[tier], bond, orders_done])
+			if regular_story_completed.has(regular_id):
+				regular_lines.append("  ✦ História concluída")
+			elif bond >= 3:
+				regular_lines.append("  ◇ Missão pessoal: %d/3 compras favoritas" % int(regular_story_progress.get(regular_id, 0)))
 		regulars_label.text = "\n".join(regular_lines)
 	if is_instance_valid(progression_label):
 		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Pontos de talento: %d  •  Dia %d" % [player_level, player_xp, _xp_required(), skill_points, shop_day]
@@ -810,6 +831,8 @@ func _save_game() -> void:
 	config.set_value("game", "affection", affection)
 	config.set_value("game", "regular_bonds", regular_bonds)
 	config.set_value("game", "regular_orders_completed", regular_orders_completed)
+	config.set_value("game", "regular_story_progress", regular_story_progress)
+	config.set_value("game", "regular_story_completed", regular_story_completed)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
 	config.set_value("game", "ad_level", ad_level)
@@ -847,6 +870,14 @@ func _load_game() -> void:
 	var saved_orders = config.get_value("game", "regular_orders_completed", {})
 	if saved_orders is Dictionary:
 		regular_orders_completed = saved_orders.duplicate(true)
+	var saved_story_progress = config.get_value("game", "regular_story_progress", {})
+	if saved_story_progress is Dictionary:
+		regular_story_progress = saved_story_progress.duplicate(true)
+	var saved_story_completed = config.get_value("game", "regular_story_completed", [])
+	if saved_story_completed is Array:
+		for completed_id in saved_story_completed:
+			if not regular_story_completed.has(str(completed_id)):
+				regular_story_completed.append(str(completed_id))
 	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
