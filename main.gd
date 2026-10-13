@@ -34,6 +34,13 @@ var alchemy_rank: int = 0
 var trade_rank: int = 0
 var charm_rank: int = 0
 var logistics_rank: int = 0
+var world_speed_options: Array[float] = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
+var world_speed_index: int = 1
+var world_timer: Timer
+var speed_label: Label
+var speed_button: Button
+var forge_status_label: Label
+var craft_jobs: Array[Dictionary] = []
 var ingredient_stock: Dictionary = {"essencia": 1, "pena": 1, "sal": 1, "vazio": 1, "po_lunar": 1, "tinta": 1}
 var premium_stock: Dictionary = {}
 var total_ingredients_bought: int = 0
@@ -101,9 +108,12 @@ var sector_title_label: Label
 var sector_hint_label: Label
 var reception_button: Button
 var forge_button: Button
+var library_button: Button
+var sanctum_button: Button
 var current_sector: String = "reception"
 var current_customer_budget: int = 0
 var current_customer_patience: int = 0
+var seduction_peak_triggered: bool = false
 var ambient_particles: CPUParticles2D
 var music_player: AudioStreamPlayer
 var feedback_audio_player: AudioStreamPlayer
@@ -150,10 +160,23 @@ func _ready() -> void:
 	_refresh_ui()
 	_start_ambient_animations()
 	var timer := Timer.new()
-	timer.wait_time = 3.0
+	world_timer = timer
+	timer.wait_time = 3.0 / world_speed()
 	timer.autostart = true
 	timer.timeout.connect(_on_customer_tick)
 	add_child(timer)
+
+func world_speed() -> float:
+	return world_speed_options[clampi(world_speed_index, 0, world_speed_options.size() - 1)]
+
+func _cycle_world_speed() -> void:
+	world_speed_index = (world_speed_index + 1) % world_speed_options.size()
+	if is_instance_valid(world_timer):
+		world_timer.wait_time = 3.0 / world_speed()
+	last_event = "Velocidade do mundo ajustada para %.1fx. A forja e a paciência dos clientes acompanham o ritmo." % world_speed()
+	_play_feedback_tone(520.0 + world_speed() * 60.0, 0.08, 0.1)
+	_save_game()
+	_refresh_ui()
 
 func _start_ambient_animations() -> void:
 	for portrait in [seller_portrait, customer_portrait]:
@@ -246,6 +269,18 @@ func _build_ui() -> void:
 	forge_button.pressed.connect(_set_sector.bind("forge"))
 	header.add_child(forge_button)
 
+	library_button = Button.new()
+	library_button.text = "📚 Biblioteca"
+	library_button.custom_minimum_size = Vector2(135, 42)
+	library_button.pressed.connect(_set_sector.bind("library"))
+	header.add_child(library_button)
+
+	sanctum_button = Button.new()
+	sanctum_button.text = "✦ Santuário"
+	sanctum_button.custom_minimum_size = Vector2(130, 42)
+	sanctum_button.pressed.connect(_set_sector.bind("sanctum"))
+	header.add_child(sanctum_button)
+
 	var stats := HBoxContainer.new()
 	stats.add_theme_constant_override("separation", 24)
 	root.add_child(stats)
@@ -258,6 +293,24 @@ func _build_ui() -> void:
 	stats.add_child(customers_label)
 	affection_label = _make_stat_label("Afinidade: 0/100")
 	stats.add_child(affection_label)
+
+	var speed_row := HBoxContainer.new()
+	speed_row.add_theme_constant_override("separation", 10)
+	root.add_child(speed_row)
+	speed_label = Label.new()
+	speed_label.add_theme_font_size_override("font_size", 15)
+	speed_label.add_theme_color_override("font_color", Color(0.78, 0.95, 1.0))
+	speed_row.add_child(speed_label)
+	speed_button = Button.new()
+	speed_button.custom_minimum_size = Vector2(150, 34)
+	speed_button.pressed.connect(_cycle_world_speed)
+	speed_row.add_child(speed_button)
+	forge_status_label = Label.new()
+	forge_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	forge_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	forge_status_label.add_theme_font_size_override("font_size", 14)
+	forge_status_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.48))
+	speed_row.add_child(forge_status_label)
 
 	progression_label = Label.new()
 	progression_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -462,9 +515,10 @@ func _build_ui() -> void:
 		ingredient_buttons.append(buy)
 
 	var right_scroll := ScrollContainer.new()
-	right_scroll.custom_minimum_size.x = 300
+	right_scroll.custom_minimum_size.x = 360
 	right_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	body.add_child(right_scroll)
 
 	var right_panel := PanelContainer.new()
@@ -510,9 +564,9 @@ func _build_ui() -> void:
 	seller_frame.add_theme_stylebox_override("panel", seller_frame_style)
 	portrait_row.add_child(seller_frame)
 	seller_portrait = TextureRect.new()
-	seller_portrait.custom_minimum_size = Vector2(174, 196)
+	seller_portrait.custom_minimum_size = Vector2(148, 176)
 	seller_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	seller_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	seller_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	seller_portrait.texture = load(seller_portrait_paths["neutral"])
 	seller_frame.add_child(seller_portrait)
 
@@ -529,9 +583,9 @@ func _build_ui() -> void:
 	customer_frame.add_theme_stylebox_override("panel", customer_frame_style)
 	portrait_row.add_child(customer_frame)
 	customer_portrait = TextureRect.new()
-	customer_portrait.custom_minimum_size = Vector2(78, 92)
+	customer_portrait.custom_minimum_size = Vector2(148, 176)
 	customer_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	customer_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	customer_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	customer_portrait.texture = load(customer_portrait_paths[0])
 	customer_frame.add_child(customer_portrait)
 
@@ -691,24 +745,41 @@ func _set_sector(sector: String) -> void:
 	current_sector = sector
 	var is_forge := sector == "forge"
 	var is_reception := sector == "reception"
+	var is_library := sector == "library"
+	var is_sanctum := sector == "sanctum"
 	if is_instance_valid(background_layer):
-		var scene_path := "res://assets/forge_close_scene.png" if is_forge and ResourceLoader.exists("res://assets/forge_close_scene.png") else "res://assets/reception_scene.png" if ResourceLoader.exists("res://assets/reception_scene.png") else "res://assets/shop_scene.png"
+		var scene_path := "res://assets/reception_scene.png"
+		if is_forge and ResourceLoader.exists("res://assets/forge_close_scene.png"):
+			scene_path = "res://assets/forge_close_scene.png"
+		elif is_library and ResourceLoader.exists("res://assets/library_close_scene.png"):
+			scene_path = "res://assets/library_close_scene.png"
+		elif is_sanctum and ResourceLoader.exists("res://assets/sanctum_close_scene.png"):
+			scene_path = "res://assets/sanctum_close_scene.png"
+		elif ResourceLoader.exists("res://assets/reception_scene.png"):
+			scene_path = "res://assets/reception_scene.png"
+		elif ResourceLoader.exists("res://assets/shop_scene.png"):
+			scene_path = "res://assets/shop_scene.png"
 		background_layer.texture = load(scene_path)
 	if is_instance_valid(ambient_particles):
-		ambient_particles.color = Color(1.0, 0.43, 0.16, 0.46) if is_forge else Color(0.85, 0.35, 1.0, 0.34)
+		ambient_particles.color = Color(1.0, 0.43, 0.16, 0.46) if is_forge else Color(0.36, 0.72, 1.0, 0.38) if is_library else Color(0.73, 0.30, 1.0, 0.42) if is_sanctum else Color(0.85, 0.35, 1.0, 0.34)
 	if is_instance_valid(market_panel):
 		market_panel.visible = not is_reception
 	if is_instance_valid(sector_title_label):
-		sector_title_label.text = "FORJA & OFICINA" if is_forge else "MERCADORIAS"
+		sector_title_label.text = "FORJA & OFICINA" if is_forge else "BIBLIOTECA ARCANA" if is_library else "SANTUÁRIO DE ARTEFATOS" if is_sanctum else "MERCADORIAS"
 	if is_instance_valid(sector_hint_label):
-		sector_hint_label.text = "O ferreiro transforma ingredientes e ouro em equipamentos. Receitas melhores exigem mais nível." if is_forge else "Fabrique itens para abastecer a loja. Os clientes chegam automaticamente."
+		sector_hint_label.text = "O ferreiro transforma ingredientes e ouro em equipamentos. A fila avança com o tempo do mundo." if is_forge else "Consulte grimórios e descubra receitas ocultas." if is_library else "Relíquias carregadas de magia aguardam uma negociação cuidadosa." if is_sanctum else "Fabrique itens para abastecer a loja. Os clientes chegam automaticamente."
 	if is_instance_valid(market_toggle_button):
 		market_toggle_button.text = "☰ Ocultar painel" if not is_reception else "☰ Abrir mercado"
 	if is_instance_valid(reception_button):
 		reception_button.disabled = is_reception
 	if is_instance_valid(forge_button):
 		forge_button.disabled = is_forge
-	_show_feedback("A forja está em atividade." if is_forge else "A recepção voltou ao foco.", Color(1.0, 0.82, 0.48) if is_forge else Color(1.0, 0.78, 0.9))
+	if is_instance_valid(library_button):
+		library_button.disabled = is_library
+	if is_instance_valid(sanctum_button):
+		sanctum_button.disabled = is_sanctum
+	var sector_message := "A forja está em atividade." if is_forge else "Os grimórios sussurram novas receitas." if is_library else "O santuário pulsa com artefatos inquietos." if is_sanctum else "A recepção voltou ao foco."
+	_show_feedback(sector_message, Color(1.0, 0.82, 0.48) if is_forge else Color(0.70, 0.90, 1.0) if is_library else Color(0.86, 0.60, 1.0) if is_sanctum else Color(1.0, 0.78, 0.9))
 
 func _play_sensual_reception_moment() -> void:
 	if not adult_content_enabled or not is_instance_valid(seller_portrait):
@@ -722,6 +793,32 @@ func _play_sensual_reception_moment() -> void:
 	sensual_tween.tween_interval(1.6)
 	sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.42).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.42)
+
+func _play_seduction_peak_pose() -> void:
+	if not adult_content_enabled or not is_instance_valid(seller_portrait):
+		return
+	if sensual_tween != null and sensual_tween.is_valid():
+		sensual_tween.kill()
+	seller_portrait.pivot_offset = seller_portrait.size / 2.0
+	sensual_tween = create_tween()
+	sensual_tween.tween_property(seller_portrait, "position", Vector2(0, -12), 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	sensual_tween.tween_property(seller_portrait, "rotation", -0.045, 0.22).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.12, 1.12), 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	sensual_tween.tween_property(seller_portrait, "modulate", Color(1.0, 0.70, 0.90, 1.0), 0.25)
+	sensual_tween.tween_interval(1.1)
+	sensual_tween.tween_property(seller_portrait, "rotation", 0.045, 0.18)
+	sensual_tween.tween_property(seller_portrait, "position", Vector2(0, 4), 0.24)
+	sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.04, 1.04), 0.22)
+	sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.28)
+	sensual_tween.tween_property(seller_portrait, "rotation", 0.0, 0.12)
+	sensual_tween.tween_property(seller_portrait, "position", Vector2.ZERO, 0.18)
+	sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.24)
+	last_event = "MEDIDOR DE SEDUÇÃO CHEIO! A chefe sobe no balcão por um instante: “Agora você entende por que ninguém sai daqui pensando direito.”"
+	private_moments_unlocked += 1
+	reputation += 3
+	_add_xp(15)
+	_play_feedback_tone(1040.0, 0.26, 0.22)
+	_show_feedback("♥ Pose especial desbloqueada!", Color(1.0, 0.62, 0.88))
 
 func _setup_feedback_audio() -> void:
 	feedback_audio_player = AudioStreamPlayer.new()
@@ -789,27 +886,50 @@ func _craft_product(index: int) -> void:
 		last_event = "Faltam ingredientes para %s: %s. Compre no mercado enquanto o preço está bom." % [item["name"], ", ".join(missing)]
 		_refresh_ui()
 		return
+	if craft_jobs.size() >= 3:
+		last_event = "A fila da forja está cheia. O ferreiro pediu espaço para respirar e reclamar do carvão."
+		_refresh_ui()
+		return
 	gold -= cost
 	_consume_ingredients(item)
-	item["stock"] = int(item["stock"]) + 1
-	daily_crafts += 1
-	_add_xp(5)
-	_progress_daily_quest("craft", 1)
-	var premium_chance := 8 + 4 * alchemy_rank
-	if randi() % 100 < premium_chance:
-		var product_name := str(item["name"])
-		premium_stock[product_name] = int(premium_stock.get(product_name, 0)) + 1
-		premium_crafted += 1
-		last_event = "OBRA-PRIMA! %s saiu impecável e vale 50%% a mais. A chefe finge que foi de propósito." % product_name
-		_play_feedback_tone(880.0, 0.16, 0.18)
-		_show_feedback("✦ Obra-prima criada!", Color(1.0, 0.86, 0.45))
-	else:
-		last_event = "Produzido: %s. A qualidade foi inspecionada por alguém que não entende do assunto." % item["name"]
-		_play_feedback_tone(560.0)
-		_show_feedback("Produto pronto para vender.")
-	_check_achievements()
+	var duration := 6.0 + float(index) * 1.4 - float(alchemy_rank) * 0.7
+	craft_jobs.append({"index": index, "remaining": maxf(3.0, duration)})
+	last_event = "Forja iniciada: %s levará %.1fs de tempo de mundo." % [item["name"], maxf(3.0, duration)]
+	_play_feedback_tone(420.0, 0.12, 0.14)
+	_show_feedback("⚒ Fabricação em andamento.", Color(1.0, 0.82, 0.48))
 	_save_game()
 	_refresh_ui()
+
+func _advance_craft_jobs(game_seconds: float) -> void:
+	if craft_jobs.is_empty():
+		return
+	var completed: Array[Dictionary] = []
+	for job in craft_jobs:
+		job["remaining"] = float(job.get("remaining", 0.0)) - game_seconds
+		if float(job["remaining"]) <= 0.0:
+			completed.append(job)
+	for job in completed:
+		craft_jobs.erase(job)
+		var index := int(job.get("index", 0))
+		var item: Dictionary = products[index]
+		item["stock"] = int(item["stock"]) + 1
+		daily_crafts += 1
+		_add_xp(5)
+		_progress_daily_quest("craft", 1)
+		var premium_chance := 8 + 4 * alchemy_rank
+		if randi() % 100 < premium_chance:
+			var product_name := str(item["name"])
+			premium_stock[product_name] = int(premium_stock.get(product_name, 0)) + 1
+			premium_crafted += 1
+			last_event = "OBRA-PRIMA! %s saiu impecável e vale 50%% a mais. A chefe finge que foi de propósito." % product_name
+			_play_feedback_tone(880.0, 0.16, 0.18)
+			_show_feedback("✦ Obra-prima criada!", Color(1.0, 0.86, 0.45))
+		else:
+			last_event = "Produzido: %s. O ferreiro bateu o martelo e pediu aplausos." % item["name"]
+			_play_feedback_tone(560.0)
+			_show_feedback("Produto pronto para vender.")
+	_check_achievements()
+	_save_game()
 
 func _missing_ingredients(item: Dictionary) -> Array[String]:
 	var missing: Array[String] = []
@@ -891,6 +1011,7 @@ func _hire_imp() -> void:
 
 func _on_customer_tick() -> void:
 	ticks += 1
+	_advance_craft_jobs(3.0)
 	_set_seller_mood("neutral")
 	if is_instance_valid(reaction_label):
 		reaction_label.text = ""
@@ -932,10 +1053,14 @@ func _on_customer_tick() -> void:
 			{"name": "Speedrunner", "favorite": 3, "line": "“Compra feita. Onde fica o botão de pular diálogo?”", "faction": "aventureiros", "portrait": 0, "budget": 75, "patience": 1},
 			{"name": "Especialista em Tudo", "favorite": 0, "line": "“Vi um tutorial de 12 segundos e agora sou consultor.”", "faction": "guildas", "portrait": 1, "budget": 48, "patience": 2},
 			{"name": "Gótico Econômico", "favorite": 2, "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”", "faction": "submundo", "portrait": 2, "budget": 90, "patience": 3},
-			{"name": "Colecionador de Patos", "favorite": 1, "line": "“Este pato combina com os outros 47 que não me julgam.”", "faction": "mercadores", "portrait": 0, "budget": 42, "patience": 2},
-			{"name": "Coach Interdimensional", "favorite": 4, "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”", "faction": "guildas", "portrait": 1, "budget": 125, "patience": 3},
-			{"name": "Cliente Misterioso", "favorite": -1, "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”", "faction": "nobres", "portrait": 2, "budget": 60, "patience": 1}
-		]
+				{"name": "Colecionador de Patos", "favorite": 1, "line": "“Este pato combina com os outros 47 que não me julgam.”", "faction": "mercadores", "portrait": 0, "budget": 42, "patience": 2},
+				{"name": "Coach Interdimensional", "favorite": 4, "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”", "faction": "guildas", "portrait": 1, "budget": 125, "patience": 3},
+				{"name": "Cliente Misterioso", "favorite": -1, "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”", "faction": "nobres", "portrait": 2, "budget": 60, "patience": 1},
+				{"name": "Bardo do Duplo Sentido", "favorite": 4, "line": "“Se essa poção for tão quente quanto seu sorriso, eu compro duas.”", "faction": "aventureiros", "portrait": 1, "budget": 110, "patience": 2},
+				{"name": "Paladina do Caos", "favorite": 10, "line": "“Prometi ser virtuosa hoje. Mas posso abrir uma exceção para você.”", "faction": "nobres", "portrait": 0, "budget": 145, "patience": 2},
+				{"name": "Ladrão de Relíquias Sensíveis", "favorite": 8, "line": "“Não estou roubando seu coração. Só testando se ele cabe no meu inventário.”", "faction": "submundo", "portrait": 2, "budget": 135, "patience": 1},
+				{"name": "Bruxa em Lua de Mel", "favorite": 6, "line": "“Meu familiar disse que você é perigosa. Por isso mesmo fiquei.”", "faction": "guildas", "portrait": 1, "budget": 180, "patience": 3}
+			]
 		var profile: Dictionary = profiles[randi() % profiles.size()]
 		if randi() % 100 < 35:
 			var regular: Dictionary = Regulars.DATA[randi() % Regulars.DATA.size()]
@@ -960,7 +1085,7 @@ func _on_customer_tick() -> void:
 		_animate_customer_arrival(profile)
 		var preferred_index: int = int(profile["favorite"])
 		current_customer_budget = int(profile.get("budget", 50)) + trade_rank * 8
-		current_customer_patience = int(profile.get("patience", 2)) + logistics_rank
+		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank) / world_speed())))
 		var seduction_used := false
 		if is_instance_valid(customer_emotion_label):
 			customer_emotion_label.text = "🏃 pressa" if current_customer_patience <= 1 else "🙂 observando"
@@ -1272,6 +1397,9 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 			_play_feedback_tone(660.0, 0.1, 0.13)
 			_show_feedback("Venda concluída.", Color(0.91, 1.0, 0.75))
 	_play_customer_reaction("hurry" if animation == "disappointed" and current_customer_patience <= 1 else animation)
+	if adult_content_enabled and affection >= 100 and not seduction_peak_triggered:
+		seduction_peak_triggered = true
+		_play_seduction_peak_pose()
 
 func _play_customer_reaction(mood: String) -> void:
 	if not is_instance_valid(customer_portrait):
@@ -1315,6 +1443,19 @@ func _refresh_ui() -> void:
 	rep_label.text = "Reputação: %d • %s (+%d%%)" % [reputation, _reputation_title(), int(round((_reputation_price_multiplier() - 1.0) * 100.0))]
 	customers_label.text = "Clientes: %d  ♥%d  ✗%d" % [customers_served, happy_customers, disappointed_customers]
 	affection_label.text = "Afinidade: %d/100 • Seduções: %d/%d" % [affection, seduction_successes, seduction_attempts]
+	if is_instance_valid(speed_label):
+		speed_label.text = "TEMPO DO MUNDO: %.1fx" % world_speed()
+	if is_instance_valid(speed_button):
+		speed_button.text = "Acelerar relógio ▶"
+	if is_instance_valid(forge_status_label):
+		if craft_jobs.is_empty():
+			forge_status_label.text = "Forja: livre"
+		else:
+			var queue_text: Array[String] = []
+			for job in craft_jobs:
+				var queued_item: Dictionary = products[int(job.get("index", 0))]
+				queue_text.append("%s %.1fs" % [queued_item["name"], maxf(0.0, float(job.get("remaining", 0.0)))])
+			forge_status_label.text = "Forja: " + " | ".join(queue_text)
 	event_label.text = last_event
 	if is_instance_valid(regulars_label):
 		var regular_lines: Array[String] = ["FREGUESES RECORRENTES"]
@@ -1396,8 +1537,12 @@ func _refresh_ui() -> void:
 		var missing_ingredients: Array[String] = []
 		if unlocked:
 			missing_ingredients = _missing_ingredients(item)
-		craft_buttons[i].text = "Fabricar (%d)" % craft_cost if unlocked and missing_ingredients.is_empty() else "Faltam ingredientes" if unlocked else "Receita bloqueada"
-		craft_buttons[i].disabled = not unlocked or gold < craft_cost or not missing_ingredients.is_empty()
+		var already_queued := false
+		for job in craft_jobs:
+			if int(job.get("index", -1)) == i:
+				already_queued = true
+		craft_buttons[i].text = "Na fila" if already_queued else "Fabricar (%d)" % craft_cost if unlocked and missing_ingredients.is_empty() else "Faltam ingredientes" if unlocked else "Receita bloqueada"
+		craft_buttons[i].disabled = already_queued or craft_jobs.size() >= 3 or not unlocked or gold < craft_cost or not missing_ingredients.is_empty()
 	var ad_cost := 75 + ad_level * 60
 	upgrade_button.text = "Propaganda infernal • %d ouro (nível %d)" % [ad_cost, ad_level]
 	upgrade_button.disabled = gold < ad_cost
@@ -1449,6 +1594,7 @@ func _save_game() -> void:
 	config.set_value("game", "disappointed_customers", disappointed_customers)
 	config.set_value("game", "seduction_attempts", seduction_attempts)
 	config.set_value("game", "seduction_successes", seduction_successes)
+	config.set_value("game", "world_speed_index", world_speed_index)
 	config.set_value("game", "products", products)
 	config.save(SAVE_PATH)
 
@@ -1507,6 +1653,7 @@ func _load_game() -> void:
 	disappointed_customers = int(config.get_value("game", "disappointed_customers", disappointed_customers))
 	seduction_attempts = int(config.get_value("game", "seduction_attempts", seduction_attempts))
 	seduction_successes = int(config.get_value("game", "seduction_successes", seduction_successes))
+	world_speed_index = clampi(int(config.get_value("game", "world_speed_index", world_speed_index)), 0, world_speed_options.size() - 1)
 	var saved_achievements = config.get_value("game", "unlocked_achievements", [])
 	if saved_achievements is Array:
 		unlocked_achievements.clear()
