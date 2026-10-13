@@ -47,6 +47,8 @@ var ingredient_labels: Array = []
 var ingredient_buttons: Array = []
 var last_event: String = "Bem-vindo! Vamos transformar esta espelunca em um império."
 
+const PRODUCT_ICONS := ["🧪", "🦆", "💧", "📦", "✨", "🐟", "🌀", "💎", "📜", "☕"]
+
 var products: Array = [
 	{"name": "Poção de Dano Emocional", "cost": 8, "price": 15, "stock": 1, "ingredients": {"essencia": 1}, "desc": "Lembra você daquela mensagem que mandou em 2018."},
 	{"name": "Pato Amaldiçoado Premium", "cost": 10, "price": 24, "stock": 1, "ingredients": {"pena": 1}, "desc": "Ele não faz nada. Mas julga suas decisões."},
@@ -75,6 +77,7 @@ var quest_button: Button
 var products_box: VBoxContainer
 var craft_buttons: Array = []
 var product_labels: Array = []
+var product_margin_labels: Array = []
 var upgrade_button: Button
 var imp_button: Button
 var private_button: Button
@@ -277,15 +280,39 @@ func _build_ui() -> void:
 		row.add_theme_constant_override("separation", 12)
 		card.add_child(row)
 
+		var icon_badge := PanelContainer.new()
+		icon_badge.custom_minimum_size = Vector2(52, 52)
+		var icon_style := StyleBoxFlat.new()
+		icon_style.bg_color = Color(0.20, 0.08, 0.25, 0.95)
+		icon_style.border_color = Color(0.72, 0.40, 0.77, 0.95)
+		icon_style.set_border_width_all(1)
+		icon_style.set_corner_radius_all(12)
+		icon_badge.add_theme_stylebox_override("panel", icon_style)
+		row.add_child(icon_badge)
+		var icon_label := Label.new()
+		icon_label.text = PRODUCT_ICONS[i]
+		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		icon_label.add_theme_font_size_override("font_size", 27)
+		icon_badge.add_child(icon_label)
+
 		var info := VBoxContainer.new()
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info.add_theme_constant_override("separation", 3)
 		row.add_child(info)
 
 		var product_label := Label.new()
-		product_label.add_theme_font_size_override("font_size", 17)
+		product_label.add_theme_font_size_override("font_size", 16)
 		product_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.96))
+		product_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		info.add_child(product_label)
 		product_labels.append(product_label)
+
+		var margin_label := Label.new()
+		margin_label.add_theme_font_size_override("font_size", 13)
+		margin_label.add_theme_color_override("font_color", Color(0.65, 1.0, 0.72))
+		info.add_child(margin_label)
+		product_margin_labels.append(margin_label)
 
 		var desc := Label.new()
 		desc.text = str(products[i]["desc"])
@@ -396,19 +423,43 @@ func _build_ui() -> void:
 	portrait_row.add_theme_constant_override("separation", 10)
 	right.add_child(portrait_row)
 
+	var seller_frame := PanelContainer.new()
+	var seller_frame_style := StyleBoxFlat.new()
+	seller_frame_style.bg_color = Color(0.17, 0.055, 0.16, 0.98)
+	seller_frame_style.border_color = Color(1.0, 0.52, 0.80, 1.0)
+	seller_frame_style.set_border_width_all(2)
+	seller_frame_style.set_corner_radius_all(14)
+	seller_frame_style.content_margin_left = 4
+	seller_frame_style.content_margin_right = 4
+	seller_frame_style.content_margin_top = 4
+	seller_frame_style.content_margin_bottom = 4
+	seller_frame.add_theme_stylebox_override("panel", seller_frame_style)
+	portrait_row.add_child(seller_frame)
 	seller_portrait = TextureRect.new()
-	seller_portrait.custom_minimum_size = Vector2(132, 142)
+	seller_portrait.custom_minimum_size = Vector2(126, 136)
 	seller_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	seller_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	seller_portrait.texture = load(seller_portrait_paths["neutral"])
-	portrait_row.add_child(seller_portrait)
+	seller_frame.add_child(seller_portrait)
 
+	var customer_frame := PanelContainer.new()
+	var customer_frame_style := StyleBoxFlat.new()
+	customer_frame_style.bg_color = Color(0.045, 0.10, 0.16, 0.98)
+	customer_frame_style.border_color = Color(0.43, 0.80, 1.0, 0.95)
+	customer_frame_style.set_border_width_all(2)
+	customer_frame_style.set_corner_radius_all(14)
+	customer_frame_style.content_margin_left = 4
+	customer_frame_style.content_margin_right = 4
+	customer_frame_style.content_margin_top = 4
+	customer_frame_style.content_margin_bottom = 4
+	customer_frame.add_theme_stylebox_override("panel", customer_frame_style)
+	portrait_row.add_child(customer_frame)
 	customer_portrait = TextureRect.new()
-	customer_portrait.custom_minimum_size = Vector2(112, 122)
+	customer_portrait.custom_minimum_size = Vector2(106, 116)
 	customer_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	customer_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	customer_portrait.texture = load(customer_portrait_paths[0])
-	portrait_row.add_child(customer_portrait)
+	customer_frame.add_child(customer_portrait)
 
 	reaction_label = Label.new()
 	reaction_label.custom_minimum_size = Vector2(260, 24)
@@ -1042,10 +1093,13 @@ func _refresh_ui() -> void:
 		var demand_marker := "  ✦ EM ALTA" if i == _demand_index() else ""
 		if unlocked:
 			var margin := _estimated_margin(item)
-			var margin_label := "Margem estimada: +%d" % margin if margin >= 0 else "Margem estimada: %d" % margin
-			product_labels[i].text = "%s  |  Estoque: %d (+%d premium)  |  Venda: %d ouro%s\n%s" % [item["name"], item["stock"], premium_count, item["price"], demand_marker, margin_label]
+			product_labels[i].text = "%s%s\nEstoque: %d  •  Premium: %d  •  Venda: %d ouro" % [item["name"], demand_marker, item["stock"], premium_count, item["price"]]
+			product_margin_labels[i].text = "Margem estimada: %s%d ouro" % ["+" if margin >= 0 else "−", abs(margin)]
+			product_margin_labels[i].add_theme_color_override("font_color", Color(0.65, 1.0, 0.72) if margin >= 0 else Color(1.0, 0.55, 0.55))
 		else:
-			product_labels[i].text = "🔒 %s  |  Desbloqueia no nível %d" % [item["name"], required_level]
+			product_labels[i].text = "🔒 %s  •  Desbloqueia no nível %d" % [item["name"], required_level]
+			product_margin_labels[i].text = "Receita bloqueada — continue evoluindo"
+			product_margin_labels[i].add_theme_color_override("font_color", Color(0.67, 0.62, 0.73))
 		var craft_cost := maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
 		var missing_ingredients: Array[String] = []
 		if unlocked:
