@@ -92,6 +92,9 @@ var customer_portrait: TextureRect
 var feedback_audio_player: AudioStreamPlayer
 var toast_label: Label
 var toast_tween: Tween
+var market_panel: VBoxContainer
+var market_toggle_button: Button
+var sensual_tween: Tween
 var customer_portrait_paths: Array[String] = ["res://assets/customer_adventurer.png", "res://assets/customer_mage.png", "res://assets/customer_goth.png"]
 var seller_portrait_paths: Dictionary = {"happy": "res://assets/seller_happy.png", "neutral": "res://assets/seller_neutral.png", "surprised": "res://assets/seller_surprised.png"}
 
@@ -178,7 +181,14 @@ func _build_ui() -> void:
 	subtitle.add_theme_font_size_override("font_size", 17)
 	subtitle.add_theme_color_override("font_color", Color(0.80, 0.75, 0.88))
 	subtitle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	subtitle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(subtitle)
+
+	market_toggle_button = Button.new()
+	market_toggle_button.text = "☰ Abrir mercado"
+	market_toggle_button.custom_minimum_size = Vector2(160, 42)
+	market_toggle_button.pressed.connect(_toggle_market_panel)
+	header.add_child(market_toggle_button)
 
 	var stats := HBoxContainer.new()
 	stats.add_theme_constant_override("separation", 24)
@@ -236,9 +246,11 @@ func _build_ui() -> void:
 	root.add_child(body)
 
 	var left := VBoxContainer.new()
+	market_panel = left
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.size_flags_stretch_ratio = 1.6
 	left.add_theme_constant_override("separation", 8)
+	left.visible = false
 	body.add_child(left)
 
 	var product_title := Label.new()
@@ -417,7 +429,7 @@ func _build_ui() -> void:
 	right_panel.add_child(right)
 
 	var shop_title := Label.new()
-	shop_title.text = "ESCRITÓRIO DA CHEFE"
+	shop_title.text = "RECEPÇÃO • A CHEFE"
 	shop_title.add_theme_font_size_override("font_size", 22)
 	shop_title.add_theme_color_override("font_color", Color(1.0, 0.78, 0.9))
 	right.add_child(shop_title)
@@ -440,7 +452,7 @@ func _build_ui() -> void:
 	seller_frame.add_theme_stylebox_override("panel", seller_frame_style)
 	portrait_row.add_child(seller_frame)
 	seller_portrait = TextureRect.new()
-	seller_portrait.custom_minimum_size = Vector2(126, 136)
+	seller_portrait.custom_minimum_size = Vector2(174, 196)
 	seller_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	seller_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	seller_portrait.texture = load(seller_portrait_paths["neutral"])
@@ -459,7 +471,7 @@ func _build_ui() -> void:
 	customer_frame.add_theme_stylebox_override("panel", customer_frame_style)
 	portrait_row.add_child(customer_frame)
 	customer_portrait = TextureRect.new()
-	customer_portrait.custom_minimum_size = Vector2(106, 116)
+	customer_portrait.custom_minimum_size = Vector2(78, 92)
 	customer_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	customer_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	customer_portrait.texture = load(customer_portrait_paths[0])
@@ -600,6 +612,28 @@ func _make_stat_label(text_value: String) -> Label:
 	label.add_theme_font_size_override("font_size", 22)
 	label.add_theme_color_override("font_color", Color(0.91, 1.0, 0.75))
 	return label
+
+func _toggle_market_panel() -> void:
+	if not is_instance_valid(market_panel):
+		return
+	market_panel.visible = not market_panel.visible
+	if is_instance_valid(market_toggle_button):
+		market_toggle_button.text = "☰ Ocultar mercado" if market_panel.visible else "☰ Abrir mercado"
+	_play_feedback_tone(520.0 if market_panel.visible else 360.0, 0.08, 0.1)
+	_show_feedback("Mercado expandido." if market_panel.visible else "Recepção em foco.", Color(0.78, 0.95, 1.0))
+
+func _play_sensual_reception_moment() -> void:
+	if not adult_content_enabled or not is_instance_valid(seller_portrait):
+		return
+	if sensual_tween != null and sensual_tween.is_valid():
+		sensual_tween.kill()
+	seller_portrait.pivot_offset = seller_portrait.size / 2.0
+	sensual_tween = create_tween()
+	sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.07, 1.07), 0.32).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	sensual_tween.tween_property(seller_portrait, "modulate", Color(1.0, 0.82, 0.95, 1.0), 0.32)
+	sensual_tween.tween_interval(1.6)
+	sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.42).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.42)
 
 func _setup_feedback_audio() -> void:
 	feedback_audio_player = AudioStreamPlayer.new()
@@ -928,6 +962,7 @@ func _on_customer_tick() -> void:
 
 		if adult_content_enabled and affection >= 10 and affection % 10 == 0:
 			last_event = "A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”"
+			_play_sensual_reception_moment()
 		elif affection > 0 and affection % 5 == 0:
 			last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor, querido.”"
 
@@ -1445,11 +1480,12 @@ func _show_private_moment() -> void:
 	else:
 		private_moments_unlocked += 1
 		var moments: Array[String] = [
-			"A súcubo inclina a cabeça, dá uma piscadela e puxa você para mais perto: “Esse é nosso segredinho, combinado?”",
-			"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais de mim quando nossa parceria ficar ainda mais lucrativa.”",
-			"A chefe faz uma pose provocante e ri baixinho: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”"
-		]
+				"A súcubo inclina a cabeça, dá uma piscadela e puxa você para mais perto: “Esse é nosso segredinho, combinado?”",
+				"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais de mim quando nossa parceria ficar ainda mais lucrativa.”",
+				"A chefe faz uma pose provocante e ri baixinho: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”"
+			]
 		last_event = moments[(private_moments_unlocked - 1) % moments.size()]
+		_play_sensual_reception_moment()
 	_save_game()
 	_refresh_ui()
 
