@@ -9,6 +9,8 @@ var gold: int = 80
 var reputation: int = 0
 var customers_served: int = 0
 var affection: int = 0
+var fury: int = 0
+var demonic_form_active: bool = false
 var regular_bonds: Dictionary = {}
 var regular_orders_completed: Dictionary = {}
 var regular_story_progress: Dictionary = {}
@@ -97,6 +99,8 @@ var upgrade_button: Button
 var imp_button: Button
 var private_button: Button
 var adult_toggle_button: Button
+var recover_theft_button: Button
+var fury_label: Label
 var seller_portrait: TextureRect
 var reaction_label: Label
 var seller_speech_label: Label
@@ -118,6 +122,8 @@ var sanctum_button: Button
 var current_sector: String = "reception"
 var current_customer_budget: int = 0
 var current_customer_patience: int = 0
+var stolen_item_name: String = ""
+var theft_recovery_available: bool = false
 var seduction_peak_triggered: bool = false
 var ambient_particles: CPUParticles2D
 var music_player: AudioStreamPlayer
@@ -128,7 +134,7 @@ var market_panel: VBoxContainer
 var market_toggle_button: Button
 var sensual_tween: Tween
 var customer_portrait_paths: Array[String] = ["res://assets/customer_adventurer.png", "res://assets/customer_mage.png", "res://assets/customer_goth.png"]
-var seller_portrait_paths: Dictionary = {"happy": "res://assets/seller_happy.png", "neutral": "res://assets/seller_neutral.png", "surprised": "res://assets/seller_surprised.png"}
+var seller_portrait_paths: Dictionary = {"happy": "res://assets/seller_happy.png", "neutral": "res://assets/seller_neutral.png", "surprised": "res://assets/seller_surprised.png", "demonic": "res://assets/seller_demonic.png"}
 
 const SELLER_DELIGHTED_LINES := [
 	"A súcubo pisca para o cliente: “Gosto de quem tem bom gosto. Volte sempre, herói.”",
@@ -302,6 +308,10 @@ func _build_ui() -> void:
 	stats.add_child(customers_label)
 	affection_label = _make_stat_label("Afinidade: 0/100")
 	stats.add_child(affection_label)
+	fury_label = _make_stat_label("Fúria: 0/5")
+	fury_label.add_theme_font_size_override("font_size", 18)
+	fury_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.55))
+	stats.add_child(fury_label)
 
 	var speed_row := HBoxContainer.new()
 	speed_row.add_theme_constant_override("separation", 10)
@@ -708,6 +718,12 @@ func _build_ui() -> void:
 	adult_toggle_button.pressed.connect(_toggle_adult_content)
 	right.add_child(adult_toggle_button)
 
+	recover_theft_button = Button.new()
+	recover_theft_button.custom_minimum_size.y = 42
+	recover_theft_button.text = "Rastrear item roubado"
+	recover_theft_button.pressed.connect(_recover_stolen_item)
+	right.add_child(recover_theft_button)
+
 	var footer := Label.new()
 	footer.text = "Protótipo 0.6 • Facções, fregueses e contratos • Conteúdo sensual opcional"
 	footer.add_theme_font_size_override("font_size", 12)
@@ -1057,7 +1073,7 @@ func _hire_imp() -> void:
 func _on_customer_tick() -> void:
 	ticks += 1
 	_advance_craft_jobs(3.0)
-	_set_seller_mood("neutral")
+	_set_seller_mood("demonic" if demonic_form_active else "neutral")
 	if is_instance_valid(reaction_label):
 		reaction_label.text = ""
 	if ticks % 20 == 0:
@@ -1097,7 +1113,12 @@ func _on_customer_tick() -> void:
 		var profiles: Array[Dictionary] = [
 			{"name": "Speedrunner", "favorite": 3, "line": "“Compra feita. Onde fica o botão de pular diálogo?”", "faction": "aventureiros", "portrait": 0, "budget": 75, "patience": 1},
 			{"name": "Especialista em Tudo", "favorite": 0, "line": "“Vi um tutorial de 12 segundos e agora sou consultor.”", "faction": "guildas", "portrait": 1, "budget": 48, "patience": 2},
-			{"name": "Gótico Econômico", "favorite": 2, "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”", "faction": "submundo", "portrait": 2, "budget": 90, "patience": 3},
+				{"name": "Gótico Econômico", "favorite": 2, "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”", "faction": "submundo", "portrait": 2, "budget": 90, "patience": 3},
+				{"name": "Mago do Quero Mana", "favorite": 9, "line": "“Quero manaaa! Isso aqui é uma porcaria... me vê duas poções mesmo assim.”", "faction": "guildas", "portrait": 1, "budget": 120, "patience": 2},
+				{"name": "Fiscal do Pix Astral", "favorite": 6, "line": "“Aceita Pix astral? Se não aceitar, vou pagar em promessa e reclamar no fórum.”", "faction": "mercadores", "portrait": 0, "budget": 115, "patience": 2},
+				{"name": "Só Mais Uma Run", "favorite": 3, "line": "“É rapidinho, só mais uma compra. Dessa vez eu paro antes do amanhecer.”", "faction": "aventureiros", "portrait": 2, "budget": 100, "patience": 1},
+				{"name": "Ladino do Ctrl+C", "favorite": 0, "line": "“Vi isso em outro lugar. Vou levar o seu, porque parece mais fácil.”", "faction": "submundo", "portrait": 2, "budget": 70, "patience": 2, "thief": true},
+				{"name": "Cliente do É Sobre Isso", "favorite": 4, "line": "“É sobre isso e está tudo bem. Mas se tiver desconto, fica ainda mais sobre isso.”", "faction": "nobres", "portrait": 1, "budget": 150, "patience": 3},
 				{"name": "Colecionador de Patos", "favorite": 1, "line": "“Este pato combina com os outros 47 que não me julgam.”", "faction": "mercadores", "portrait": 0, "budget": 42, "patience": 2},
 				{"name": "Coach Interdimensional", "favorite": 4, "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”", "faction": "guildas", "portrait": 1, "budget": 125, "patience": 3},
 				{"name": "Cliente Misterioso", "favorite": -1, "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”", "faction": "nobres", "portrait": 2, "budget": 60, "patience": 1},
@@ -1134,6 +1155,12 @@ func _on_customer_tick() -> void:
 		var seduction_used := false
 		if is_instance_valid(customer_emotion_label):
 			customer_emotion_label.text = "🏃 pressa" if current_customer_patience <= 1 else "🙂 observando"
+		if bool(profile.get("thief", false)) and current_customer_patience <= 1:
+			_handle_thief_escape(profile, available)
+			_check_achievements()
+			_save_game()
+			_refresh_ui()
+			return
 		var affordable: Array[int] = []
 		for affordable_index in available:
 			if int(products[affordable_index]["price"]) <= current_customer_budget:
@@ -1395,6 +1422,43 @@ func _reputation_seduction_bonus() -> int:
 func _reputation_price_multiplier() -> float:
 	return 1.0 + minf(0.12, float(maxi(0, reputation)) * 0.002)
 
+func _handle_thief_escape(profile: Dictionary, available: Array[int]) -> void:
+	if available.is_empty():
+		return
+	var stolen_index := available[randi() % available.size()]
+	var stolen_item: Dictionary = products[stolen_index]
+	stolen_item["stock"] = maxi(0, int(stolen_item["stock"]) - 1)
+	stolen_item_name = str(stolen_item["name"])
+	theft_recovery_available = true
+	fury = mini(5, fury + 2)
+	_update_demonic_form()
+	status_label.text = "CLIENTE: ladrão escapou"
+	if is_instance_valid(customer_emotion_label):
+		customer_emotion_label.text = "🏃 ladrão"
+	last_event = "%s pegou %s e correu! A succubus rosna: “Ninguém rouba da minha loja e sai sem deixar um recibo.”" % [profile.get("name", "O cliente"), stolen_item_name]
+	_show_feedback("⚠ Roubo! O rastreador está pronto.", Color(1.0, 0.55, 0.45))
+	_play_feedback_tone(150.0, 0.2, 0.18)
+	_play_customer_reaction("hurry")
+
+func _recover_stolen_item() -> void:
+	if not theft_recovery_available or stolen_item_name.is_empty():
+		last_event = "Nenhum item foi roubado. A succubus guarda o rastreador e finge que foi tudo planejado."
+		_refresh_ui()
+		return
+	for item in products:
+		if str(item.get("name", "")) == stolen_item_name:
+			item["stock"] = int(item.get("stock", 0)) + 1
+			break
+	theft_recovery_available = false
+	last_event = "Rastreamento concluído: %s recuperado. O ladrão deixou um pedido de desculpas e uma gorjeta simbólica." % stolen_item_name
+	stolen_item_name = ""
+	fury = maxi(0, fury - 1)
+	_update_demonic_form()
+	_play_feedback_tone(680.0, 0.14, 0.16)
+	_show_feedback("Item recuperado.", Color(0.75, 1.0, 0.72))
+	_save_game()
+	_refresh_ui()
+
 func _set_negotiation_dialogue(profile: Dictionary, item: Dictionary, seduction_used: bool, favorite_item: bool) -> void:
 	if not is_instance_valid(seller_speech_label):
 		return
@@ -1433,6 +1497,8 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 			else:
 				disappointed_customers += 1
 				reputation = maxi(0, reputation - 1)
+				fury = mini(5, fury + 1)
+				_update_demonic_form()
 				text = "… Cliente decepcionado. -1 de reputação"
 				color = Color(1.0, 0.55, 0.55)
 				line = SELLER_DISAPPOINTED_LINES.pick_random()
@@ -1462,6 +1528,9 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 			_play_feedback_tone(660.0, 0.1, 0.13)
 			_show_feedback("Venda concluída.", Color(0.91, 1.0, 0.75))
 	_play_customer_reaction("hurry" if animation == "disappointed" and current_customer_patience <= 1 else animation)
+	if animation != "disappointed" and not theft_recovery_available:
+		fury = maxi(0, fury - 1)
+		_update_demonic_form()
 	if adult_content_enabled and affection >= 100 and not seduction_peak_triggered:
 		seduction_peak_triggered = true
 		_play_seduction_peak_pose()
@@ -1499,7 +1568,26 @@ func _play_customer_reaction(mood: String) -> void:
 
 func _set_seller_mood(mood: String) -> void:
 	if is_instance_valid(seller_portrait) and seller_portrait_paths.has(mood):
-		seller_portrait.texture = load(str(seller_portrait_paths[mood]))
+		var mood_path := str(seller_portrait_paths[mood])
+		if ResourceLoader.exists(mood_path):
+			seller_portrait.texture = load(mood_path)
+
+func _update_demonic_form() -> void:
+	if adult_content_enabled and fury >= 4 and not demonic_form_active:
+		demonic_form_active = true
+		_set_seller_mood("demonic")
+		last_event = "A FÚRIA CHEGOU AO LIMITE! A succubus assume sua forma demoníaca: “Respirem. Eu ainda sei negociar.”"
+		if is_instance_valid(seller_portrait):
+			seller_portrait.modulate = Color(1.0, 0.55, 0.62, 1.0)
+			var demon_tween := create_tween()
+			demon_tween.tween_property(seller_portrait, "scale", Vector2(1.10, 1.10), 0.22).set_trans(Tween.TRANS_BACK)
+			demon_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.34)
+		_play_feedback_tone(120.0, 0.25, 0.2)
+		_show_feedback("Forma demoníaca ativada.", Color(1.0, 0.48, 0.58))
+	elif demonic_form_active and fury <= 1:
+		demonic_form_active = false
+		_set_seller_mood("neutral")
+		last_event = "A succubus respira fundo e retorna à forma habitual. A loja sobreviveu ao drama."
 
 func _refresh_ui() -> void:
 	if not is_instance_valid(gold_label):
@@ -1508,6 +1596,8 @@ func _refresh_ui() -> void:
 	rep_label.text = "Reputação: %d • %s (+%d%%)" % [reputation, _reputation_title(), int(round((_reputation_price_multiplier() - 1.0) * 100.0))]
 	customers_label.text = "Clientes: %d  ♥%d  ✗%d" % [customers_served, happy_customers, disappointed_customers]
 	affection_label.text = "Afinidade: %d/100 • Seduções: %d/%d" % [affection, seduction_successes, seduction_attempts]
+	if is_instance_valid(fury_label):
+		fury_label.text = "Fúria: %d/5%s" % [fury, " • FORMA DEMONÍACA" if demonic_form_active else ""]
 	if is_instance_valid(speed_label):
 		speed_label.text = "TEMPO DO MUNDO: %.1fx" % world_speed()
 	if is_instance_valid(speed_button):
@@ -1622,6 +1712,9 @@ func _refresh_ui() -> void:
 	private_button.text = "Momento especial (afinidade 5)" if affection >= 5 else "Momento especial • afinidade %d/5" % affection
 	private_button.disabled = affection < 5
 	adult_toggle_button.text = "Cenas sensuais: LIGADAS" if adult_content_enabled else "Cenas sensuais: DESLIGADAS"
+	if is_instance_valid(recover_theft_button):
+		recover_theft_button.text = "Rastrear: %s" % stolen_item_name if theft_recovery_available else "Rastrear item roubado"
+		recover_theft_button.disabled = not theft_recovery_available
 	if imp_hired:
 		imp_button.text = "Diabrete contratado ✓"
 		imp_button.disabled = true
@@ -1635,6 +1728,9 @@ func _save_game() -> void:
 	config.set_value("game", "reputation", reputation)
 	config.set_value("game", "customers_served", customers_served)
 	config.set_value("game", "affection", affection)
+	config.set_value("game", "fury", fury)
+	config.set_value("game", "stolen_item_name", stolen_item_name)
+	config.set_value("game", "theft_recovery_available", theft_recovery_available)
 	config.set_value("game", "regular_bonds", regular_bonds)
 	config.set_value("game", "regular_orders_completed", regular_orders_completed)
 	config.set_value("game", "regular_story_progress", regular_story_progress)
@@ -1682,6 +1778,9 @@ func _load_game() -> void:
 	reputation = int(config.get_value("game", "reputation", reputation))
 	customers_served = int(config.get_value("game", "customers_served", customers_served))
 	affection = int(config.get_value("game", "affection", affection))
+	fury = clampi(int(config.get_value("game", "fury", fury)), 0, 5)
+	stolen_item_name = str(config.get_value("game", "stolen_item_name", stolen_item_name))
+	theft_recovery_available = bool(config.get_value("game", "theft_recovery_available", theft_recovery_available))
 	var saved_bonds = config.get_value("game", "regular_bonds", {})
 	if saved_bonds is Dictionary:
 		regular_bonds = saved_bonds.duplicate(true)
@@ -1700,6 +1799,7 @@ func _load_game() -> void:
 	if saved_factions is Dictionary:
 		faction_standing = saved_factions.duplicate(true)
 	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
+	demonic_form_active = adult_content_enabled and fury >= 4
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
 	imp_hired = bool(config.get_value("game", "imp_hired", imp_hired))
