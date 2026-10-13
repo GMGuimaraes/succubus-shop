@@ -47,7 +47,7 @@ var ingredient_labels: Array = []
 var ingredient_buttons: Array = []
 var last_event: String = "Bem-vindo! Vamos transformar esta espelunca em um império."
 
-const PRODUCT_ICONS := ["🧪", "🦆", "💧", "📦", "✨", "🐟", "🌀", "💎", "📜", "☕"]
+const PRODUCT_ICONS := ["🧪", "🦆", "💧", "📦", "✨", "🐟", "🌀", "💎", "📜", "☕", "🗡️", "🔨"]
 
 var products: Array = [
 	{"name": "Poção de Dano Emocional", "cost": 8, "price": 15, "stock": 1, "ingredients": {"essencia": 1}, "desc": "Lembra você daquela mensagem que mandou em 2018."},
@@ -59,8 +59,11 @@ var products: Array = [
 	{"name": "Incenso de Teletransporte Barato", "cost": 26, "price": 68, "stock": 0, "required_level": 5, "ingredients": {"po_lunar": 1, "tinta": 1}, "desc": "Leva você a três metros dali. Às vezes quatro."},
 	{"name": "Cristal de Crédito Cósmico", "cost": 42, "price": 115, "stock": 0, "required_level": 8, "ingredients": {"vazio": 1, "tinta": 2}, "desc": "Converte promessas vagas em dívidas muito concretas."},
 	{"name": "Pergaminho de Procrastinação Certificada", "cost": 55, "price": 150, "stock": 0, "required_level": 10, "ingredients": {"tinta": 2, "essencia": 1}, "desc": "Adia tarefas importantes com selo ISO de preguiça."},
-	{"name": "Frasco de Motivação de Segunda-feira", "cost": 70, "price": 195, "stock": 0, "required_level": 12, "ingredients": {"po_lunar": 2, "sal": 1}, "desc": "Efeito dura até o primeiro e-mail."}
-]
+		{"name": "Frasco de Motivação de Segunda-feira", "cost": 70, "price": 195, "stock": 0, "required_level": 12, "ingredients": {"po_lunar": 2, "sal": 1}, "desc": "Efeito dura até o primeiro e-mail."},
+		{"name": "Adaga de Charme Duvidoso", "cost": 30, "price": 95, "stock": 0, "required_level": 2, "ingredients": {"pena": 1, "tinta": 1}, "desc": "Brilha quando alguém promete pagar amanhã."},
+		{"name": "Martelo de Faísca Dramática", "cost": 45, "price": 140, "stock": 0, "required_level": 4, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Cada golpe produz uma faísca e uma opinião não solicitada."
+		}
+	]
 
 var gold_label: Label
 var rep_label: Label
@@ -89,6 +92,15 @@ var customer_tween: Tween
 var happy_customers: int = 0
 var disappointed_customers: int = 0
 var customer_portrait: TextureRect
+var customer_emotion_label: Label
+var background_layer: TextureRect
+var sector_title_label: Label
+var sector_hint_label: Label
+var reception_button: Button
+var forge_button: Button
+var current_sector: String = "reception"
+var current_customer_budget: int = 0
+var current_customer_patience: int = 0
 var feedback_audio_player: AudioStreamPlayer
 var toast_label: Label
 var toast_tween: Tween
@@ -146,6 +158,7 @@ func _start_ambient_animations() -> void:
 
 func _build_ui() -> void:
 	var bg := TextureRect.new()
+	background_layer = bg
 	bg.texture = load("res://assets/shop_scene.png")
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_SCALE
@@ -189,6 +202,18 @@ func _build_ui() -> void:
 	market_toggle_button.custom_minimum_size = Vector2(160, 42)
 	market_toggle_button.pressed.connect(_toggle_market_panel)
 	header.add_child(market_toggle_button)
+
+	reception_button = Button.new()
+	reception_button.text = "Recepção"
+	reception_button.custom_minimum_size = Vector2(115, 42)
+	reception_button.pressed.connect(_set_sector.bind("reception"))
+	header.add_child(reception_button)
+
+	forge_button = Button.new()
+	forge_button.text = "⚒ Forja"
+	forge_button.custom_minimum_size = Vector2(115, 42)
+	forge_button.pressed.connect(_set_sector.bind("forge"))
+	header.add_child(forge_button)
 
 	var stats := HBoxContainer.new()
 	stats.add_theme_constant_override("separation", 24)
@@ -254,12 +279,14 @@ func _build_ui() -> void:
 	body.add_child(left)
 
 	var product_title := Label.new()
+	sector_title_label = product_title
 	product_title.text = "MERCADORIAS"
 	product_title.add_theme_font_size_override("font_size", 22)
 	product_title.add_theme_color_override("font_color", Color(1.0, 0.78, 0.9))
 	left.add_child(product_title)
 
 	var hint := Label.new()
+	sector_hint_label = hint
 	hint.text = "Fabrique itens para abastecer a loja. Os clientes chegam automaticamente."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_color_override("font_color", Color(0.75, 0.71, 0.81))
@@ -477,6 +504,13 @@ func _build_ui() -> void:
 	customer_portrait.texture = load(customer_portrait_paths[0])
 	customer_frame.add_child(customer_portrait)
 
+	customer_emotion_label = Label.new()
+	customer_emotion_label.text = "🙂 aguardando"
+	customer_emotion_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	customer_emotion_label.add_theme_font_size_override("font_size", 12)
+	customer_emotion_label.add_theme_color_override("font_color", Color(0.70, 0.90, 1.0))
+	right.add_child(customer_emotion_label)
+
 	reaction_label = Label.new()
 	reaction_label.custom_minimum_size = Vector2(260, 24)
 	reaction_label.add_theme_font_size_override("font_size", 15)
@@ -621,6 +655,27 @@ func _toggle_market_panel() -> void:
 		market_toggle_button.text = "☰ Ocultar mercado" if market_panel.visible else "☰ Abrir mercado"
 	_play_feedback_tone(520.0 if market_panel.visible else 360.0, 0.08, 0.1)
 	_show_feedback("Mercado expandido." if market_panel.visible else "Recepção em foco.", Color(0.78, 0.95, 1.0))
+
+func _set_sector(sector: String) -> void:
+	current_sector = sector
+	var is_forge := sector == "forge"
+	var is_reception := sector == "reception"
+	if is_instance_valid(background_layer):
+		var scene_path := "res://assets/forge_scene.png" if is_forge and ResourceLoader.exists("res://assets/forge_scene.png") else "res://assets/shop_scene.png"
+		background_layer.texture = load(scene_path)
+	if is_instance_valid(market_panel):
+		market_panel.visible = not is_reception
+	if is_instance_valid(sector_title_label):
+		sector_title_label.text = "FORJA & OFICINA" if is_forge else "MERCADORIAS"
+	if is_instance_valid(sector_hint_label):
+		sector_hint_label.text = "O ferreiro transforma ingredientes e ouro em equipamentos. Receitas melhores exigem mais nível." if is_forge else "Fabrique itens para abastecer a loja. Os clientes chegam automaticamente."
+	if is_instance_valid(market_toggle_button):
+		market_toggle_button.text = "☰ Ocultar painel" if not is_reception else "☰ Abrir mercado"
+	if is_instance_valid(reception_button):
+		reception_button.disabled = is_reception
+	if is_instance_valid(forge_button):
+		forge_button.disabled = is_forge
+	_show_feedback("A forja está em atividade." if is_forge else "A recepção voltou ao foco.", Color(1.0, 0.82, 0.48) if is_forge else Color(1.0, 0.78, 0.9))
 
 func _play_sensual_reception_moment() -> void:
 	if not adult_content_enabled or not is_instance_valid(seller_portrait):
@@ -827,12 +882,12 @@ func _on_customer_tick() -> void:
 		_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank)
 	else:
 		var profiles: Array[Dictionary] = [
-			{"name": "Speedrunner", "favorite": 3, "line": "“Compra feita. Onde fica o botão de pular diálogo?”", "faction": "aventureiros", "portrait": 0},
-			{"name": "Especialista em Tudo", "favorite": 0, "line": "“Vi um tutorial de 12 segundos e agora sou consultor.”", "faction": "guildas", "portrait": 1},
-			{"name": "Gótico Econômico", "favorite": 2, "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”", "faction": "submundo", "portrait": 2},
-			{"name": "Colecionador de Patos", "favorite": 1, "line": "“Este pato combina com os outros 47 que não me julgam.”", "faction": "mercadores", "portrait": 0},
-			{"name": "Coach Interdimensional", "favorite": 4, "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”", "faction": "guildas", "portrait": 1},
-			{"name": "Cliente Misterioso", "favorite": -1, "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”", "faction": "nobres", "portrait": 2}
+			{"name": "Speedrunner", "favorite": 3, "line": "“Compra feita. Onde fica o botão de pular diálogo?”", "faction": "aventureiros", "portrait": 0, "budget": 75, "patience": 1},
+			{"name": "Especialista em Tudo", "favorite": 0, "line": "“Vi um tutorial de 12 segundos e agora sou consultor.”", "faction": "guildas", "portrait": 1, "budget": 48, "patience": 2},
+			{"name": "Gótico Econômico", "favorite": 2, "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”", "faction": "submundo", "portrait": 2, "budget": 90, "patience": 3},
+			{"name": "Colecionador de Patos", "favorite": 1, "line": "“Este pato combina com os outros 47 que não me julgam.”", "faction": "mercadores", "portrait": 0, "budget": 42, "patience": 2},
+			{"name": "Coach Interdimensional", "favorite": 4, "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”", "faction": "guildas", "portrait": 1, "budget": 125, "patience": 3},
+			{"name": "Cliente Misterioso", "favorite": -1, "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”", "faction": "nobres", "portrait": 2, "budget": 60, "patience": 1}
 		]
 		var profile: Dictionary = profiles[randi() % profiles.size()]
 		if randi() % 100 < 35:
@@ -857,7 +912,33 @@ func _on_customer_tick() -> void:
 			}
 		_animate_customer_arrival(profile)
 		var preferred_index: int = int(profile["favorite"])
-		var chosen_index: int = available[randi() % available.size()]
+		current_customer_budget = int(profile.get("budget", 50)) + trade_rank * 8
+		current_customer_patience = int(profile.get("patience", 2)) + logistics_rank
+		var affordable: Array[int] = []
+		for affordable_index in available:
+			if int(products[affordable_index]["price"]) <= current_customer_budget:
+				affordable.append(affordable_index)
+		if affordable.is_empty():
+			var charm_negotiation := charm_rank > 0 and randi() % 100 < 25 + charm_rank * 12
+			if charm_negotiation and available.size() > 0:
+				current_customer_budget += 20 + charm_rank * 10
+				last_event = "%s suspira: “Meu orçamento é curto...” A chefe negocia com um sorriso e o cliente reconsidera." % profile["name"]
+				for affordable_index in available:
+					if int(products[affordable_index]["price"]) <= current_customer_budget:
+						affordable.append(affordable_index)
+			else:
+				last_event = "%s não conseguiu pagar nenhum item e saiu %s: “Volto quando meu bolso parar de chorar.”" % [profile["name"], "com pressa" if current_customer_patience <= 1 else "frustrado"]
+				disappointed_customers += 1
+				reputation = maxi(0, reputation - 1)
+				status_label.text = "CLIENTE: saiu sem comprar"
+				if is_instance_valid(customer_emotion_label):
+					customer_emotion_label.text = "😤 frustração"
+				_play_customer_reaction("disappointed")
+				_check_achievements()
+				_save_game()
+				_refresh_ui()
+				return
+		var chosen_index: int = affordable[randi() % affordable.size()] if not affordable.is_empty() else available[randi() % available.size()]
 		if preferred_index >= 0 and available.has(preferred_index) and randi() % 100 < 70:
 			chosen_index = preferred_index
 
@@ -1040,6 +1121,8 @@ func _animate_customer_arrival(profile: Dictionary) -> void:
 	customer_portrait.texture = load(customer_portrait_paths[portrait_index])
 	customer_portrait.pivot_offset = customer_portrait.size / 2.0
 	var tween := create_tween().set_parallel(true)
+	customer_portrait.position = Vector2(-18, 4)
+	tween.tween_property(customer_portrait, "position", Vector2.ZERO, 0.36).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_property(customer_portrait, "modulate:a", 1.0, 0.24).from(0.0)
 	tween.tween_property(customer_portrait, "scale", Vector2.ONE, 0.28).from(Vector2(0.78, 0.78))
 
@@ -1073,6 +1156,15 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 				color = Color(1.0, 0.55, 0.55)
 				line = SELLER_DISAPPOINTED_LINES.pick_random()
 				_set_seller_mood("surprised")
+	if is_instance_valid(customer_emotion_label):
+		var emotion_text := "🙂 satisfeito"
+		if animation == "delighted":
+			emotion_text = "😍 amor e empolgação" if charm_save else "😄 felicidade"
+		elif animation == "disappointed":
+			emotion_text = "😤 frustração"
+		elif mood == "content":
+			emotion_text = "😌 calma"
+		customer_emotion_label.text = emotion_text
 	if is_instance_valid(reaction_label):
 		reaction_label.text = text
 		reaction_label.add_theme_color_override("font_color", color)
