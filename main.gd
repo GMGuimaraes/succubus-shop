@@ -3,6 +3,7 @@ extends Control
 const SAVE_PATH := "user://succubus_shop_save.cfg"
 const Regulars = preload("res://regulars.gd")
 const Factions = preload("res://factions.gd")
+const Ingredients = preload("res://ingredients.gd")
 
 var gold: int = 80
 var reputation: int = 0
@@ -32,21 +33,31 @@ var daily_crafts: int = 0
 var alchemy_rank: int = 0
 var trade_rank: int = 0
 var charm_rank: int = 0
+var logistics_rank: int = 0
+var ingredient_stock: Dictionary = {"essencia": 1, "pena": 1, "sal": 1, "vazio": 1, "po_lunar": 1, "tinta": 1}
+var premium_stock: Dictionary = {}
+var total_ingredients_bought: int = 0
+var premium_crafted: int = 0
 var talent_label: Label
 var alchemy_button: Button
 var trade_button: Button
 var charm_button: Button
+var logistics_button: Button
+var ingredient_labels: Array = []
+var ingredient_buttons: Array = []
 var last_event: String = "Bem-vindo! Vamos transformar esta espelunca em um império."
 
 var products: Array = [
-	{"name": "Poção de Dano Emocional", "cost": 8, "price": 15, "stock": 1, "desc": "Lembra você daquela mensagem que mandou em 2018."},
-	{"name": "Pato Amaldiçoado Premium", "cost": 10, "price": 24, "stock": 1, "desc": "Ele não faz nada. Mas julga suas decisões."},
-	{"name": "Lágrimas de Jogador Derrotado", "cost": 12, "price": 30, "stock": 1, "desc": "Ingrediente raro. Salgado. Muito salgado."},
-	{"name": "Caixa Misteriosa Vazia", "cost": 5, "price": 12, "stock": 1, "desc": "A surpresa é perceber que você pagou por uma caixa."},
-	{"name": "Poção de Confiança Instantânea", "cost": 9, "price": 22, "stock": 1, "desc": "Funciona até alguém pedir para você explicar."},
-	{"name": "Elixir de Memória de Peixe", "cost": 18, "price": 48, "stock": 0, "required_level": 3, "desc": "Você esquece por que comprou. E compra de novo."},
-	{"name": "Incenso de Teletransporte Barato", "cost": 26, "price": 68, "stock": 0, "required_level": 5, "desc": "Leva você a três metros dali. Às vezes quatro."},
-	{"name": "Cristal de Crédito Cósmico", "cost": 42, "price": 115, "stock": 0, "required_level": 8, "desc": "Converte promessas vagas em dívidas muito concretas."}
+	{"name": "Poção de Dano Emocional", "cost": 8, "price": 15, "stock": 1, "ingredients": {"essencia": 1}, "desc": "Lembra você daquela mensagem que mandou em 2018."},
+	{"name": "Pato Amaldiçoado Premium", "cost": 10, "price": 24, "stock": 1, "ingredients": {"pena": 1}, "desc": "Ele não faz nada. Mas julga suas decisões."},
+	{"name": "Lágrimas de Jogador Derrotado", "cost": 12, "price": 30, "stock": 1, "ingredients": {"sal": 1}, "desc": "Ingrediente raro. Salgado. Muito salgado."},
+	{"name": "Caixa Misteriosa Vazia", "cost": 5, "price": 12, "stock": 1, "ingredients": {"vazio": 1}, "desc": "A surpresa é perceber que você pagou por uma caixa."},
+	{"name": "Poção de Confiança Instantânea", "cost": 9, "price": 22, "stock": 1, "ingredients": {"essencia": 1, "tinta": 1}, "desc": "Funciona até alguém pedir para você explicar."},
+	{"name": "Elixir de Memória de Peixe", "cost": 18, "price": 48, "stock": 0, "required_level": 3, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Você esquece por que comprou. E compra de novo."},
+	{"name": "Incenso de Teletransporte Barato", "cost": 26, "price": 68, "stock": 0, "required_level": 5, "ingredients": {"po_lunar": 1, "tinta": 1}, "desc": "Leva você a três metros dali. Às vezes quatro."},
+	{"name": "Cristal de Crédito Cósmico", "cost": 42, "price": 115, "stock": 0, "required_level": 8, "ingredients": {"vazio": 1, "tinta": 2}, "desc": "Converte promessas vagas em dívidas muito concretas."},
+	{"name": "Pergaminho de Procrastinação Certificada", "cost": 55, "price": 150, "stock": 0, "required_level": 10, "ingredients": {"tinta": 2, "essencia": 1}, "desc": "Adia tarefas importantes com selo ISO de preguiça."},
+	{"name": "Frasco de Motivação de Segunda-feira", "cost": 70, "price": 195, "stock": 0, "required_level": 12, "ingredients": {"po_lunar": 2, "sal": 1}, "desc": "Efeito dura até o primeiro e-mail."}
 ]
 
 var gold_label: Label
@@ -198,6 +209,9 @@ func _build_ui() -> void:
 	charm_button = Button.new()
 	charm_button.pressed.connect(_buy_talent.bind("charm"))
 	talent_row.add_child(charm_button)
+	logistics_button = Button.new()
+	logistics_button.pressed.connect(_buy_talent.bind("logistics"))
+	talent_row.add_child(logistics_button)
 
 	var intro := Label.new()
 	intro.text = "A dona da loja está convencida de que qualquer porcaria pode virar um produto premium."
@@ -286,6 +300,65 @@ func _build_ui() -> void:
 		craft.pressed.connect(_craft_product.bind(i))
 		row.add_child(craft)
 		craft_buttons.append(craft)
+
+	var market_title := Label.new()
+	market_title.text = "MERCADO DE INGREDIENTES"
+	market_title.add_theme_font_size_override("font_size", 20)
+	market_title.add_theme_color_override("font_color", Color(0.78, 0.95, 1.0))
+	products_box.add_child(market_title)
+
+	var market_hint := Label.new()
+	market_hint.text = "Os preços mudam a cada dia. Compre barato, fabrique caro."
+	market_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	market_hint.add_theme_font_size_override("font_size", 13)
+	market_hint.add_theme_color_override("font_color", Color(0.75, 0.71, 0.81))
+	products_box.add_child(market_hint)
+
+	for ingredient in Ingredients.DATA:
+		var ingredient_id := str(ingredient["id"])
+		var market_card := PanelContainer.new()
+		var market_style := StyleBoxFlat.new()
+		market_style.bg_color = Color(0.045, 0.07, 0.11, 0.94)
+		market_style.border_color = Color(0.28, 0.48, 0.62, 0.95)
+		market_style.set_border_width_all(1)
+		market_style.set_corner_radius_all(10)
+		market_style.shadow_color = Color(0.005, 0.015, 0.03, 0.65)
+		market_style.shadow_size = 4
+		market_style.shadow_offset = Vector2(0, 2)
+		market_style.content_margin_left = 14
+		market_style.content_margin_right = 14
+		market_style.content_margin_top = 8
+		market_style.content_margin_bottom = 8
+		market_card.add_theme_stylebox_override("panel", market_style)
+		products_box.add_child(market_card)
+
+		var market_row := HBoxContainer.new()
+		market_row.add_theme_constant_override("separation", 12)
+		market_card.add_child(market_row)
+
+		var market_info := VBoxContainer.new()
+		market_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		market_row.add_child(market_info)
+
+		var ingredient_label := Label.new()
+		ingredient_label.add_theme_font_size_override("font_size", 15)
+		ingredient_label.add_theme_color_override("font_color", Color(0.85, 0.97, 1.0))
+		market_info.add_child(ingredient_label)
+		ingredient_labels.append(ingredient_label)
+
+		var ingredient_desc := Label.new()
+		ingredient_desc.text = str(ingredient["desc"])
+		ingredient_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ingredient_desc.add_theme_font_size_override("font_size", 12)
+		ingredient_desc.add_theme_color_override("font_color", Color(0.70, 0.76, 0.82))
+		market_info.add_child(ingredient_desc)
+
+		var buy := Button.new()
+		buy.custom_minimum_size = Vector2(150, 40)
+		buy.add_theme_font_size_override("font_size", 14)
+		buy.pressed.connect(_buy_ingredient.bind(ingredient_id))
+		market_row.add_child(buy)
+		ingredient_buttons.append(buy)
 
 	var right_scroll := ScrollContainer.new()
 	right_scroll.custom_minimum_size.x = 300
@@ -475,14 +548,65 @@ func _craft_product(index: int) -> void:
 		last_event = "A caixa registradora está tão vazia que até o eco pediu demissão. Falta ouro."
 		_refresh_ui()
 		return
+	var missing := _missing_ingredients(item)
+	if not missing.is_empty():
+		last_event = "Faltam ingredientes para %s: %s. Compre no mercado enquanto o preço está bom." % [item["name"], ", ".join(missing)]
+		_refresh_ui()
+		return
 	gold -= cost
+	_consume_ingredients(item)
 	item["stock"] = int(item["stock"]) + 1
 	daily_crafts += 1
 	_add_xp(5)
 	_progress_daily_quest("craft", 1)
-	last_event = "Produzido: %s. A qualidade foi inspecionada por alguém que não entende do assunto." % item["name"]
+	var premium_chance := 8 + 4 * alchemy_rank
+	if randi() % 100 < premium_chance:
+		var product_name := str(item["name"])
+		premium_stock[product_name] = int(premium_stock.get(product_name, 0)) + 1
+		premium_crafted += 1
+		last_event = "OBRA-PRIMA! %s saiu impecável e vale 50%% a mais. A chefe finge que foi de propósito." % product_name
+	else:
+		last_event = "Produzido: %s. A qualidade foi inspecionada por alguém que não entende do assunto." % item["name"]
 	_save_game()
 	_refresh_ui()
+
+func _missing_ingredients(item: Dictionary) -> Array[String]:
+	var missing: Array[String] = []
+	var recipe: Dictionary = item.get("ingredients", {})
+	for ingredient_id in recipe.keys():
+		var needed := int(recipe[ingredient_id])
+		var held := int(ingredient_stock.get(ingredient_id, 0))
+		if held < needed:
+			var ingredient_name := str(Ingredients.find(str(ingredient_id)).get("name", ingredient_id))
+			missing.append("%s (%d/%d)" % [ingredient_name, held, needed])
+	return missing
+
+func _consume_ingredients(item: Dictionary) -> void:
+	var recipe: Dictionary = item.get("ingredients", {})
+	for ingredient_id in recipe.keys():
+		ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) - int(recipe[ingredient_id])
+
+func _ingredient_price(ingredient_id: String) -> int:
+	var base := Ingredients.price_for_day(ingredient_id, shop_day)
+	return maxi(1, int(round(float(base) * (1.0 - 0.05 * logistics_rank))))
+
+func _buy_ingredient(ingredient_id: String) -> void:
+	var price := _ingredient_price(ingredient_id)
+	if gold < price:
+		last_event = "O fornecedor riu da sua oferta. Falta ouro para %s." % str(Ingredients.find(ingredient_id).get("name", ingredient_id))
+		_refresh_ui()
+		return
+	gold -= price
+	ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) + 1
+	total_ingredients_bought += 1
+	last_event = "Comprado: %s por %d ouro. O fornecedor jurou que era o preço de amigo." % [str(Ingredients.find(ingredient_id).get("name", ingredient_id)), price]
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Produto em alta no dia: vende por 30% a mais. Determinístico por dia.
+func _demand_index() -> int:
+	return posmod(abs(hash("demanda:%d" % shop_day)), products.size())
 
 func _buy_advertising() -> void:
 	var cost := 75 + ad_level * 60
@@ -600,6 +724,16 @@ func _on_customer_tick() -> void:
 				profile["name"], item["name"], profile["line"]
 			]
 		var sale_price: int = int(round(float(item["price"]) * price_multiplier)) + preference_bonus
+		if chosen_index == _demand_index():
+			var demand_bonus := int(round(float(item["price"]) * 0.30))
+			sale_price += demand_bonus
+			last_event += "\nProduto em alta hoje: +%d ouro." % demand_bonus
+		var premium_count := int(premium_stock.get(str(item["name"]), 0))
+		if premium_count > 0:
+			var premium_bonus := int(round(float(item["price"]) * 0.50))
+			sale_price += premium_bonus
+			premium_stock[str(item["name"])] = premium_count - 1
+			last_event += "\nVenda de obra-prima: +%d ouro." % premium_bonus
 		var faction_id := str(profile.get("faction", ""))
 		var faction_bonus := 0
 		if not faction_id.is_empty():
@@ -854,7 +988,7 @@ func _refresh_ui() -> void:
 	if is_instance_valid(progression_label):
 		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Pontos de talento: %d  •  Dia %d" % [player_level, player_xp, _xp_required(), skill_points, shop_day]
 	if is_instance_valid(talent_label):
-		talent_label.text = "TALENTOS • Alquimia %d/5 | Comércio %d/5 | Carisma %d/5" % [alchemy_rank, trade_rank, charm_rank]
+		talent_label.text = "TALENTOS • Alquimia %d/5 | Comércio %d/5 | Carisma %d/5 | Logística %d/5" % [alchemy_rank, trade_rank, charm_rank, logistics_rank]
 	for talent_button in [alchemy_button, trade_button, charm_button]:
 		if is_instance_valid(talent_button):
 			talent_button.disabled = skill_points <= 0
@@ -867,6 +1001,17 @@ func _refresh_ui() -> void:
 	if is_instance_valid(charm_button):
 		charm_button.text = "Carisma %d/5" % charm_rank
 		charm_button.disabled = skill_points <= 0 or charm_rank >= 5
+	if is_instance_valid(logistics_button):
+		logistics_button.text = "Logística %d/5" % logistics_rank
+		logistics_button.disabled = skill_points <= 0 or logistics_rank >= 5
+	for i in range(Ingredients.DATA.size()):
+		var ingredient: Dictionary = Ingredients.DATA[i]
+		var ingredient_id := str(ingredient["id"])
+		var held := int(ingredient_stock.get(ingredient_id, 0))
+		var price := _ingredient_price(ingredient_id)
+		ingredient_labels[i].text = "%s | Estoque: %d | Preço: %d ouro" % [ingredient["name"], held, price]
+		ingredient_buttons[i].text = "Comprar (%d)" % price
+		ingredient_buttons[i].disabled = gold < price
 	if is_instance_valid(quest_label):
 		var quest := _get_daily_quest()
 		var target: int = int(quest["target"])
@@ -882,7 +1027,9 @@ func _refresh_ui() -> void:
 		var item: Dictionary = products[i]
 		var unlocked := _is_product_unlocked(item)
 		var required_level: int = int(item.get("required_level", 1))
-		product_labels[i].text = "%s%s  |  Estoque: %d  |  Venda: %d ouro" % ["" if unlocked else "🔒 ", item["name"], item["stock"], item["price"]] if unlocked else "%s  |  Desbloqueia no nível %d" % [item["name"], required_level]
+		var premium_count := int(premium_stock.get(str(item["name"]), 0))
+		var demand_marker := "  ✦ EM ALTA" if i == _demand_index() else ""
+		product_labels[i].text = "%s%s  |  Estoque: %d (+%d premium)  |  Venda: %d ouro%s" % ["" if unlocked else "🔒 ", item["name"], item["stock"], premium_count, item["price"], demand_marker] if unlocked else "%s  |  Desbloqueia no nível %d" % [item["name"], required_level]
 		craft_buttons[i].text = "Fabricar (%d)" % maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank)))) if unlocked else "Receita bloqueada"
 		craft_buttons[i].disabled = not unlocked or gold < maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
 	var ad_cost := 75 + ad_level * 60
@@ -927,6 +1074,11 @@ func _save_game() -> void:
 	config.set_value("game", "alchemy_rank", alchemy_rank)
 	config.set_value("game", "trade_rank", trade_rank)
 	config.set_value("game", "charm_rank", charm_rank)
+	config.set_value("game", "logistics_rank", logistics_rank)
+	config.set_value("game", "ingredient_stock", ingredient_stock)
+	config.set_value("game", "premium_stock", premium_stock)
+	config.set_value("game", "total_ingredients_bought", total_ingredients_bought)
+	config.set_value("game", "premium_crafted", premium_crafted)
 	config.set_value("game", "happy_customers", happy_customers)
 	config.set_value("game", "disappointed_customers", disappointed_customers)
 	config.set_value("game", "products", products)
@@ -974,6 +1126,15 @@ func _load_game() -> void:
 	alchemy_rank = int(config.get_value("game", "alchemy_rank", alchemy_rank))
 	trade_rank = int(config.get_value("game", "trade_rank", trade_rank))
 	charm_rank = int(config.get_value("game", "charm_rank", charm_rank))
+	logistics_rank = int(config.get_value("game", "logistics_rank", logistics_rank))
+	var saved_ingredients = config.get_value("game", "ingredient_stock", ingredient_stock)
+	if saved_ingredients is Dictionary:
+		ingredient_stock = saved_ingredients.duplicate(true)
+	var saved_premium = config.get_value("game", "premium_stock", {})
+	if saved_premium is Dictionary:
+		premium_stock = saved_premium.duplicate(true)
+	total_ingredients_bought = int(config.get_value("game", "total_ingredients_bought", total_ingredients_bought))
+	premium_crafted = int(config.get_value("game", "premium_crafted", premium_crafted))
 	happy_customers = int(config.get_value("game", "happy_customers", happy_customers))
 	disappointed_customers = int(config.get_value("game", "disappointed_customers", disappointed_customers))
 	var saved_achievements = config.get_value("game", "unlocked_achievements", [])
@@ -1026,7 +1187,12 @@ func _buy_talent(kind: String) -> void:
 				return
 			charm_rank += 1
 			last_event = "Talento Carisma melhorado! Cada venda aumenta mais sua afinidade com a chefe."
-			
+		"logistics":
+			if logistics_rank >= 5:
+				return
+			logistics_rank += 1
+			last_event = "Talento Logística melhorado! Ingredientes ficam 5% mais baratos por nível."
+
 	skill_points -= 1
 	_save_game()
 	_refresh_ui()
