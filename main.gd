@@ -567,6 +567,7 @@ func _craft_product(index: int) -> void:
 		last_event = "OBRA-PRIMA! %s saiu impecável e vale 50%% a mais. A chefe finge que foi de propósito." % product_name
 	else:
 		last_event = "Produzido: %s. A qualidade foi inspecionada por alguém que não entende do assunto." % item["name"]
+	_check_achievements()
 	_save_game()
 	_refresh_ui()
 
@@ -1030,8 +1031,12 @@ func _refresh_ui() -> void:
 		var premium_count := int(premium_stock.get(str(item["name"]), 0))
 		var demand_marker := "  ✦ EM ALTA" if i == _demand_index() else ""
 		product_labels[i].text = "%s%s  |  Estoque: %d (+%d premium)  |  Venda: %d ouro%s" % ["" if unlocked else "🔒 ", item["name"], item["stock"], premium_count, item["price"], demand_marker] if unlocked else "%s  |  Desbloqueia no nível %d" % [item["name"], required_level]
-		craft_buttons[i].text = "Fabricar (%d)" % maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank)))) if unlocked else "Receita bloqueada"
-		craft_buttons[i].disabled = not unlocked or gold < maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
+		var craft_cost := maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
+		var missing_ingredients: Array[String] = []
+		if unlocked:
+			missing_ingredients = _missing_ingredients(item)
+		craft_buttons[i].text = "Fabricar (%d)" % craft_cost if unlocked and missing_ingredients.is_empty() else "Faltam ingredientes" if unlocked else "Receita bloqueada"
+		craft_buttons[i].disabled = not unlocked or gold < craft_cost or not missing_ingredients.is_empty()
 	var ad_cost := 75 + ad_level * 60
 	upgrade_button.text = "Propaganda infernal • %d ouro (nível %d)" % [ad_cost, ad_level]
 	upgrade_button.disabled = gold < ad_cost
@@ -1261,7 +1266,9 @@ func _check_achievements() -> void:
 		{"id": "marketing_3", "name": "Propaganda em todo plano astral (nível 3)", "condition": ad_level >= 3, "gold": 30, "rep": 2},
 		{"id": "delighted_10", "name": "Coração conquistado (10 clientes encantados)", "condition": happy_customers >= 10, "gold": 40, "rep": 3},
 		{"id": "faction_noted", "name": "Diplomacia do balcão (facção Notada)", "condition": _max_faction_tier() >= 1, "gold": 35, "rep": 2},
-		{"id": "faction_respected", "name": "Embaixadora infernal (facção Respeitada)", "condition": _max_faction_tier() >= 2, "gold": 60, "rep": 4}
+		{"id": "faction_respected", "name": "Embaixadora infernal (facção Respeitada)", "condition": _max_faction_tier() >= 2, "gold": 60, "rep": 4},
+		{"id": "ingredient_buyer", "name": "Fornecedor VIP (10 ingredientes comprados)", "condition": total_ingredients_bought >= 10, "gold": 25, "rep": 1},
+		{"id": "premium_artisan", "name": "Mão de Midas (3 produtos premium)", "condition": premium_crafted >= 3, "gold": 45, "rep": 2}
 	]
 	for achievement in definitions:
 		var achievement_id: String = str(achievement["id"])
@@ -1284,7 +1291,9 @@ func _get_achievement_summary() -> String:
 		"marketing_3": "Propaganda astral",
 		"delighted_10": "Coração conquistado",
 		"faction_noted": "Diplomacia do balcão",
-		"faction_respected": "Embaixadora infernal"
+		"faction_respected": "Embaixadora infernal",
+		"ingredient_buyer": "Fornecedor VIP",
+		"premium_artisan": "Mão de Midas"
 	}
 	var lines: Array[String] = ["CONQUISTAS: %d/%d" % [unlocked_achievements.size(), names.size()]]
 	for achievement_id in names.keys():
