@@ -41,6 +41,11 @@ var speed_label: Label
 var speed_button: Button
 var forge_status_label: Label
 var craft_jobs: Array[Dictionary] = []
+var library_upgrade_level: int = 0
+var sanctum_upgrade_level: int = 0
+var library_upgrade_button: Button
+var sanctum_upgrade_button: Button
+var queue_distractions: int = 0
 var ingredient_stock: Dictionary = {"essencia": 1, "pena": 1, "sal": 1, "vazio": 1, "po_lunar": 1, "tinta": 1}
 var premium_stock: Dictionary = {}
 var total_ingredients_bought: int = 0
@@ -222,24 +227,28 @@ func _build_ui() -> void:
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.clip_contents = true
 	margin.theme = _build_visual_theme()
-	margin.add_theme_constant_override("margin_left", 28)
-	margin.add_theme_constant_override("margin_right", 28)
-	margin.add_theme_constant_override("margin_top", 22)
-	margin.add_theme_constant_override("margin_bottom", 22)
+	margin.add_theme_constant_override("margin_left", 16)
+	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_bottom", 14)
 	add_child(margin)
 
 	var root := VBoxContainer.new()
+	root.clip_contents = true
 	root.add_theme_constant_override("separation", 12)
 	margin.add_child(root)
 
-	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 18)
+	var header := FlowContainer.new()
+	header.add_theme_constant_override("h_separation", 8)
+	header.add_theme_constant_override("v_separation", 6)
+	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.add_child(header)
 
 	var title := Label.new()
 	title.text = "SUCCUBUS SHOP"
-	title.add_theme_font_size_override("font_size", 34)
+	title.add_theme_font_size_override("font_size", 28)
 	title.add_theme_color_override("font_color", Color(1.0, 0.67, 0.88))
 	header.add_child(title)
 
@@ -351,6 +360,7 @@ func _build_ui() -> void:
 
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.clip_contents = true
 	body.add_theme_constant_override("separation", 22)
 	root.add_child(body)
 
@@ -380,6 +390,15 @@ func _build_ui() -> void:
 	product_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	product_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	left.add_child(product_scroll)
+
+	library_upgrade_button = Button.new()
+	library_upgrade_button.custom_minimum_size = Vector2(220, 36)
+	library_upgrade_button.pressed.connect(_buy_sector_upgrade.bind("library"))
+	left.add_child(library_upgrade_button)
+	sanctum_upgrade_button = Button.new()
+	sanctum_upgrade_button.custom_minimum_size = Vector2(220, 36)
+	sanctum_upgrade_button.pressed.connect(_buy_sector_upgrade.bind("sanctum"))
+	left.add_child(sanctum_upgrade_button)
 
 	products_box = VBoxContainer.new()
 	products_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -519,9 +538,11 @@ func _build_ui() -> void:
 	right_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	right_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right_scroll.clip_contents = true
 	body.add_child(right_scroll)
 
 	var right_panel := PanelContainer.new()
+	right_panel.clip_contents = true
 	var right_panel_style := StyleBoxFlat.new()
 	right_panel_style.bg_color = Color(0.025, 0.018, 0.055, 0.90)
 	right_panel_style.border_color = Color(0.43, 0.25, 0.68, 0.95)
@@ -741,6 +762,30 @@ func _toggle_market_panel() -> void:
 	_play_feedback_tone(520.0 if market_panel.visible else 360.0, 0.08, 0.1)
 	_show_feedback("Mercado expandido." if market_panel.visible else "Recepção em foco.", Color(0.78, 0.95, 1.0))
 
+func _buy_sector_upgrade(sector: String) -> void:
+	var current_level := library_upgrade_level if sector == "library" else sanctum_upgrade_level
+	var cost := 90 + current_level * 120
+	if current_level >= 5:
+		last_event = "Este setor já alcançou o nível máximo. Até a arquitetura pediu férias."
+		_refresh_ui()
+		return
+	if gold < cost:
+		last_event = "O upgrade custa %d ouro. A succubus sugere um sorriso, mas o ferreiro exige moedas." % cost
+		_refresh_ui()
+		return
+	gold -= cost
+	if sector == "library":
+		library_upgrade_level += 1
+		last_event = "Biblioteca Arcana melhorada para o nível %d: grimórios aceleram XP e eventos raros." % library_upgrade_level
+	else:
+		sanctum_upgrade_level += 1
+		last_event = "Santuário melhorado para o nível %d: relíquias amplificam o charme da succubus." % sanctum_upgrade_level
+	reputation += 1
+	_add_xp(8)
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
 func _set_sector(sector: String) -> void:
 	current_sector = sector
 	var is_forge := sector == "forge"
@@ -892,7 +937,7 @@ func _craft_product(index: int) -> void:
 		return
 	gold -= cost
 	_consume_ingredients(item)
-	var duration := 6.0 + float(index) * 1.4 - float(alchemy_rank) * 0.7
+	var duration := 6.0 + float(index) * 1.4 - float(alchemy_rank) * 0.7 - float(library_upgrade_level) * 0.45
 	craft_jobs.append({"index": index, "remaining": maxf(3.0, duration)})
 	last_event = "Forja iniciada: %s levará %.1fs de tempo de mundo." % [item["name"], maxf(3.0, duration)]
 	_play_feedback_tone(420.0, 0.12, 0.14)
@@ -1028,7 +1073,7 @@ func _on_customer_tick() -> void:
 		last_event = "Seu diabrete fabricou uma poção. Ele perguntou se isso conta como experiência profissional."
 
 	# Eventos raros podem acontecer mesmo quando a loja está sem estoque.
-	if randi() % 100 < 7:
+	if randi() % 100 < 7 + library_upgrade_level * 2:
 		_trigger_random_event()
 		_add_xp(20)
 		_progress_daily_quest("rare", 1)
@@ -1094,7 +1139,7 @@ func _on_customer_tick() -> void:
 			if int(products[affordable_index]["price"]) <= current_customer_budget:
 				affordable.append(affordable_index)
 		if affordable.is_empty():
-			var charm_negotiation := adult_content_enabled and charm_rank > 0 and randi() % 100 < 25 + charm_rank * 12
+			var charm_negotiation := adult_content_enabled and charm_rank > 0 and randi() % 100 < 25 + charm_rank * 12 + sanctum_upgrade_level * 5
 			if charm_negotiation and available.size() > 0:
 				seduction_used = true
 				seduction_attempts += 1
@@ -1121,11 +1166,11 @@ func _on_customer_tick() -> void:
 		var chosen_index: int = affordable[randi() % affordable.size()] if not affordable.is_empty() else available[randi() % available.size()]
 		if preferred_index >= 0 and available.has(preferred_index) and randi() % 100 < 70:
 			chosen_index = preferred_index
-		if not seduction_used and adult_content_enabled and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 and (preferred_index == chosen_index or current_customer_patience <= 1):
+			if not seduction_used and adult_content_enabled and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 + sanctum_upgrade_level * 3 and (preferred_index == chosen_index or current_customer_patience <= 1):
 				seduction_used = true
 				seduction_attempts += 1
 				seduction_successes += 1
-				affection = mini(100, affection + 1 + charm_rank)
+				affection = mini(100, affection + 1 + charm_rank + sanctum_upgrade_level)
 				reputation += _reputation_seduction_bonus()
 
 		var item: Dictionary = products[chosen_index]
@@ -1222,7 +1267,7 @@ func _on_customer_tick() -> void:
 		_add_xp(12)
 		_progress_daily_quest("customers", 1)
 		_progress_daily_quest("gold", sale_price)
-		affection = mini(100, affection + 1 + charm_rank)
+		affection = mini(100, affection + 1 + charm_rank + sanctum_upgrade_level)
 		status_label.text = "CLIENTE: %s" % profile["name"]
 		_set_seller_mood("happy")
 		_react_to_visit("delighted" if preferred_index == chosen_index else "content", seduction_used)
@@ -1271,17 +1316,37 @@ func _trigger_random_event() -> void:
 			"message": "Um cliente paga por um pote de moedas de chocolate e insiste que são um investimento. Você consegue vender o pote de novo.",
 			"gold": 12, "reputation": 1
 		},
-		{
-			"name": "Placa Antialgoritmo",
-			"message": "Você instala uma placa escrito “Não alimente o algoritmo”. A loja vira tendência justamente por causa da placa.",
-			"gold": 22, "reputation": 1
-		}
+			{
+				"name": "Placa Antialgoritmo",
+				"message": "Você instala uma placa escrito “Não alimente o algoritmo”. A loja vira tendência justamente por causa da placa.",
+				"gold": 22, "reputation": 1
+			},
+			{
+				"name": "Fila Encantada",
+				"message": "A succubus se apoia no balcão e sussurra um elogio indecente. Os aventureiros esquecem por alguns segundos que estavam com pressa.",
+				"gold": 12, "reputation": 2, "queue_distraction": true
+			},
+			{
+				"name": "Negociação com Olhar Demorado",
+				"message": "Ela promete um desconto para quem conseguir manter a compostura. Ninguém consegue, mas todos permanecem na fila.",
+				"gold": 18, "reputation": 3, "queue_distraction": true
+			}
 	]
 	var event: Dictionary = events[randi() % events.size()]
 	gold = maxi(0, gold + int(event["gold"]))
 	reputation = maxi(0, reputation + int(event["reputation"]))
 	rare_events_found += 1
 	last_event = "EVENTO: %s! %s" % [event["name"], event["message"]]
+	if bool(event.get("queue_distraction", false)):
+		queue_distractions += 1
+		current_customer_patience += 1 + sanctum_upgrade_level
+		seduction_attempts += 1
+		seduction_successes += 1
+		affection = mini(100, affection + 2 + sanctum_upgrade_level)
+		if is_instance_valid(customer_emotion_label):
+			customer_emotion_label.text = "💘 distraído"
+		status_label.text = "CLIENTE: distraído pelo charme"
+		_play_sensual_reception_moment()
 	_play_feedback_tone(280.0, 0.2, 0.18)
 	_show_feedback("Evento raro!", Color(1.0, 0.86, 0.45))
 	if adult_content_enabled and affection >= 5 and randi() % 2 == 0:
@@ -1456,6 +1521,14 @@ func _refresh_ui() -> void:
 				var queued_item: Dictionary = products[int(job.get("index", 0))]
 				queue_text.append("%s %.1fs" % [queued_item["name"], maxf(0.0, float(job.get("remaining", 0.0)))])
 			forge_status_label.text = "Forja: " + " | ".join(queue_text)
+	if is_instance_valid(library_upgrade_button):
+		var library_cost := 90 + library_upgrade_level * 120
+		library_upgrade_button.text = "Biblioteca Nv.%d • Upgrade %d ouro" % [library_upgrade_level, library_cost] if library_upgrade_level < 5 else "Biblioteca Nv.5 • Máximo"
+		library_upgrade_button.disabled = library_upgrade_level >= 5 or gold < library_cost
+	if is_instance_valid(sanctum_upgrade_button):
+		var sanctum_cost := 90 + sanctum_upgrade_level * 120
+		sanctum_upgrade_button.text = "Santuário Nv.%d • Upgrade %d ouro" % [sanctum_upgrade_level, sanctum_cost] if sanctum_upgrade_level < 5 else "Santuário Nv.5 • Máximo"
+		sanctum_upgrade_button.disabled = sanctum_upgrade_level >= 5 or gold < sanctum_cost
 	event_label.text = last_event
 	if is_instance_valid(regulars_label):
 		var regular_lines: Array[String] = ["FREGUESES RECORRENTES"]
@@ -1595,6 +1668,9 @@ func _save_game() -> void:
 	config.set_value("game", "seduction_attempts", seduction_attempts)
 	config.set_value("game", "seduction_successes", seduction_successes)
 	config.set_value("game", "world_speed_index", world_speed_index)
+	config.set_value("game", "library_upgrade_level", library_upgrade_level)
+	config.set_value("game", "sanctum_upgrade_level", sanctum_upgrade_level)
+	config.set_value("game", "queue_distractions", queue_distractions)
 	config.set_value("game", "products", products)
 	config.save(SAVE_PATH)
 
@@ -1654,6 +1730,9 @@ func _load_game() -> void:
 	seduction_attempts = int(config.get_value("game", "seduction_attempts", seduction_attempts))
 	seduction_successes = int(config.get_value("game", "seduction_successes", seduction_successes))
 	world_speed_index = clampi(int(config.get_value("game", "world_speed_index", world_speed_index)), 0, world_speed_options.size() - 1)
+	library_upgrade_level = clampi(int(config.get_value("game", "library_upgrade_level", library_upgrade_level)), 0, 5)
+	sanctum_upgrade_level = clampi(int(config.get_value("game", "sanctum_upgrade_level", sanctum_upgrade_level)), 0, 5)
+	queue_distractions = int(config.get_value("game", "queue_distractions", queue_distractions))
 	var saved_achievements = config.get_value("game", "unlocked_achievements", [])
 	if saved_achievements is Array:
 		unlocked_achievements.clear()
@@ -1780,7 +1859,11 @@ func _check_achievements() -> void:
 		{"id": "faction_noted", "name": "Diplomacia do balcão (facção Notada)", "condition": _max_faction_tier() >= 1, "gold": 35, "rep": 2},
 		{"id": "faction_respected", "name": "Embaixadora infernal (facção Respeitada)", "condition": _max_faction_tier() >= 2, "gold": 60, "rep": 4},
 		{"id": "ingredient_buyer", "name": "Fornecedor VIP (10 ingredientes comprados)", "condition": total_ingredients_bought >= 10, "gold": 25, "rep": 1},
-		{"id": "premium_artisan", "name": "Mão de Midas (3 produtos premium)", "condition": premium_crafted >= 3, "gold": 45, "rep": 2}
+		{"id": "premium_artisan", "name": "Mão de Midas (3 produtos premium)", "condition": premium_crafted >= 3, "gold": 45, "rep": 2},
+		{"id": "library_master", "name": "Bibliotecária do Submundo (Biblioteca Nv.3)", "condition": library_upgrade_level >= 3, "gold": 80, "rep": 4, "pose": "book"},
+		{"id": "sanctum_keeper", "name": "Guardiã das Relíquias (Santuário Nv.3)", "condition": sanctum_upgrade_level >= 3, "gold": 90, "rep": 5, "pose": "relic"},
+		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
+		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"}
 	]
 	for achievement in definitions:
 		var achievement_id: String = str(achievement["id"])
@@ -1791,7 +1874,36 @@ func _check_achievements() -> void:
 			last_event = "CONQUISTA DESBLOQUEADA: %s! Recompensa: %d ouro e %d reputação." % [
 				achievement["name"], achievement["gold"], achievement["rep"]
 			]
+			if achievement.has("pose"):
+				_play_achievement_pose(str(achievement["pose"]))
 
+func _play_achievement_pose(pose: String) -> void:
+	if not adult_content_enabled or not is_instance_valid(seller_portrait):
+		return
+	if sensual_tween != null and sensual_tween.is_valid():
+		sensual_tween.kill()
+	seller_portrait.pivot_offset = seller_portrait.size / 2.0
+	sensual_tween = create_tween()
+	var target_scale := Vector2(1.10, 1.10)
+	var target_rotation := 0.0
+	match pose:
+		"book":
+			target_rotation = -0.05
+		"relic":
+			target_scale = Vector2(1.16, 1.16)
+		"queue":
+			target_rotation = 0.06
+		"speed":
+			target_scale = Vector2(1.08, 1.08)
+			target_rotation = -0.08
+	sensual_tween.tween_property(seller_portrait, "scale", target_scale, 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	sensual_tween.tween_property(seller_portrait, "rotation", target_rotation, 0.22)
+	sensual_tween.tween_property(seller_portrait, "modulate", Color(1.0, 0.72, 0.92, 1.0), 0.24)
+	sensual_tween.tween_interval(0.8)
+	sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.28)
+	sensual_tween.tween_property(seller_portrait, "rotation", 0.0, 0.18)
+	sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.24)
+	_show_feedback("✦ Pose de conquista desbloqueada!", Color(1.0, 0.70, 0.88))
 
 func _get_achievement_summary() -> String:
 	var names := {
@@ -1804,8 +1916,12 @@ func _get_achievement_summary() -> String:
 		"delighted_10": "Coração conquistado",
 		"faction_noted": "Diplomacia do balcão",
 		"faction_respected": "Embaixadora infernal",
-		"ingredient_buyer": "Fornecedor VIP",
-		"premium_artisan": "Mão de Midas"
+			"ingredient_buyer": "Fornecedor VIP",
+			"premium_artisan": "Mão de Midas",
+			"library_master": "Bibliotecária do Submundo",
+			"sanctum_keeper": "Guardiã das Relíquias",
+			"queue_charmer": "Ninguém sai da fila",
+			"speed_demon": "Cinco vezes mais charmosa"
 	}
 	var lines: Array[String] = ["CONQUISTAS: %d/%d" % [unlocked_achievements.size(), names.size()]]
 	for achievement_id in names.keys():
