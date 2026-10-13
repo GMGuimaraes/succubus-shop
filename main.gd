@@ -92,8 +92,8 @@ var customer_portrait: TextureRect
 var feedback_audio_player: AudioStreamPlayer
 var toast_label: Label
 var toast_tween: Tween
-var customer_portrait_paths: Array[String] = ["res://assets/customer_adventurer.svg", "res://assets/customer_mage.svg", "res://assets/customer_goth.svg"]
-var seller_portrait_paths: Dictionary = {"happy": "res://assets/seller_happy.svg", "neutral": "res://assets/seller_neutral.svg", "surprised": "res://assets/seller_surprised.svg"}
+var customer_portrait_paths: Array[String] = ["res://assets/customer_adventurer.png", "res://assets/customer_mage.png", "res://assets/customer_goth.png"]
+var seller_portrait_paths: Dictionary = {"happy": "res://assets/seller_happy.png", "neutral": "res://assets/seller_neutral.png", "surprised": "res://assets/seller_surprised.png"}
 
 const SELLER_DELIGHTED_LINES := [
 	"A súcubo pisca para o cliente: “Gosto de quem tem bom gosto. Volte sempre, herói.”",
@@ -143,7 +143,7 @@ func _start_ambient_animations() -> void:
 
 func _build_ui() -> void:
 	var bg := TextureRect.new()
-	bg.texture = load("res://assets/shop_scene.svg")
+	bg.texture = load("res://assets/shop_scene.png")
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_SCALE
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
