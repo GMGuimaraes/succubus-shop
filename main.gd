@@ -91,6 +91,9 @@ var seller_speech_label: Label
 var customer_tween: Tween
 var happy_customers: int = 0
 var disappointed_customers: int = 0
+var seduction_attempts: int = 0
+var seduction_successes: int = 0
+var current_negotiation_dialogue: String = ""
 var customer_portrait: TextureRect
 var customer_emotion_label: Label
 var background_layer: TextureRect
@@ -102,6 +105,7 @@ var current_sector: String = "reception"
 var current_customer_budget: int = 0
 var current_customer_patience: int = 0
 var ambient_particles: CPUParticles2D
+var music_player: AudioStreamPlayer
 var feedback_audio_player: AudioStreamPlayer
 var toast_label: Label
 var toast_tween: Tween
@@ -131,11 +135,18 @@ const SELLER_CHARMED_LINES := [
 	"A súcubo se inclina no balcão e sussurra algo. O cliente sai sorrindo, jurando que volta.",
 	"Ela gira uma mecha de cabelo: “Sem estoque? Deixa comigo.” O cliente sai prometendo voltar."
 ]
+const SUCCUBUS_NEGOTIATION_LINES := [
+	"A succubus inclina o rosto: “Você pode pagar depois... mas vai ter que voltar para me agradecer.”",
+	"Ela apoia o cotovelo no balcão: “Para um aventureiro tão interessante, eu sempre encontro um desconto.”",
+	"A chefe pisca: “Não é magia. É só você querendo muito me impressionar.”",
+	"Ela desliza o item pelo balcão: “Leve. O preço é pequeno perto da história que você vai contar.”"
+]
 
 func _ready() -> void:
 	_load_game()
 	_build_ui()
 	_setup_feedback_audio()
+	_setup_background_music()
 	_refresh_ui()
 	_start_ambient_animations()
 	var timer := Timer.new()
@@ -721,6 +732,20 @@ func _setup_feedback_audio() -> void:
 	feedback_audio_player.volume_db = -8.0
 	add_child(feedback_audio_player)
 
+func _setup_background_music() -> void:
+	var music_path := "res://assets/shop_theme_loop.mp3"
+	if not ResourceLoader.exists(music_path):
+		return
+	music_player = AudioStreamPlayer.new()
+	var music_stream := load(music_path) as AudioStreamMP3
+	if music_stream == null:
+		return
+	music_stream.loop = true
+	music_player.stream = music_stream
+	music_player.volume_db = -13.0
+	add_child(music_player)
+	music_player.play()
+
 func _play_feedback_tone(frequency: float, duration: float = 0.12, volume: float = 0.16) -> void:
 	if not is_instance_valid(feedback_audio_player):
 		return
@@ -936,15 +961,23 @@ func _on_customer_tick() -> void:
 		var preferred_index: int = int(profile["favorite"])
 		current_customer_budget = int(profile.get("budget", 50)) + trade_rank * 8
 		current_customer_patience = int(profile.get("patience", 2)) + logistics_rank
+		var seduction_used := false
+		if is_instance_valid(customer_emotion_label):
+			customer_emotion_label.text = "🏃 pressa" if current_customer_patience <= 1 else "🙂 observando"
 		var affordable: Array[int] = []
 		for affordable_index in available:
 			if int(products[affordable_index]["price"]) <= current_customer_budget:
 				affordable.append(affordable_index)
 		if affordable.is_empty():
-			var charm_negotiation := charm_rank > 0 and randi() % 100 < 25 + charm_rank * 12
+			var charm_negotiation := adult_content_enabled and charm_rank > 0 and randi() % 100 < 25 + charm_rank * 12
 			if charm_negotiation and available.size() > 0:
+				seduction_used = true
+				seduction_attempts += 1
+				seduction_successes += 1
 				current_customer_budget += 20 + charm_rank * 10
-				last_event = "%s suspira: “Meu orçamento é curto...” A chefe negocia com um sorriso e o cliente reconsidera." % profile["name"]
+				affection = mini(100, affection + 2 + charm_rank)
+				reputation += 1 + _reputation_seduction_bonus()
+				last_event = "%s suspira: “Meu orçamento é curto...” %s O cliente reconsidera." % [profile["name"], SUCCUBUS_NEGOTIATION_LINES.pick_random()]
 				for affordable_index in available:
 					if int(products[affordable_index]["price"]) <= current_customer_budget:
 						affordable.append(affordable_index)
@@ -963,10 +996,16 @@ func _on_customer_tick() -> void:
 		var chosen_index: int = affordable[randi() % affordable.size()] if not affordable.is_empty() else available[randi() % available.size()]
 		if preferred_index >= 0 and available.has(preferred_index) and randi() % 100 < 70:
 			chosen_index = preferred_index
+		if not seduction_used and adult_content_enabled and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 and (preferred_index == chosen_index or current_customer_patience <= 1):
+				seduction_used = true
+				seduction_attempts += 1
+				seduction_successes += 1
+				affection = mini(100, affection + 1 + charm_rank)
+				reputation += _reputation_seduction_bonus()
 
 		var item: Dictionary = products[chosen_index]
 		item["stock"] = int(item["stock"]) - 1
-		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank)
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier()
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
 			preference_bonus = maxi(2, int(round(float(item["price"]) * 0.25)))
@@ -1004,8 +1043,8 @@ func _on_customer_tick() -> void:
 			last_event = "PEDIDO ESPECIAL concluído para %s! +%d ouro e +10 XP. %s" % [profile["name"], request_bonus, profile["line"]]
 			_add_xp(10)
 			headline_locked = true
-		gold += sale_price
-		reputation += 1
+			gold += sale_price
+			reputation += 1 + (1 if seduction_used else 0)
 		customers_served += 1
 		if profile.has("regular_id"):
 			var regular_id := str(profile["regular_id"])
@@ -1061,13 +1100,14 @@ func _on_customer_tick() -> void:
 		affection = mini(100, affection + 1 + charm_rank)
 		status_label.text = "CLIENTE: %s" % profile["name"]
 		_set_seller_mood("happy")
-		_react_to_visit("delighted" if preferred_index == chosen_index else "content")
+		_react_to_visit("delighted" if preferred_index == chosen_index else "content", seduction_used)
+		_set_negotiation_dialogue(profile, item, seduction_used, preferred_index == chosen_index)
 
-		if adult_content_enabled and affection >= 10 and affection % 10 == 0:
-			last_event = "A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”"
-			_play_sensual_reception_moment()
-		elif affection > 0 and affection % 5 == 0:
-			last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor, querido.”"
+	if adult_content_enabled and affection >= 10 and affection % 10 == 0:
+		last_event = "A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”"
+		_play_sensual_reception_moment()
+	elif affection > 0 and affection % 5 == 0:
+		last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor, querido.”"
 
 	_check_achievements()
 	_save_game()
@@ -1148,6 +1188,35 @@ func _animate_customer_arrival(profile: Dictionary) -> void:
 	tween.tween_property(customer_portrait, "modulate:a", 1.0, 0.24).from(0.0)
 	tween.tween_property(customer_portrait, "scale", Vector2.ONE, 0.28).from(Vector2(0.78, 0.78))
 
+func _reputation_title() -> String:
+	if reputation >= 60:
+		return "Lenda do Submundo"
+	if reputation >= 35:
+		return "Nome Quente"
+	if reputation >= 15:
+		return "Loja Promissora"
+	if reputation >= 5:
+		return "Boa Fama"
+	return "Desconhecida"
+
+func _reputation_seduction_bonus() -> int:
+	return 1 if reputation >= 15 else 0
+
+func _reputation_price_multiplier() -> float:
+	return 1.0 + minf(0.12, float(maxi(0, reputation)) * 0.002)
+
+func _set_negotiation_dialogue(profile: Dictionary, item: Dictionary, seduction_used: bool, favorite_item: bool) -> void:
+	if not is_instance_valid(seller_speech_label):
+		return
+	var customer_name := str(profile.get("name", "Aventureiro"))
+	var customer_line := "“Isso parece exatamente o que eu precisava.”" if favorite_item else "“Não era meu primeiro plano, mas parece útil.”"
+	if current_customer_patience <= 1:
+		customer_line = "“Rápido, por favor. Tenho um dragão me esperando.”"
+	if seduction_used:
+		seller_speech_label.text = "CHEFE: %s\n%s: %s" % [SUCCUBUS_NEGOTIATION_LINES.pick_random(), customer_name, customer_line]
+	else:
+		seller_speech_label.text = "CHEFE: “%s por %d ouro. Quer levar?”\n%s: %s" % [str(item.get("name", "isto")), int(item.get("price", 0)), customer_name, customer_line]
+
 func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 	var text := ""
 	var color := Color(0.91, 1.0, 0.75)
@@ -1183,7 +1252,7 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 		if animation == "delighted":
 			emotion_text = "😍 amor e empolgação" if charm_save else "😄 felicidade"
 		elif animation == "disappointed":
-			emotion_text = "😤 frustração"
+			emotion_text = "🏃 pressa" if current_customer_patience <= 1 else "😤 raiva/frustração"
 		elif mood == "content":
 			emotion_text = "😌 calma"
 		customer_emotion_label.text = emotion_text
@@ -1202,7 +1271,7 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 		_:
 			_play_feedback_tone(660.0, 0.1, 0.13)
 			_show_feedback("Venda concluída.", Color(0.91, 1.0, 0.75))
-	_play_customer_reaction(animation)
+	_play_customer_reaction("hurry" if animation == "disappointed" and current_customer_patience <= 1 else animation)
 
 func _play_customer_reaction(mood: String) -> void:
 	if not is_instance_valid(customer_portrait):
@@ -1223,8 +1292,15 @@ func _play_customer_reaction(mood: String) -> void:
 			for i in range(3):
 				tween.tween_property(customer_portrait, "rotation", 0.10, 0.07)
 				tween.tween_property(customer_portrait, "rotation", -0.10, 0.07)
-			tween.tween_property(customer_portrait, "rotation", 0.0, 0.07)
+				tween.tween_property(customer_portrait, "rotation", 0.0, 0.07)
 			tween.tween_property(customer_portrait, "modulate:a", 0.25, 0.9)
+		"hurry":
+			tween.tween_property(customer_portrait, "modulate", Color(1.0, 0.78, 0.60, 1.0), 0.14)
+			for i in range(3):
+				tween.tween_property(customer_portrait, "position", Vector2(-8, 0), 0.06)
+				tween.tween_property(customer_portrait, "position", Vector2(8, 0), 0.06)
+				tween.tween_property(customer_portrait, "position", Vector2.ZERO, 0.06)
+			tween.tween_property(customer_portrait, "modulate:a", 0.35, 0.55)
 		_:
 			tween.tween_property(customer_portrait, "modulate:a", 0.45, 0.9)
 
@@ -1236,9 +1312,9 @@ func _refresh_ui() -> void:
 	if not is_instance_valid(gold_label):
 		return
 	gold_label.text = "Ouro: %d" % gold
-	rep_label.text = "Reputação: %d" % reputation
+	rep_label.text = "Reputação: %d • %s (+%d%%)" % [reputation, _reputation_title(), int(round((_reputation_price_multiplier() - 1.0) * 100.0))]
 	customers_label.text = "Clientes: %d  ♥%d  ✗%d" % [customers_served, happy_customers, disappointed_customers]
-	affection_label.text = "Afinidade: %d/100" % affection
+	affection_label.text = "Afinidade: %d/100 • Seduções: %d/%d" % [affection, seduction_successes, seduction_attempts]
 	event_label.text = last_event
 	if is_instance_valid(regulars_label):
 		var regular_lines: Array[String] = ["FREGUESES RECORRENTES"]
@@ -1371,6 +1447,8 @@ func _save_game() -> void:
 	config.set_value("game", "premium_crafted", premium_crafted)
 	config.set_value("game", "happy_customers", happy_customers)
 	config.set_value("game", "disappointed_customers", disappointed_customers)
+	config.set_value("game", "seduction_attempts", seduction_attempts)
+	config.set_value("game", "seduction_successes", seduction_successes)
 	config.set_value("game", "products", products)
 	config.save(SAVE_PATH)
 
@@ -1427,6 +1505,8 @@ func _load_game() -> void:
 	premium_crafted = int(config.get_value("game", "premium_crafted", premium_crafted))
 	happy_customers = int(config.get_value("game", "happy_customers", happy_customers))
 	disappointed_customers = int(config.get_value("game", "disappointed_customers", disappointed_customers))
+	seduction_attempts = int(config.get_value("game", "seduction_attempts", seduction_attempts))
+	seduction_successes = int(config.get_value("game", "seduction_successes", seduction_successes))
 	var saved_achievements = config.get_value("game", "unlocked_achievements", [])
 	if saved_achievements is Array:
 		unlocked_achievements.clear()
