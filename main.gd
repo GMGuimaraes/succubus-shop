@@ -101,6 +101,7 @@ var forge_button: Button
 var current_sector: String = "reception"
 var current_customer_budget: int = 0
 var current_customer_patience: int = 0
+var ambient_particles: CPUParticles2D
 var feedback_audio_player: AudioStreamPlayer
 var toast_label: Label
 var toast_tween: Tween
@@ -159,12 +160,31 @@ func _start_ambient_animations() -> void:
 func _build_ui() -> void:
 	var bg := TextureRect.new()
 	background_layer = bg
-	bg.texture = load("res://assets/shop_scene.png")
+	var opening_scene := "res://assets/reception_scene_flirty.png" if adult_content_enabled and randi() % 100 < 28 else "res://assets/reception_scene.png"
+	if not ResourceLoader.exists(opening_scene):
+		opening_scene = "res://assets/shop_scene.png"
+	bg.texture = load(opening_scene)
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_SCALE
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
+
+	ambient_particles = CPUParticles2D.new()
+	ambient_particles.amount = 32
+	ambient_particles.lifetime = 3.2
+	ambient_particles.position = Vector2(600, 360)
+	ambient_particles.direction = Vector2(0, -1)
+	ambient_particles.spread = 120.0
+	ambient_particles.gravity = Vector2(0, -10)
+	ambient_particles.initial_velocity_min = 8.0
+	ambient_particles.initial_velocity_max = 22.0
+	ambient_particles.scale_amount_min = 0.35
+	ambient_particles.scale_amount_max = 0.8
+	ambient_particles.color = Color(0.85, 0.35, 1.0, 0.34)
+	ambient_particles.emitting = true
+	ambient_particles.z_index = 1
+	add_child(ambient_particles)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -661,8 +681,10 @@ func _set_sector(sector: String) -> void:
 	var is_forge := sector == "forge"
 	var is_reception := sector == "reception"
 	if is_instance_valid(background_layer):
-		var scene_path := "res://assets/forge_scene.png" if is_forge and ResourceLoader.exists("res://assets/forge_scene.png") else "res://assets/shop_scene.png"
+		var scene_path := "res://assets/forge_close_scene.png" if is_forge and ResourceLoader.exists("res://assets/forge_close_scene.png") else "res://assets/reception_scene.png" if ResourceLoader.exists("res://assets/reception_scene.png") else "res://assets/shop_scene.png"
 		background_layer.texture = load(scene_path)
+	if is_instance_valid(ambient_particles):
+		ambient_particles.color = Color(1.0, 0.43, 0.16, 0.46) if is_forge else Color(0.85, 0.35, 1.0, 0.34)
 	if is_instance_valid(market_panel):
 		market_panel.visible = not is_reception
 	if is_instance_valid(sector_title_label):
