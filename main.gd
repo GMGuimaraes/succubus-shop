@@ -587,6 +587,16 @@ func _consume_ingredients(item: Dictionary) -> void:
 	for ingredient_id in recipe.keys():
 		ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) - int(recipe[ingredient_id])
 
+## Estimativa conservadora: preço de venda base menos custo de fabricação e
+## preço atual de reposição dos ingredientes da receita.
+func _estimated_margin(item: Dictionary) -> int:
+	var craft_cost := maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
+	var ingredient_cost := 0
+	var recipe: Dictionary = item.get("ingredients", {})
+	for ingredient_id in recipe.keys():
+		ingredient_cost += _ingredient_price(str(ingredient_id)) * int(recipe[ingredient_id])
+	return int(item["price"]) - craft_cost - ingredient_cost
+
 func _ingredient_price(ingredient_id: String) -> int:
 	var base := Ingredients.price_for_day(ingredient_id, shop_day)
 	return maxi(1, int(round(float(base) * (1.0 - 0.05 * logistics_rank))))
@@ -1030,7 +1040,12 @@ func _refresh_ui() -> void:
 		var required_level: int = int(item.get("required_level", 1))
 		var premium_count := int(premium_stock.get(str(item["name"]), 0))
 		var demand_marker := "  ✦ EM ALTA" if i == _demand_index() else ""
-		product_labels[i].text = "%s%s  |  Estoque: %d (+%d premium)  |  Venda: %d ouro%s" % ["" if unlocked else "🔒 ", item["name"], item["stock"], premium_count, item["price"], demand_marker] if unlocked else "%s  |  Desbloqueia no nível %d" % [item["name"], required_level]
+		if unlocked:
+			var margin := _estimated_margin(item)
+			var margin_label := "Margem estimada: +%d" % margin if margin >= 0 else "Margem estimada: %d" % margin
+			product_labels[i].text = "%s  |  Estoque: %d (+%d premium)  |  Venda: %d ouro%s\n%s" % [item["name"], item["stock"], premium_count, item["price"], demand_marker, margin_label]
+		else:
+			product_labels[i].text = "🔒 %s  |  Desbloqueia no nível %d" % [item["name"], required_level]
 		var craft_cost := maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
 		var missing_ingredients: Array[String] = []
 		if unlocked:
