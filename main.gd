@@ -89,6 +89,9 @@ var customer_tween: Tween
 var happy_customers: int = 0
 var disappointed_customers: int = 0
 var customer_portrait: TextureRect
+var feedback_audio_player: AudioStreamPlayer
+var toast_label: Label
+var toast_tween: Tween
 var customer_portrait_paths: Array[String] = ["res://assets/customer_adventurer.svg", "res://assets/customer_mage.svg", "res://assets/customer_goth.svg"]
 var seller_portrait_paths: Dictionary = {"happy": "res://assets/seller_happy.svg", "neutral": "res://assets/seller_neutral.svg", "surprised": "res://assets/seller_surprised.svg"}
 
@@ -116,6 +119,7 @@ const SELLER_CHARMED_LINES := [
 func _ready() -> void:
 	_load_game()
 	_build_ui()
+	_setup_feedback_audio()
 	_refresh_ui()
 	_start_ambient_animations()
 	var timer := Timer.new()
@@ -501,6 +505,15 @@ func _build_ui() -> void:
 	event_label.add_theme_color_override("font_color", Color(0.88, 0.85, 0.92))
 	right.add_child(event_label)
 
+	toast_label = Label.new()
+	toast_label.custom_minimum_size = Vector2(280, 30)
+	toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	toast_label.add_theme_font_size_override("font_size", 15)
+	toast_label.add_theme_color_override("font_color", Color(1.0, 0.78, 0.9))
+	toast_label.modulate.a = 0.0
+	right.add_child(toast_label)
+
 	achievement_label = Label.new()
 	achievement_label.custom_minimum_size = Vector2(280, 92)
 	achievement_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -588,6 +601,42 @@ func _make_stat_label(text_value: String) -> Label:
 	label.add_theme_color_override("font_color", Color(0.91, 1.0, 0.75))
 	return label
 
+func _setup_feedback_audio() -> void:
+	feedback_audio_player = AudioStreamPlayer.new()
+	var generator := AudioStreamGenerator.new()
+	generator.mix_rate = 22050.0
+	generator.buffer_length = 0.25
+	feedback_audio_player.stream = generator
+	feedback_audio_player.volume_db = -8.0
+	add_child(feedback_audio_player)
+
+func _play_feedback_tone(frequency: float, duration: float = 0.12, volume: float = 0.16) -> void:
+	if not is_instance_valid(feedback_audio_player):
+		return
+	feedback_audio_player.play()
+	var playback := feedback_audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
+	if playback == null:
+		return
+	var stream := feedback_audio_player.stream as AudioStreamGenerator
+	var frame_count := int(stream.mix_rate * duration)
+	for frame in range(frame_count):
+		var progress := float(frame) / float(maxi(1, frame_count))
+		var envelope := minf(1.0, minf(progress / 0.08, (1.0 - progress) / 0.18))
+		var sample := sin(TAU * frequency * float(frame) / stream.mix_rate) * volume * envelope
+		playback.push_frame(Vector2(sample, sample))
+
+func _show_feedback(message: String, color: Color = Color(1.0, 0.78, 0.9)) -> void:
+	if not is_instance_valid(toast_label):
+		return
+	if toast_tween != null and toast_tween.is_valid():
+		toast_tween.kill()
+	toast_label.text = message
+	toast_label.add_theme_color_override("font_color", color)
+	toast_label.modulate.a = 1.0
+	toast_tween = create_tween()
+	toast_tween.tween_interval(1.4)
+	toast_tween.tween_property(toast_label, "modulate:a", 0.0, 0.8)
+
 func _craft_product(index: int) -> void:
 	var item: Dictionary = products[index]
 	if not _is_product_unlocked(item):
@@ -616,8 +665,12 @@ func _craft_product(index: int) -> void:
 		premium_stock[product_name] = int(premium_stock.get(product_name, 0)) + 1
 		premium_crafted += 1
 		last_event = "OBRA-PRIMA! %s saiu impecável e vale 50%% a mais. A chefe finge que foi de propósito." % product_name
+		_play_feedback_tone(880.0, 0.16, 0.18)
+		_show_feedback("✦ Obra-prima criada!", Color(1.0, 0.86, 0.45))
 	else:
 		last_event = "Produzido: %s. A qualidade foi inspecionada por alguém que não entende do assunto." % item["name"]
+		_play_feedback_tone(560.0)
+		_show_feedback("Produto pronto para vender.")
 	_check_achievements()
 	_save_game()
 	_refresh_ui()
@@ -662,6 +715,8 @@ func _buy_ingredient(ingredient_id: String) -> void:
 	ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) + 1
 	total_ingredients_bought += 1
 	last_event = "Comprado: %s por %d ouro. O fornecedor jurou que era o preço de amigo." % [str(Ingredients.find(ingredient_id).get("name", ingredient_id)), price]
+	_play_feedback_tone(420.0)
+	_show_feedback("Ingrediente adicionado ao estoque.", Color(0.78, 0.95, 1.0))
 	_check_achievements()
 	_save_game()
 	_refresh_ui()
@@ -720,9 +775,9 @@ func _on_customer_tick() -> void:
 		_trigger_random_event()
 		_add_xp(20)
 		_progress_daily_quest("rare", 1)
-		_check_achievements()
-		_save_game()
-		_refresh_ui()
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
 		return
 
 	var available: Array[int] = []
@@ -924,6 +979,8 @@ func _trigger_random_event() -> void:
 	reputation = maxi(0, reputation + int(event["reputation"]))
 	rare_events_found += 1
 	last_event = "EVENTO: %s! %s" % [event["name"], event["message"]]
+	_play_feedback_tone(280.0, 0.2, 0.18)
+	_show_feedback("Evento raro!", Color(1.0, 0.86, 0.45))
 	if adult_content_enabled and affection >= 5 and randi() % 2 == 0:
 		last_event += "\nA súcubo ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui, querido.”"
 
@@ -986,6 +1043,16 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 		reaction_label.add_theme_color_override("font_color", color)
 	if is_instance_valid(seller_speech_label):
 		seller_speech_label.text = line
+	match animation:
+		"delighted":
+			_play_feedback_tone(880.0, 0.14, 0.17)
+			_show_feedback("♥ Cliente encantado!", Color(1.0, 0.78, 0.9))
+		"disappointed":
+			_play_feedback_tone(180.0, 0.18, 0.14)
+			_show_feedback("Estoque vazio: cliente perdido.", Color(1.0, 0.55, 0.55))
+		_:
+			_play_feedback_tone(660.0, 0.1, 0.13)
+			_show_feedback("Venda concluída.", Color(0.91, 1.0, 0.75))
 	_play_customer_reaction(animation)
 
 func _play_customer_reaction(mood: String) -> void:
