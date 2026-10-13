@@ -775,9 +775,9 @@ func _on_customer_tick() -> void:
 		_trigger_random_event()
 		_add_xp(20)
 		_progress_daily_quest("rare", 1)
-	_check_achievements()
-	_save_game()
-	_refresh_ui()
+		_check_achievements()
+		_save_game()
+		_refresh_ui()
 		return
 
 	var available: Array[int] = []
