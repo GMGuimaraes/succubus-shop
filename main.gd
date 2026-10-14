@@ -1861,7 +1861,7 @@ func _activate_sector_feature() -> void:
 		_show_feedback("Conhecimento aplicado.", Color(0.70, 0.90, 1.0))
 	elif current_sector == "sanctum":
 		var affinity_reward := 2 + sanctum_upgrade_level
-		affection = mini(100, affection + affinity_reward)
+		_add_affection(affinity_reward)
 		fury = maxi(0, fury - 1)
 		_update_demonic_form()
 		last_event = "Você acalma uma relíquia inquieta. A succubus recupera %d pontos de afinidade." % affinity_reward
@@ -2280,6 +2280,22 @@ func _add_piece(index: int, tier: int) -> void:
 	var stock := _quality_for(str(item["id"]))
 	stock[tier] = int(stock[tier]) + 1
 
+## O diabrete contratado não tira poção do chapéu: ele revira a despensa e usa a
+## primeira matéria-prima que encontra. Sem estoque ele reclama e não produz,
+## porque fabricar do nada deixava a forja e o mercado de ingredientes sem função.
+func _imp_work() -> void:
+	var supply := ""
+	for ingredient_id in ingredient_stock.keys():
+		if int(ingredient_stock[ingredient_id]) > 0:
+			supply = str(ingredient_id)
+			break
+	if supply.is_empty():
+		last_event = "Seu diabrete deu de ombros: despensa vazia, nem ele inventa poção."
+		return
+	ingredient_stock[supply] = int(ingredient_stock[supply]) - 1
+	_add_piece(0, 1)
+	last_event = "Seu diabrete fabricou uma poção com sobras de %s. Ele perguntou se isso conta como experiência profissional." % supply
+
 ## Tira uma peça da prateleira e devolve o nível dela. Clientes comuns e o balcão
 ## levam a pior; ladrão e conhecedores escolhem a melhor. Peças anteriores ao
 ## sistema de qualidade saem como "Honesto" e não alteram o registro.
@@ -2578,8 +2594,7 @@ func _on_customer_tick() -> void:
 		_save_game()
 		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA)]
 	if imp_hired and ticks % 3 == 0:
-		_add_piece(0, 1)
-		last_event = "Seu diabrete fabricou uma poção. Ele perguntou se isso conta como experiência profissional."
+		_imp_work()
 
 	# Eventos raros podem acontecer mesmo quando a loja está sem estoque.
 	if randi() % 100 < 7 + library_upgrade_level * 2:
@@ -2644,7 +2659,7 @@ func _on_customer_tick() -> void:
 		_animate_customer_arrival(profile)
 		var preferred_index: int = _product_index(str(profile["favorite"]))
 		current_customer_budget = int(profile.get("budget", 50)) + trade_rank * 8
-		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank + Sanctum.patience_bonus(active_buffs)) / world_speed())))
+		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank + Sanctum.patience_bonus(active_buffs)) / world_speed())) - _fury_patience_loss())
 		var seduction_used := false
 		if is_instance_valid(customer_emotion_label):
 			customer_emotion_label.text = "🏃 pressa" if current_customer_patience <= 1 else "🙂 observando"
@@ -2669,7 +2684,7 @@ func _on_customer_tick() -> void:
 				seduction_attempts += 1
 				seduction_successes += 1
 				current_customer_budget += 20 + charm_rank * 10
-				affection = mini(100, affection + 2 + charm_rank)
+				_add_affection(2 + charm_rank)
 				reputation += 1 + _reputation_seduction_bonus()
 				last_event = "%s suspira: “Meu orçamento é curto...” %s O cliente reconsidera." % [profile["name"], SUCCUBUS_NEGOTIATION_LINES.pick_random()]
 				for affordable_index in available:
@@ -2694,14 +2709,14 @@ func _on_customer_tick() -> void:
 				seduction_used = true
 				seduction_attempts += 1
 				seduction_successes += 1
-				affection = mini(100, affection + 1 + charm_rank + sanctum_upgrade_level)
+				_add_affection(1 + charm_rank + sanctum_upgrade_level)
 				reputation += _reputation_seduction_bonus()
 
 		var item: Dictionary = products[chosen_index]
 		var piece_tier := _take_piece(chosen_index, Quality.WORST)
 		var quality_name := str(Quality.tier(piece_tier)["name"])
 		var base_label := _piece_price(item, piece_tier)
-		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item)
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item)
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
 			preference_bonus = maxi(2, int(round(base_label * 0.25)))
@@ -2736,8 +2751,10 @@ func _on_customer_tick() -> void:
 			last_event = "PEDIDO ESPECIAL concluído para %s! +%d ouro e +10 XP. %s" % [profile["name"], request_bonus, profile["line"]]
 			_add_xp(10)
 			headline_locked = true
-			gold += sale_price
 			reputation += 1 + (1 if seduction_used else 0)
+		# A peça saiu da prateleira, o dinheiro entra no caixa. Até aqui só o
+		# pedido especial pagava: a venda comum levava o item e devovia XP.
+		gold += sale_price
 		customers_served += 1
 		if profile.has("regular_id"):
 			var regular_id := str(profile["regular_id"])
@@ -2790,7 +2807,7 @@ func _on_customer_tick() -> void:
 		_add_xp(12)
 		_progress_daily_quest("customers", 1)
 		_progress_daily_quest("gold", sale_price)
-		affection = mini(100, affection + 1 + charm_rank + sanctum_upgrade_level)
+		_add_affection(1 + charm_rank + sanctum_upgrade_level)
 		status_label.text = "CLIENTE: %s" % profile["name"]
 		_set_seller_mood("happy")
 		_react_to_visit("delighted" if preferred_index == chosen_index else "content", seduction_used)
@@ -2880,7 +2897,7 @@ func _trigger_random_event() -> void:
 		current_customer_patience += 1 + sanctum_upgrade_level
 		seduction_attempts += 1
 		seduction_successes += 1
-		affection = mini(100, affection + 2 + sanctum_upgrade_level)
+		_add_affection(2 + sanctum_upgrade_level)
 		if is_instance_valid(customer_emotion_label):
 			customer_emotion_label.text = "💘 distraído"
 		status_label.text = "CLIENTE: distraído pelo charme"
@@ -2927,6 +2944,14 @@ func _reputation_seduction_bonus() -> int:
 
 func _reputation_price_multiplier() -> float:
 	return 1.0 + minf(0.12, float(maxi(0, reputation)) * 0.002)
+
+## Fúria tem preço: com a chefe nervosa o freguês pechincha e sai mais rápido.
+## Cinco por cento de etiqueta por ponto, no máximo um quinto do balcão embora.
+func _fury_price_multiplier() -> float:
+	return 1.0 - 0.05 * clampi(fury, 0, 5)
+
+func _fury_patience_loss() -> int:
+	return clampi(fury, 0, 5) / 2
 
 func _handle_thief_escape(profile: Dictionary, available: Array[int]) -> void:
 	if available.is_empty():
@@ -3139,7 +3164,9 @@ func _refresh_ui() -> void:
 	customers_label.text = "Clientes: %d  ♥%d  ✗%d" % [customers_served, happy_customers, disappointed_customers]
 	affection_label.text = "Afinidade: %d/100 • Seduções: %d/%d" % [affection, seduction_successes, seduction_attempts]
 	if is_instance_valid(fury_label):
-		fury_label.text = "Fúria: %d/5%s" % [fury, " • FORMA DEMONÍACA" if demonic_form_active else ""]
+		fury_label.text = "Fúria: %d/5%s%s" % [fury,
+			" • FORMA DEMONÍACA" if demonic_form_active else "",
+			" • etiqueta -%d%%" % (clampi(fury, 0, 5) * 5) if fury > 0 else ""]
 	if is_instance_valid(speed_label):
 		speed_label.text = "TEMPO DO MUNDO: %.1fx" % world_speed()
 	if is_instance_valid(speed_button):
@@ -3770,6 +3797,16 @@ func _buy_talent(kind: String) -> void:
 func _xp_required() -> int:
 	return 40 + player_level * 25
 
+## A afeição enche até 100 e o excedente não evapora: a cada cinco pontos que não
+## cabem no coração da chefe sobe um ponto de reputação, porque freguês encantado
+## comenta a loja fora dela.
+func _add_affection(amount: int) -> void:
+	var room := maxi(0, 100 - affection)
+	affection = mini(100, affection + amount)
+	var spill := amount - room
+	if spill >= 5:
+		reputation += int(spill / 5)
+
 func _add_xp(amount: int) -> void:
 	var previous_level := player_level
 	# O Sussurro Ancestral do santuário turbinou todo XP enquanto a vela queima.
@@ -3852,6 +3889,7 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"},
 		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
 		{"id": "half_way", "name": "Meio caminho (4 capítulos)", "condition": campaign_step >= 4, "gold": 160, "rep": 7, "pose": "book"},
+		{"id": "private_sanctuary", "name": "Cantinho reservado (5 momentos só da loja)", "condition": private_moments_unlocked >= 5, "gold": 90, "rep": 3},
 		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"}
 	]
 
@@ -3930,7 +3968,7 @@ func _play_card_flip(card_id: String) -> void:
 func business_score() -> int:
 	return gold + reputation * 20 + customers_served * 6 + Cards.owned_count(card_counts) * 40 \
 		+ player_level * 25 + premium_crafted * 15 + expeditions_done * 20 + rituals_performed * 10 \
-		+ campaign_step * 60 + (1200 if game_completed else 0)
+		+ campaign_step * 60 + private_moments_unlocked * 8 + (1200 if game_completed else 0)
 
 func _publish_score() -> void:
 	var score := business_score()
