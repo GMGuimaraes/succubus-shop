@@ -195,12 +195,25 @@ const STAGE_HOST_SPRITES: Array[String] = [
 ## novo na pasta já aumenta o ciclo, sem tocar neste arquivo. Pose de emoção
 ## obedece a mesma regra: stage_<corpo>_<emoção>.png, com as emoções de
 ## STAGE_EMOTION_POSES. Personagem sem arte de emoção simplesmente não a usa.
+## A ordem é a mesma de customer_portrait_paths, e é ela que faz o retrato bater
+## com o corpo: quando o Sir Aldric entra no salão, ele anda na tela com o rosto
+## que o painel mostra. Trocar um sem o outro desfaz o par.
 const STAGE_CROWD_BODIES: Array[String] = [
 	"adventurer",
 	"mage",
+	"goth",
+	"barbarian",
+	"rogue",
+	"cleric",
+	"merchant",
 	"noble",
 	"goblin",
+	"collector",
 ]
+## Quantos transeuntes o salão comporta ao mesmo tempo. O elenco cresceu para
+## dez corpos justamente para não repetir, mas sala cheia de gente andando tapa a
+## chefe e o balcão: o teto é de cena, não de elenco.
+const STAGE_MAX_WALKERS := 4
 ## Altura relativa de cada corpo. A folha de poses normaliza todo mundo pela
 ## altura do palco, então sem isto o goblin andaria do tamanho de um humano.
 const STAGE_BODY_HEIGHT := {
@@ -488,9 +501,9 @@ func _process(delta: float) -> void:
 ## elenco são as artes de corpo inteiro dos fregueses, menores e mais frias quanto
 ## mais longe da câmera.
 func _spawn_stage_walker() -> void:
-	# Um corpo fica reservado ao cliente do turno: com os quatro em cena nunca
-	# haveria quem entrar sem repetir alguém.
-	if _stage_walkers.size() >= STAGE_CROWD_BODIES.size() - 1:
+	# Um corpo fica reservado ao cliente do turno: com todos em cena nunca haveria
+	# quem entrar sem repetir alguém.
+	if _stage_walkers.size() >= mini(STAGE_CROWD_BODIES.size() - 1, STAGE_MAX_WALKERS):
 		return
 	var crowd := _free_crowd_index()
 	if crowd < 0:
@@ -562,9 +575,9 @@ func _spawn_stage_walker() -> void:
 	bob.tween_property(walker, "position:y", base_y, STAGE_STEP_SECONDS * 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	_stage_walkers.append({"node": walker, "crowd": crowd, "bob": bob, "stride": stride, "trip": trip})
 
-## Que corpo do elenco já está em cena. Os quatro personagens se revezam: dois
-## iguais andando juntos liam o mesmo sprite colado duas vezes, e repetir o
-## freguês do turno destoava do balcão.
+## Que corpo do elenco já está em cena. Os personagens se revezam, e um corpo só
+## pode vestir uma figura por vez: dois iguais andando juntos liam o mesmo sprite
+## colado duas vezes, e repetir o freguês do turno destoava do balcão.
 func _free_crowd_index() -> int:
 	var taken: Array[int] = []
 	for entry in _stage_walkers:
