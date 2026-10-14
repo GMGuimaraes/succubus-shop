@@ -1903,6 +1903,62 @@ func _max_faction_tier() -> int:
 func _is_product_unlocked(item: Dictionary) -> bool:
 	return player_level >= int(item.get("required_level", 1))
 
+const TALENT_REACTIONS := {
+	"alchemy": [
+		"A chefe gira o dedo e a bancada borbulha sozinha: “Viu? Eu só precisava de um pouquinho mais de... concentração.”",
+		"Faíscas roxas escorrem pelos frascos: “Alquimia é como sedução. Se você erra a dose, explode — se acerta, vicia.”",
+		"Ela lambe o polegar e prova a poção: “Hmm... agora sim está com a minha cara. Perigosa e deliciosa.”"
+	],
+	"trade": [
+		"A chefe estala os dedos e as moedas dançam no balcão: “Preço bom é aquele que o cliente acha que escolheu sozinho.”",
+		"Ela ajeita o decote do avental e sorri: “Negociar é a arte de fazer o outro dizer sim e agradecer.”",
+		"Os olhos dela brilham em dourado: “Lucro, querido, é só carinho que o mercado me deve.”"
+	],
+	"charm": [
+		"A chefe sopra um beijo para o vazio e três clientes lá fora suspiram: “Opa. Isso saiu mais forte do que eu planejava.”",
+		"Ela morde o lábio e pisca devagar: “Agora é oficial: ninguém sai daqui sem querer voltar.”",
+		"A cauda dela desenha um coração no ar: “Carisma é magia que não precisa de grimório... só de você me olhando.”"
+	],
+	"logistics": [
+		"Imps desfilam com caixas empilhadas: “Estoque organizado e fornecedor assustado. Meu tipo de manhã perfeita.”",
+		"A chefe bate a prancheta no quadril: “Eficiência também é sensual. Principalmente quando chega no prazo.”",
+		"Um portal minúsculo cospe ingredientes no balcão: “Entrega expressa. Reclamações com o meu chicote de planilhas.”"
+	]
+}
+const TALENT_MAX_LINES := {
+	"alchemy": "Ela abre os braços e o laboratório inteiro cintila: “Mestra alquimista! Agora os frascos é que pedem desculpas para mim.”",
+	"trade": "Ela apoia o queixo na mão: “Nível máximo de negociação. Vou começar a vender até o seu 'não' de volta, com juros.”",
+	"charm": "O ar fica rosado e quente: “Carisma máximo. Se eu piscar errado, vou precisar de uma fila de seguranças... e de um ventilador.”",
+	"logistics": "Todos os imps batem continência ao mesmo tempo: “Logística perfeita. Até o caos agora chega pontual.”"
+}
+
+func _play_talent_reaction(kind: String, rank: int) -> void:
+	var line: String
+	if rank >= 5 and TALENT_MAX_LINES.has(kind):
+		line = str(TALENT_MAX_LINES[kind])
+	else:
+		var options: Array = TALENT_REACTIONS.get(kind, [])
+		if options.is_empty():
+			return
+		line = str(options.pick_random())
+	if not adult_content_enabled:
+		line = line.replace("sedução", "persuasão").replace("sensual", "elegante")
+	if is_instance_valid(seller_speech_label):
+		seller_speech_label.text = "CHEFE: %s" % line
+	if is_instance_valid(reaction_label):
+		reaction_label.text = "✦ Talento nível %d!" % rank
+		reaction_label.add_theme_color_override("font_color", Color(0.88, 0.75, 1.0))
+	if not demonic_form_active:
+		_set_seller_mood("happy")
+	if is_instance_valid(seller_portrait):
+		seller_portrait.pivot_offset = seller_portrait.size / 2.0
+		var pop := create_tween()
+		pop.tween_property(seller_portrait, "scale", Vector2(1.08, 1.08), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		pop.parallel().tween_property(seller_portrait, "modulate", Color(0.95, 0.85, 1.0, 1.0), 0.2)
+		pop.tween_property(seller_portrait, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_SINE)
+		pop.parallel().tween_property(seller_portrait, "modulate", Color.WHITE if not demonic_form_active else Color(1.0, 0.55, 0.62, 1.0), 0.35)
+	_show_feedback("✦ Talento aprimorado!", Color(0.88, 0.75, 1.0))
+
 func _buy_talent(kind: String) -> void:
 	if skill_points <= 0:
 		last_event = "Você ainda não tem pontos de talento. Suba de nível para ganhar mais."
@@ -1934,6 +1990,8 @@ func _buy_talent(kind: String) -> void:
 	audio.play("talent")
 	_save_game()
 	_refresh_ui()
+	var new_rank := int(get(kind + "_rank"))
+	_play_talent_reaction(kind, new_rank)
 
 func _xp_required() -> int:
 	return 40 + player_level * 25
