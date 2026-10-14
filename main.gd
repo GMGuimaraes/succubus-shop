@@ -11,9 +11,14 @@ const Expedition = preload("res://expedition.gd")
 const Cards = preload("res://cards.gd")
 const Campaign = preload("res://campaign.gd")
 const Origin = preload("res://origin.gd")
+const Prestige = preload("res://prestige.gd")
 const SteamBridge = preload("res://steam_bridge.gd")
 
-var gold: int = 80
+## Caixa e despensa com que a loja abre a primeira vida — e cada vida seguinte.
+const BASE_GOLD := 80
+const STARTING_PANTRY := {"essencia": 1, "pena": 1, "sal": 1, "vazio": 1, "tinta": 1, "po_lunar": 1}
+
+var gold: int = BASE_GOLD
 var reputation: int = 0
 var customers_served: int = 0
 var affection: int = 0
@@ -41,6 +46,12 @@ var epilogue_done: bool = false
 ## save guarda: o texto todo está em origin.gd.
 var origin_seen: Array[String] = []
 var origin_layer: Control
+## Prestígio: vidas já trocadas, aura parada no cofre, nível de cada dote
+## permanente e quantas metas da escada já foram pagas.
+var prestige_runs: int = 0
+var prestige_aura: int = 0
+var prestige_perks: Dictionary = {}
+var prestige_goals_paid: int = 0
 ## O que abrir quando a lembrança fechar: é como o capítulo final emenda o painel
 ## do império na cena do andar de cima sem empilhar os dois quadros.
 var _origin_next: Callable = Callable()
@@ -88,7 +99,7 @@ var library_upgrade_button: Button
 var sanctum_upgrade_button: Button
 var sector_action_button: Button
 var queue_distractions: int = 0
-var ingredient_stock: Dictionary = {"essencia": 1, "pena": 1, "sal": 1, "vazio": 1, "tinta": 1, "po_lunar": 1}
+var ingredient_stock: Dictionary = STARTING_PANTRY.duplicate()
 ## Estoque de peças por qualidade: { id_do_produto: [torto, honesto, refinado, prima, mitico] }
 var quality_stock: Dictionary = {}
 ## Mercado reativo: { "ingredient": {id: calor}, "product": {id: calor} }
@@ -129,6 +140,10 @@ var ingredient_buttons: Array = []
 var last_event: String = "Bem-vindo! Vamos transformar esta espelunca em um império."
 
 const PRODUCT_ICONS := ["🧪", "🦆", "💧", "📦", "✨", "🐟", "🌀", "💎", "📜", "☕", "🗡️", "🔨"]
+
+## Estoque com que cada produto abriu a loja na primeira manhã; é com ele que cada
+## vida nova recomeça.
+var _starting_shelf: Dictionary = {}
 
 var products: Array = [
 	{"id": "dano_emocional", "name": "Poção de Dano Emocional", "cost": 8, "price": 15, "stock": 1, "ingredients": {"essencia": 1}, "desc": "Lembra você daquela mensagem que mandou em 2018."},
@@ -283,6 +298,10 @@ var romance_button: Button
 var arc_label: Label
 var origin_label: Label
 var origin_button: Button
+var prestige_box: VBoxContainer
+var prestige_label: Label
+var prestige_perk_buttons: Array = []
+var prestige_button: Button
 var adult_toggle_button: Button
 var recover_theft_button: Button
 var fury_label: Label
@@ -619,6 +638,12 @@ const ARC_REWARDS: Array[Dictionary] = [
 	{"gold": 90, "rep": 3, "xp": 35},
 	{"gold": 160, "rep": 5, "xp": 60},
 ]
+
+## Prateleira do primeiro dia, guardada antes de qualquer save tocar nela: é com
+## esse mesmo estoque que cada vida nova abre o balcão.
+func _init() -> void:
+	for item in products:
+		_starting_shelf[str(item["id"])] = int(item["stock"])
 
 func _ready() -> void:
 	audio = GameAudio.new()
@@ -1747,6 +1772,29 @@ func _build_ui() -> void:
 	chapter_button.pressed.connect(_claim_chapter)
 	reception_box.add_child(chapter_button)
 
+	reception_box.add_child(_make_section_title("REENCARNAÇÃO DO IMPÉRIO", Color(0.85, 0.7, 1.0)))
+	reception_box.add_child(_make_section_hint("Fechar o império troca a vida da loja: caixa, prateleira e campanha voltam ao zero, e o que a casa aprendeu fica. Cada volta paga aura, e aura compra dote permanente."))
+	prestige_box = VBoxContainer.new()
+	prestige_box.add_theme_constant_override("separation", 8)
+	reception_box.add_child(prestige_box)
+	prestige_label = Label.new()
+	prestige_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	prestige_label.add_theme_font_size_override("font_size", 13)
+	prestige_label.add_theme_color_override("font_color", Color(0.88, 0.78, 1.0))
+	prestige_box.add_child(prestige_label)
+	for perk_index in range(Prestige.PERKS.size()):
+		var perk_button := Button.new()
+		perk_button.custom_minimum_size = Vector2(320, 40)
+		perk_button.add_theme_font_size_override("font_size", 13)
+		perk_button.pressed.connect(_buy_perk.bind(perk_index))
+		prestige_box.add_child(perk_button)
+		prestige_perk_buttons.append(perk_button)
+	prestige_button = Button.new()
+	prestige_button.custom_minimum_size = Vector2(320, 46)
+	prestige_button.add_theme_font_size_override("font_size", 15)
+	prestige_button.pressed.connect(_reincarnate)
+	prestige_box.add_child(prestige_button)
+
 	reception_box.add_child(_make_section_title("BOLETIM DO MERCADO", Color(1.0, 0.86, 0.45)))
 	reception_box.add_child(_make_section_hint("A loja reage ao que você compra e vende: estoque encalhado derruba o preço, demanda em alta empurra para cima."))
 	market_label = Label.new()
@@ -2618,7 +2666,7 @@ func _advance_craft_jobs(game_seconds: float) -> void:
 		_add_xp(5)
 		_progress_contracts("craft", 1)
 		# Alquimia, biblioteca e bênçãos do santuário empurram a rolagem de qualidade.
-		var luck := alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + int(job.get("luck", 0))
+		var luck := alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + int(job.get("luck", 0)) + _prestige_luck()
 		if int(job.get("luck", 0)) > 0:
 			catalyst_crafted += 1
 		var tier := Quality.roll(luck)
@@ -2661,7 +2709,7 @@ func _expedition_slots() -> int:
 	return 2 if logistics_rank >= 2 else 1
 
 func _expedition_luck() -> int:
-	return alchemy_rank + logistics_rank + Sanctum.luck_bonus(active_buffs)
+	return alchemy_rank + logistics_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck()
 
 func _expedition_on_route(id: String) -> Dictionary:
 	for trip in expeditions:
@@ -2931,7 +2979,7 @@ func _sell_from_counter(index: int) -> void:
 		_refresh_ui()
 		return
 	var tier := _take_piece(index, Quality.WORST)
-	var payout := maxi(1, int(round(_piece_price(item, tier) * _market_product_factor(item) * 0.7)))
+	var payout := maxi(1, int(round(_piece_price(item, tier) * _market_product_factor(item) * _prestige_price_factor() * 0.7)))
 	Economy.bump(economy_state, "product", str(item["id"]), 0.12)
 	gold += payout
 	daily_gold_earned += payout
@@ -3302,7 +3350,7 @@ func _on_customer_tick() -> void:
 			# Saiu torto da forja e o cliente viu: ninguém esconde a careta.
 			_show_stage_emotion(stage_customer, "nojo")
 		var base_label := _piece_price(item, piece_tier)
-		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", "")))
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor()
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
 			preference_bonus = maxi(2, int(round(base_label * 0.25)))
@@ -4139,6 +4187,9 @@ func _refresh_ui() -> void:
 		score_button.text = "Publicar resultado • você está em %dº" % rank
 	if is_instance_valid(chapter_label):
 		chapter_label.text = _chapter_text()
+		# A pontuação da vida é o que a meta de prestígio cobra, e ela muda a cada
+		# venda: atualizar aqui é o que faz a barra da meta andar sem tique novo.
+		_refresh_prestige()
 	if is_instance_valid(campaign_line):
 		var shown_chapter := Campaign.chapter(campaign_step)
 		if shown_chapter.is_empty():
@@ -4157,6 +4208,8 @@ func _refresh_ui() -> void:
 			var pending := Campaign.missing(_campaign_stats(), chapter).size()
 			chapter_button.text = ("Fechar capítulo • faltam %d" % pending) if pending > 0 else "Fechar capítulo • receber recompensa"
 			chapter_button.disabled = false
+	if is_instance_valid(prestige_label):
+		_refresh_prestige()
 	var ad_cost := 75 + ad_level * 60
 	upgrade_button.text = "Propaganda infernal • %d ouro (nível %d)" % [ad_cost, ad_level]
 	upgrade_button.disabled = gold < ad_cost
@@ -4259,6 +4312,10 @@ func _save_game() -> void:
 	config.set_value("game", "epilogue_pending", epilogue_pending)
 	config.set_value("game", "epilogue_done", epilogue_done)
 	config.set_value("game", "origin_seen", origin_seen)
+	config.set_value("game", "prestige_runs", prestige_runs)
+	config.set_value("game", "prestige_aura", prestige_aura)
+	config.set_value("game", "prestige_perks", prestige_perks)
+	config.set_value("game", "prestige_goals_paid", prestige_goals_paid)
 	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
@@ -4379,6 +4436,16 @@ func _load_game() -> void:
 			var known: Dictionary = Origin.find(str(scene_id))
 			if not known.is_empty() and not origin_seen.has(str(known["id"])):
 				origin_seen.append(str(known["id"]))
+		prestige_runs = int(config.get_value("game", "prestige_runs", prestige_runs))
+		prestige_aura = int(config.get_value("game", "prestige_aura", prestige_aura))
+		var saved_perks = config.get_value("game", "prestige_perks", {})
+		prestige_perks.clear()
+		if saved_perks is Dictionary:
+			for perk_id in saved_perks.keys():
+				var perk := Prestige.perk(str(perk_id))
+				if int(perk.get("max", 0)) > 0:
+					prestige_perks[str(perk_id)] = clampi(int(saved_perks[perk_id]), 0, int(perk["max"]))
+		prestige_goals_paid = int(config.get_value("game", "prestige_goals_paid", prestige_goals_paid))
 	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
 	demonic_form_active = adult_content_enabled and fury >= 4
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
@@ -4637,7 +4704,7 @@ func _add_affection(amount: int) -> void:
 func _add_xp(amount: int) -> void:
 	var previous_level := player_level
 	# O Sussurro Ancestral do santuário turbinou todo XP enquanto a vela queima.
-	player_xp += int(round(float(amount) * Sanctum.scale(active_buffs, "xp")))
+	player_xp += int(round(float(amount) * Sanctum.scale(active_buffs, "xp") * _prestige_xp_factor()))
 	var levels_gained := 0
 	while player_xp >= _xp_required():
 		player_xp -= _xp_required()
@@ -4845,6 +4912,10 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "epilogue_farewell", "name": "A última rodada (despedida encerrada)", "condition": epilogue_done, "gold": 150, "rep": 8, "pose": "relic"},
 		{"id": "origin_first", "name": "Andar de cima (primeira lembrança)", "condition": origin_seen.size() >= 1, "gold": 40, "rep": 2},
 		{"id": "origin_all", "name": "Duas vidas no mesmo balcão (todas as lembranças)", "condition": origin_seen.size() >= Origin.size(), "gold": 220, "rep": 9, "pose": "book"},
+		{"id": "prestige_first", "name": "Segunda vida (primeira reencarnação)", "condition": prestige_runs >= 1, "gold": 60, "rep": 3},
+		{"id": "prestige_round5", "name": "Casa de muitas portas (cinco reencarnações)", "condition": prestige_runs >= 5, "gold": 220, "rep": 10, "pose": "vitoria"},
+		{"id": "prestige_perks", "name": "Aura bem gasta (cinco níveis de dote)", "condition": _perk_levels_total() >= 5, "gold": 120, "rep": 5, "pose": "book"},
+		{"id": "prestige_goal", "name": "Meta batida (primeira meta de vida)", "condition": prestige_goals_paid >= 1, "gold": 80, "rep": 4},
 		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"}
 	]
 
@@ -4863,6 +4934,7 @@ func _check_achievements() -> void:
 			]
 			if achievement.has("pose"):
 				_play_achievement_pose(str(achievement["pose"]))
+	_check_prestige_goal()
 
 func _achievement_ids() -> Array[String]:
 	var ids: Array[String] = []
@@ -4879,7 +4951,7 @@ func _grant_pack(free: bool) -> void:
 			_refresh_ui()
 			return
 		gold -= price
-	var opened: Dictionary = Cards.open_pack(card_counts, alchemy_rank + Sanctum.luck_bonus(active_buffs))
+	var opened: Dictionary = Cards.open_pack(card_counts, alchemy_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck())
 	packs_opened += 1
 	var card: Dictionary = opened["card"]
 	var card_id := str(card["id"])
@@ -4924,7 +4996,8 @@ func business_score() -> int:
 	return gold + reputation * 20 + customers_served * 6 + Cards.owned_count(card_counts) * 40 \
 		+ player_level * 25 + premium_crafted * 15 + expeditions_done * 20 + rituals_performed * 10 \
 		+ campaign_step * 60 + private_moments_unlocked * 8 + _romance_steps_paid() * 20 \
-		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0)
+		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0) \
+		+ prestige_runs * 150 + _perk_levels_total() * 20 + prestige_goals_paid * 40
 
 func _publish_score() -> void:
 	var score := business_score()
@@ -5090,6 +5163,15 @@ func _show_ending() -> void:
 	farewell_note.add_theme_color_override("font_color", Color(0.72, 0.66, 0.8))
 	box.add_child(farewell_note)
 
+	# O final é a vitrine do prestígio: é aqui que a loja diz que a vida seguinte
+	# existe e quanto ela paga.
+	var prestige_note := Label.new()
+	prestige_note.text = "Esta vida vale %d de aura na reencarnação. A recepção mostra o que fica e o que volta a zero." % Prestige.aura_for(business_score())
+	prestige_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	prestige_note.add_theme_font_size_override("font_size", 13)
+	prestige_note.add_theme_color_override("font_color", Color(0.85, 0.7, 1.0))
+	box.add_child(prestige_note)
+
 	var close_button := Button.new()
 	close_button.text = "Voltar a administrar"
 	close_button.custom_minimum_size = Vector2(240, 46)
@@ -5233,6 +5315,216 @@ func _reread_origin() -> void:
 	if origin_seen.is_empty():
 		return
 	_show_origin(Origin.find(origin_seen[origin_seen.size() - 1]))
+
+## Nível pago de um dote permanente, sempre dentro do teto da tabela.
+func _perk_level(id: String) -> int:
+	return clampi(int(prestige_perks.get(id, 0)), 0, int(Prestige.perk(id).get("max", 0)))
+
+func _perk_levels_total() -> int:
+	var total := 0
+	for perk in Prestige.PERKS:
+		total += _perk_level(str(perk["id"]))
+	return total
+
+## Pregão da casa: a etiqueta sai mais alta em toda venda, sem mexer no custo.
+func _prestige_price_factor() -> float:
+	return 1.0 + float(Prestige.effect("pregao", _perk_level("pregao"))) / 100.0
+
+## Mão de baralho: a mesma aura empurra forja, estrada e pacote lacrado.
+func _prestige_luck() -> int:
+	return Prestige.effect("sorte", _perk_level("sorte"))
+
+## Memória de balcão: a segunda vida aprende mais rápido que a primeira.
+func _prestige_xp_factor() -> float:
+	return 1.0 + float(Prestige.effect("memoria", _perk_level("memoria"))) / 100.0
+
+func _prestige_start_gold() -> int:
+	return BASE_GOLD + Prestige.effect("berco", _perk_level("berco"))
+
+## O quadro da vida: quantas voltas a loja já deu, quanta aura está parada no
+## cofre, o que cada dote entrega hoje e qual é a meta que paga a próxima aura.
+func _prestige_text() -> String:
+	var lines: Array[String] = []
+	lines.append("Vida %d da loja • aura no cofre: %d" % [prestige_runs + 1, prestige_aura])
+	var goal := Prestige.goal_for(prestige_goals_paid)
+	lines.append("Meta %d: %d pontos de pontuação (+%d de aura) — a loja tem %d." % [
+		prestige_goals_paid + 1, int(goal["score"]), int(goal["aura"]), business_score()
+	])
+	for perk in Prestige.PERKS:
+		var level := _perk_level(str(perk["id"]))
+		lines.append("· %s (nv %d/%d): %s" % [
+			str(perk["name"]), level, int(perk["max"]),
+			Prestige.effect_text(str(perk["id"]), level) if level > 0 else "ainda sem efeito"
+		])
+	if not game_completed:
+		lines.append("· feche o último capítulo para poder reencarnar o balcão")
+	return "\n".join(lines)
+
+func _prestige_button_text() -> String:
+	if not game_completed:
+		return "Reencarnar o balcão (trancado: falta o império)"
+	return "Reencarnar o balcão: esta vida vale +%d de aura" % Prestige.aura_for(business_score())
+
+## O painel do prestígio desenhado. A meta é medida em pontuação, e pontuação muda
+## a cada venda, por isso isto roda em todo refresco e não só no tique do mundo.
+func _refresh_prestige() -> void:
+	prestige_label.text = _prestige_text()
+	var aura_open := game_completed or prestige_runs > 0 or prestige_aura > 0
+	for i in range(Prestige.PERKS.size()):
+		if i >= prestige_perk_buttons.size():
+			break
+		var perk: Dictionary = Prestige.PERKS[i]
+		var level := _perk_level(str(perk["id"]))
+		var cost := Prestige.level_cost(perk, level)
+		var perk_button: Button = prestige_perk_buttons[i]
+		perk_button.visible = aura_open
+		if cost < 0:
+			perk_button.text = "%s • nível %d (no teto)" % [str(perk["name"]), level]
+		else:
+			perk_button.text = "%s • nível %d→%d: %s — %d de aura" % [
+				str(perk["name"]), level, level + 1,
+				Prestige.effect_text(str(perk["id"]), level + 1), cost
+			]
+		perk_button.disabled = cost < 0 or prestige_aura < cost
+	prestige_button.visible = aura_open
+	prestige_button.text = _prestige_button_text()
+	prestige_button.disabled = not game_completed
+
+## A meta da escada é o que dá fôlego novo à vida seguinte: pontuação é medida
+## contínua, então ela pode vir no meio de um capítulo, não só no fim.
+func _check_prestige_goal() -> void:
+	var goal := Prestige.goal_for(prestige_goals_paid)
+	if business_score() < int(goal["score"]):
+		return
+	prestige_goals_paid += 1
+	prestige_aura += int(goal["aura"])
+	last_event += "\nMETA DE VIDA %d cumprida: %d pontos pagaram +%d de aura. A próxima pede %d." % [
+		prestige_goals_paid, int(goal["score"]), int(goal["aura"]),
+		int(Prestige.goal_for(prestige_goals_paid)["score"])
+	]
+	audio.play("coin")
+	_show_feedback("✦ Meta de vida cumprida.", Color(0.85, 0.7, 1.0))
+
+func _buy_perk(index: int) -> void:
+	if index < 0 or index >= Prestige.PERKS.size():
+		return
+	var perk: Dictionary = Prestige.PERKS[index]
+	var id := str(perk["id"])
+	var level := _perk_level(id)
+	var cost := Prestige.level_cost(perk, level)
+	if cost < 0:
+		return
+	if prestige_aura < cost:
+		last_event = "Aura não chega: %s nv %d custa %d e o cofre tem %d." % [
+			str(perk["name"]), level + 1, cost, prestige_aura
+		]
+		audio.play("sad")
+		_refresh_ui()
+		return
+	prestige_aura -= cost
+	prestige_perks[id] = level + 1
+	last_event = "DOTE PERMANENTE: %s nível %d. %s" % [
+		str(perk["name"]), level + 1, str(perk["desc"])
+	]
+	audio.play("talent")
+	_show_feedback("✦ Dote comprado.", Color(0.85, 0.7, 1.0))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Trocar a vida é o prestígio em si: o caixa, a prateleira e a campanha voltam ao
+## zero, e o que a loja aprendeu — povo, álbum, lembranças, dotes e conquistas —
+## atravessa com a chefe.
+func _reincarnate() -> void:
+	if not game_completed:
+		return
+	var score := business_score()
+	var gain := Prestige.aura_for(score)
+	prestige_runs += 1
+	prestige_aura += gain
+	_reset_run()
+	last_event = "REENCARNAÇÃO %d: a loja fechou uma vida de %d pontos e abriu a seguinte com %d de ouro no caixa. +%d de aura no cofre." % [
+		prestige_runs, score, _prestige_start_gold(), gain
+	]
+	audio.play("levelup")
+	_show_feedback("✦ Nova vida.", Color(0.85, 0.7, 1.0))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Só o que a vida construiu cai: a ficha das pessoas, o álbum, as lembranças, as
+## conquistas, o prestígio e as opções continuam no lugar.
+func _reset_run() -> void:
+	gold = _prestige_start_gold()
+	reputation = 0
+	customers_served = 0
+	happy_customers = 0
+	disappointed_customers = 0
+	seduction_attempts = 0
+	seduction_successes = 0
+	affection = 0
+	fury = 0
+	demonic_form_active = false
+	private_moments_unlocked = 0
+	ad_level = 0
+	imp_hired = false
+	ticks = 0
+	shop_day = 1
+	rare_events_found = 0
+	queue_distractions = 0
+	player_level = 1
+	player_xp = 0
+	skill_points = 0
+	alchemy_rank = 0
+	trade_rank = 0
+	charm_rank = 0
+	logistics_rank = 0
+	known_recipes.clear()
+	daily_quest_index = 0
+	daily_quest_progress = 0
+	daily_quest_claimed = false
+	daily_gold_earned = 0
+	daily_crafts = 0
+	commission_index = -1
+	commission_stage = 0
+	commission_progress = 0
+	commission_deadline = 0
+	commission_next_offer = 3
+	craft_jobs.clear()
+	library_upgrade_level = 0
+	sanctum_upgrade_level = 0
+	active_buffs.clear()
+	ingredient_stock = STARTING_PANTRY.duplicate()
+	total_ingredients_bought = 0
+	total_crafted = 0
+	premium_crafted = 0
+	best_quality_crafted = -1
+	rituals_performed = 0
+	expeditions.clear()
+	expedition_log.clear()
+	expeditions_done = 0
+	rare_found = 0
+	catalyst_crafted = 0
+	catalyst_enabled = false
+	economy_state = Economy.fresh_state()
+	quality_stock.clear()
+	for item in products:
+		var held := int(_starting_shelf.get(str(item["id"]), 0))
+		item["stock"] = held
+		if held > 0:
+			var counts := Quality.empty_stock()
+			counts[1] = held
+			quality_stock[str(item["id"])] = counts
+	campaign_step = 0
+	game_completed = false
+	epilogue_pending.clear()
+	epilogue_done = false
+	romance_pending = ""
+	current_regular_id = ""
+	current_customer_budget = 0
+	current_customer_patience = 0
+	if is_instance_valid(ending_layer):
+		ending_layer.visible = false
 
 func _board_text() -> String:
 	if steam == null:
