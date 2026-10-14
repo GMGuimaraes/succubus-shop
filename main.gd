@@ -206,8 +206,9 @@ const STAGE_CROWD_BODIES: Array[String] = [
 const STAGE_BODY_HEIGHT := {
 	"goblin": 0.62,
 }
-## Emoções que o elenco sabe representar quando a arte existir. Os apelidos vêm
-## dos momentos pedidos: espanto, felicidade, ousadia, desconfiança, briga, beijo.
+## Emoções que o elenco sabe representar quando a arte existir. Os nomes vêm dos
+## momentos da partida, não de uma lista de desejos: cada um deles é chamado por
+## uma cena específica adiante. Personagem sem arte de emoção simplesmente não a usa.
 const STAGE_EMOTION_POSES: Array[String] = [
 	"espanto",
 	"felicidade",
@@ -215,14 +216,34 @@ const STAGE_EMOTION_POSES: Array[String] = [
 	"desconfianca",
 	"briga",
 	"beijo",
+	"tristeza",
+	"confusao",
+	"recusa",
+	"aprovacao",
+	"tedio",
+	"medo",
+	"dor",
+	"vergonha",
+	"vitoria",
+	"sono",
+	"nojo",
+	"curiosidade",
+	"aceno",
+	"aponta",
+	"risada",
+	"pensativo",
+	"aplausao",
+	"danca",
 ]
 ## Humor da visita -> pose. Uma mesma pose cobre mais de um estado quando a
 ## diferença é só de cor.
 const STAGE_MOOD_POSE := {
 	"delighted": "felicidade",
-	"content": "felicidade",
+	"content": "aprovacao",
 	"disappointed": "desconfianca",
-	"hurry": "espanto",
+	"hurry": "tedio",
+	"broke": "recusa",
+	"flee": "medo",
 	"flirt": "beijo",
 	"anger": "briga",
 	"dare": "ousadia",
@@ -694,6 +715,13 @@ func _stage_customer_stops() -> void:
 	if is_instance_valid(stage_customer):
 		stage_customer.rotation_degrees = 0.0
 		_set_stage_frame(stage_customer, 0)
+		# Parado no balcão ele não tem mais ciclo de passo: o pose de emoção que
+		# vier precisa devolver o corpo para as pernas juntas, não para o meio de
+		# uma passada que já terminou.
+		stage_customer.set_meta("walk_frames", 1)
+	# Quem chega cumprimenta antes de ser atendido, e a chefe devolve o aceno.
+	_show_stage_emotion(stage_customer, "aceno")
+	_show_stage_emotion(stage_seller_body, "aceno")
 	_seller_lean_in()
 
 func _stage_customer_leaves() -> void:
@@ -2218,10 +2246,12 @@ func _advance_craft_jobs(game_seconds: float) -> void:
 			last_event = "%s saiu %s! A chefe inspeciona a peça, finge surpresa e aumenta a etiqueta." % [item["name"], quality_name]
 			audio.play("rare")
 			_show_feedback("✦ Peça %s!" % quality_name, Color(str(Quality.tier(tier)["color"])))
+			_show_stage_emotion(stage_seller_body, "aplausao")
 		else:
 			last_event = "Produzido: %s (%s). O ferreiro bateu o martelo e pediu aplausos." % [item["name"], quality_name]
 			audio.play("craft")
 			_show_feedback("Produto pronto para vender.")
+			_show_stage_emotion(stage_seller_body, "curiosidade")
 	_check_achievements()
 	_save_game()
 
@@ -2326,6 +2356,7 @@ func _finish_expedition(entry: Dictionary) -> void:
 			reputation = maxi(0, reputation - 2)
 	if not mishap.is_empty():
 		text += " " + str(mishap["text"])
+		_show_stage_emotion(stage_seller_body, "dor")
 	expedition_log.push_front(text)
 	while expedition_log.size() > 4:
 		expedition_log.pop_back()
@@ -2700,6 +2731,7 @@ func _on_customer_tick() -> void:
 		reaction_label.text = ""
 	if ticks % 20 == 0:
 		shop_day += 1
+		_show_stage_emotion(stage_seller_body, "sono")
 		Economy.advance_day(economy_state)
 		daily_quest_index = (daily_quest_index + 1) % 4
 		daily_quest_progress = 0
@@ -2827,7 +2859,9 @@ func _on_customer_tick() -> void:
 				_set_customer_status("CLIENTE: saiu sem comprar")
 				if is_instance_valid(customer_emotion_label):
 					customer_emotion_label.text = "😤 frustração"
-				_play_customer_reaction("disappointed")
+				_play_customer_reaction("broke")
+				# O charme não bastou, e ela faz de conta que era teste de balcão.
+				_show_stage_emotion(stage_seller_body, "vergonha")
 				_check_achievements()
 				_save_game()
 				_refresh_ui()
@@ -2835,6 +2869,8 @@ func _on_customer_tick() -> void:
 		var chosen_index: int = affordable[randi() % affordable.size()] if not affordable.is_empty() else available[randi() % available.size()]
 		if preferred_index >= 0 and available.has(preferred_index) and randi() % 100 < 70:
 			chosen_index = preferred_index
+			# Ele viu o que queria do outro lado do salão e aponta antes de pedir.
+			_show_stage_emotion(stage_customer, "aponta")
 			if not seduction_used and adult_content_enabled and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 + sanctum_upgrade_level * 3 and (preferred_index == chosen_index or current_customer_patience <= 1):
 				seduction_used = true
 				seduction_attempts += 1
@@ -2845,6 +2881,9 @@ func _on_customer_tick() -> void:
 		var item: Dictionary = products[chosen_index]
 		var piece_tier := _take_piece(chosen_index, Quality.WORST)
 		var quality_name := str(Quality.tier(piece_tier)["name"])
+		if piece_tier == 0:
+			# Saiu torto da forja e o cliente viu: ninguém esconde a careta.
+			_show_stage_emotion(stage_customer, "nojo")
 		var base_label := _piece_price(item, piece_tier)
 		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item)
 		var preference_bonus := 0
@@ -3022,6 +3061,7 @@ func _trigger_random_event() -> void:
 	reputation = maxi(0, reputation + int(event["reputation"]))
 	rare_events_found += 1
 	last_event = "EVENTO: %s! %s" % [event["name"], event["message"]]
+	_show_stage_emotion(stage_customer, "confusao")
 	if bool(event.get("queue_distraction", false)):
 		queue_distractions += 1
 		distraction_pending += 1 + sanctum_upgrade_level
@@ -3032,6 +3072,8 @@ func _trigger_random_event() -> void:
 			customer_emotion_label.text = "💘 distraído"
 		_set_customer_status("CLIENTE: distraído pelo charme")
 		_play_sensual_reception_moment()
+	else:
+		_show_stage_emotion(stage_seller_body, "pensativo")
 	audio.play("rare")
 	_show_feedback("Evento raro!", Color(1.0, 0.86, 0.45))
 	if adult_content_enabled and affection >= 5 and randi() % 2 == 0:
@@ -3100,7 +3142,8 @@ func _handle_thief_escape(profile: Dictionary, available: Array[int]) -> void:
 	last_event = "%s pegou %s e correu! A succubus rosna: “Ninguém rouba da minha loja e sai sem deixar um recibo.”" % [profile.get("name", "O cliente"), stolen_item_name]
 	_show_feedback("⚠ Roubo! O rastreador está pronto.", Color(1.0, 0.55, 0.45))
 	audio.play("sad")
-	_play_customer_reaction("hurry")
+	_show_stage_emotion(stage_seller_body, "espanto")
+	_play_customer_reaction("flee")
 
 func _recover_stolen_item() -> void:
 	if not theft_recovery_available or stolen_item_name.is_empty():
@@ -3156,6 +3199,7 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 			text = "♥ Cliente encantado! +1 de reputação"
 			color = Color(1.0, 0.78, 0.9)
 			line = SELLER_DELIGHTED_LINES.pick_random()
+			_show_stage_emotion(stage_seller_body, "risada")
 		"content":
 			text = "Cliente satisfeito."
 			color = Color(0.91, 1.0, 0.75)
@@ -3175,6 +3219,7 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 				text = "… Cliente decepcionado. -1 de reputação"
 				color = Color(1.0, 0.55, 0.55)
 				line = SELLER_DISAPPOINTED_LINES.pick_random()
+				_show_stage_emotion(stage_seller_body, "tristeza")
 				_set_seller_mood("surprised")
 	if is_instance_valid(customer_emotion_label):
 		var emotion_text := "🙂 satisfeito"
@@ -3312,6 +3357,7 @@ func _update_demonic_form() -> void:
 		demonic_form_active = true
 		_set_seller_mood("demonic")
 		_show_stage_emotion(stage_seller_body, "briga")
+		_show_stage_emotion(stage_customer, "medo")
 		last_event = "A FÚRIA CHEGOU AO LIMITE! A succubus assume sua forma demoníaca: “Respirem. Eu ainda sei negociar.”"
 		if is_instance_valid(seller_portrait):
 			seller_portrait.modulate = Color(1.0, 0.55, 0.62, 1.0)
@@ -4210,6 +4256,8 @@ func _claim_chapter() -> void:
 	last_event = "CAPÍTULO FECHADO: %s. A chefe carimba o livro-razão e promete aumentar os preços." % str(chapter["name"])
 	audio.play("levelup")
 	_show_feedback("✦ Capítulo concluído!", Color(0.82, 1.0, 0.86))
+	_show_stage_emotion(stage_seller_body, "vitoria")
+	_show_stage_emotion(stage_customer, "danca")
 	if is_final:
 		game_completed = true
 		_show_ending()

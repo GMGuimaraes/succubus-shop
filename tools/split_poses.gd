@@ -27,9 +27,12 @@ const GREEN_DOMINANCE := 1.12
 ## O vale procurado fica até 30% do passo para cada lado da fronteira teórica, e a
 ## curva é suavizada para um braço solitário não ser confundido com um vão.
 const CUT_SEARCH := 0.3
+## Largura mínima de um painel, em fração do passo teórico. Sem esse piso, o vale
+## mais fundo de uma folha apertada come o vizinho e devolve fatia de braço.
+const MIN_PANEL_SHARE := 0.62
 const SMOOTH_WINDOW := 25
 ## Mancha menor que isso, comparada com o corpo, é resíduo de pose vizinha.
-const MASS_MIN_SHARE := 0.06
+const MASS_MIN_SHARE := 0.11
 
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -102,17 +105,29 @@ func _cut_columns(sheet: Image, count: int) -> Array[int]:
 		smoothed.append(float(total) / float(maxi(1, samples)))
 	var cuts: Array[int] = []
 	var step := float(width) / float(count)
+	var min_gap := int(round(step * MIN_PANEL_SHARE))
 	for i in range(1, count):
 		var center := int(round(step * float(i)))
 		var reach := int(step * CUT_SEARCH)
+		## O vale mais fundo perto de uma divisão teórica não pode engolir o painel
+		## vizinho: a janela de busca encolhe para deixar a pose anterior inteira e
+		## ainda sobrar espaço para todas as que faltam. Sem isso, uma folha de doze
+		## poses devolve uma fatia de trinta pixels no lugar de um personagem.
+		var low := maxi(1, center - reach)
+		var high := mini(width - 1, center + reach)
+		if not cuts.is_empty():
+			low = maxi(low, int(cuts.back()) + min_gap)
+		high = mini(high, width - min_gap * (count - i) - 1)
+		if low >= high:
+			cuts.append(clampi(center, 1, width - 1))
+			continue
 		var best := center
 		var best_value := 1e20
-		for x in range(maxi(1, center - reach), mini(width - 1, center + reach)):
+		for x in range(low, high):
 			if smoothed[x] < best_value:
 				best_value = smoothed[x]
 				best = x
 		cuts.append(best)
-	cuts.sort()
 	return cuts
 
 ## Caixa apertada do conteúdo real entre duas fronteiras.
@@ -159,6 +174,7 @@ func _keep_main_mass(cropped: Image) -> void:
 	labels.resize(width * height)
 	labels.fill(-1)
 	var sizes: Array[int] = []
+	var label_box: Array[Vector2i] = []
 	var next_label := 0
 	for start in range(width * height):
 		if labels[start] >= 0 or cropped.get_pixel(start % width, start / width).a <= 0.0:
@@ -166,11 +182,14 @@ func _keep_main_mass(cropped: Image) -> void:
 		var stack: Array[int] = [start]
 		labels[start] = next_label
 		var area := 0
+		var box := Vector2i(width, -1)
 		while not stack.is_empty():
 			var index := int(stack.pop_back())
 			area += 1
 			var x := index % width
 			var y := index / width
+			box.x = mini(box.x, x)
+			box.y = maxi(box.y, x)
 			for neighbor in [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]:
 				var nx: int = neighbor[0]
 				var ny: int = neighbor[1]
@@ -182,13 +201,21 @@ func _keep_main_mass(cropped: Image) -> void:
 				labels[n_index] = next_label
 				stack.append(n_index)
 		sizes.append(area)
+		label_box.append(box)
 		next_label += 1
 	if sizes.size() < 2:
 		return
 	var biggest := int(sizes.max())
+	var main_label := sizes.find(sizes.max())
 	for index in range(width * height):
 		var label := labels[index]
-		if label >= 0 and sizes[label] < int(biggest * MASS_MIN_SHARE):
+		if label < 0 or label == main_label:
+			continue
+		## Uma fatia encostada na borda da caixa é o pedaço de um corpo que o corte
+		## dividiu ao meio, não uma parte solta desta pose: ela fica flutuando ao
+		## lado do personagem no palco. Pedaço miúdo é respingo do mesmo jeito.
+		var sliver := label_box[label][0] <= 0 or label_box[label][1] >= width - 1
+		if sliver or sizes[label] < int(biggest * MASS_MIN_SHARE):
 			cropped.set_pixel(index % width, index / width, Color(0, 0, 0, 0))
 
 func _tight_bounds(cropped: Image) -> Rect2i:
