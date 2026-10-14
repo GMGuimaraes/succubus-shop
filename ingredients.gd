@@ -18,6 +18,28 @@ static func find(id: String) -> Dictionary:
 			return ingredient
 	return {}
 
+## Raridades fora do mercado: ninguém vende, só volta de expedição com elas.
+## Na forja funcionam como catalisador, empurrando a rolagem de qualidade.
+const RARE_DATA: Array = [
+	{"id": "lagrima", "name": "Lágrima de Vidro", "catalyst_luck": 2, "desc": "Chorou tanto que virou mineral. Ainda dói."},
+	{"id": "brasa", "name": "Brasa do Abismo", "catalyst_luck": 4, "desc": "Não apaga, não esfria e guarda rancor."}
+]
+
+static func rare_find(id: String) -> Dictionary:
+	for ingredient in RARE_DATA:
+		if str(ingredient["id"]) == id:
+			return ingredient
+	return {}
+
+static func is_rare(id: String) -> bool:
+	return not rare_find(id).is_empty()
+
+static func any_name(id: String) -> String:
+	var common := find(id)
+	if not common.is_empty():
+		return str(common["name"])
+	return str(rare_find(id).get("name", id))
+
 ## Preço do dia: varia entre 70% e 140% do preço base, determinístico por dia,
 ## para que o mercado seja igual ao recarregar o save no mesmo dia.
 static func price_for_day(id: String, day: int) -> int:

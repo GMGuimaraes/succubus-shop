@@ -7,6 +7,7 @@ const Ingredients = preload("res://ingredients.gd")
 const Quality = preload("res://quality.gd")
 const Economy = preload("res://economy.gd")
 const Sanctum = preload("res://sanctum.gd")
+const Expedition = preload("res://expedition.gd")
 
 var gold: int = 80
 var reputation: int = 0
@@ -66,6 +67,16 @@ var total_ingredients_bought: int = 0
 var premium_crafted: int = 0
 var best_quality_crafted: int = -1
 var rituals_performed: int = 0
+## Viagens em andamento: [{ id, remaining, total }]
+var expeditions: Array[Dictionary] = []
+## As últimas quatro malas que voltaram, para o diário de bordo.
+var expedition_log: Array[String] = []
+var expeditions_done: int = 0
+var rare_found: int = 0
+## Peças saídas da forja com catalisador raro.
+var catalyst_crafted: int = 0
+## Catalisador raro ligado: a próxima forja queima uma raridade por mais sorte.
+var catalyst_enabled: bool = false
 var talent_label: Label
 var alchemy_button: Button
 var trade_button: Button
@@ -109,6 +120,7 @@ var forge_box: VBoxContainer
 var reception_box: VBoxContainer
 var library_box: VBoxContainer
 var sanctum_box: VBoxContainer
+var expedition_box: VBoxContainer
 var scene_action_box: VBoxContainer
 var craft_buttons: Array = []
 var product_labels: Array = []
@@ -122,6 +134,12 @@ var market_label: Label
 var ritual_label: Label
 var ritual_labels: Array = []
 var ritual_buttons: Array = []
+var expedition_labels: Array = []
+var expedition_buttons: Array = []
+var expedition_active_label: Label
+var expedition_log_label: Label
+var catalyst_button: Button
+var catalyst_label: Label
 var upgrade_button: Button
 var imp_button: Button
 var private_button: Button
@@ -160,6 +178,7 @@ var reception_button: Button
 var forge_button: Button
 var library_button: Button
 var sanctum_button: Button
+var expedition_button: Button
 var current_sector: String = "reception"
 var current_customer_budget: int = 0
 var current_customer_patience: int = 0
@@ -537,38 +556,43 @@ func _build_ui() -> void:
 	subtitle.add_theme_font_size_override("font_size", 17)
 	subtitle.add_theme_color_override("font_color", Color(0.80, 0.75, 0.88))
 	subtitle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	subtitle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(subtitle)
 
 	market_toggle_button = Button.new()
-	market_toggle_button.text = "☰ Ocultar painel"
-	market_toggle_button.custom_minimum_size = Vector2(160, 42)
+	market_toggle_button.text = "☰ Ocultar"
+	market_toggle_button.custom_minimum_size = Vector2(104, 42)
 	market_toggle_button.pressed.connect(_toggle_market_panel)
 	header.add_child(market_toggle_button)
 
 	reception_button = Button.new()
 	reception_button.text = "Recepção"
-	reception_button.custom_minimum_size = Vector2(115, 42)
+	reception_button.custom_minimum_size = Vector2(96, 42)
 	reception_button.pressed.connect(_set_sector.bind("reception"))
 	header.add_child(reception_button)
 
 	forge_button = Button.new()
 	forge_button.text = "⚒ Forja"
-	forge_button.custom_minimum_size = Vector2(115, 42)
+	forge_button.custom_minimum_size = Vector2(96, 42)
 	forge_button.pressed.connect(_set_sector.bind("forge"))
 	header.add_child(forge_button)
 
 	library_button = Button.new()
 	library_button.text = "📚 Biblioteca"
-	library_button.custom_minimum_size = Vector2(135, 42)
+	library_button.custom_minimum_size = Vector2(118, 42)
 	library_button.pressed.connect(_set_sector.bind("library"))
 	header.add_child(library_button)
 
 	sanctum_button = Button.new()
 	sanctum_button.text = "✦ Santuário"
-	sanctum_button.custom_minimum_size = Vector2(130, 42)
+	sanctum_button.custom_minimum_size = Vector2(112, 42)
 	sanctum_button.pressed.connect(_set_sector.bind("sanctum"))
 	header.add_child(sanctum_button)
+
+	expedition_button = Button.new()
+	expedition_button.text = "🧭 Expedições"
+	expedition_button.custom_minimum_size = Vector2(126, 42)
+	expedition_button.pressed.connect(_set_sector.bind("expedition"))
+	header.add_child(expedition_button)
 
 	mute_button = Button.new()
 	mute_button.custom_minimum_size = Vector2(54, 42)
@@ -708,6 +732,8 @@ func _build_ui() -> void:
 	sector_stack.add_child(library_box)
 	sanctum_box = _make_sector_box()
 	sector_stack.add_child(sanctum_box)
+	expedition_box = _make_sector_box()
+	sector_stack.add_child(expedition_box)
 	scene_action_box = _make_sector_box()
 	sector_stack.add_child(scene_action_box)
 
@@ -937,6 +963,68 @@ func _build_ui() -> void:
 		ritual_button.pressed.connect(_perform_ritual.bind(ritual_id))
 		ritual_row.add_child(ritual_button)
 		ritual_buttons.append(ritual_button)
+
+	expedition_box.add_child(_make_section_title("ROTEIROS", Color(1.0, 0.72, 0.42)))
+	expedition_box.add_child(_make_section_hint("O mercado não vende raridade. Cada viagem custa ouro, leva dias de loja e só volta com o que a sorte deixar."))
+
+	for destination in Expedition.DATA:
+		var destination_id := str(destination["id"])
+		var trip_card := _make_sector_card(Color(0.05, 0.075, 0.075, 0.94), Color(0.42, 0.62, 0.5, 0.95))
+		expedition_box.add_child(trip_card)
+		var trip_row := HBoxContainer.new()
+		trip_row.add_theme_constant_override("separation", 12)
+		trip_card.add_child(trip_row)
+		var trip_info := VBoxContainer.new()
+		trip_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		trip_row.add_child(trip_info)
+		var trip_name := Label.new()
+		trip_name.text = "🧭 %s" % destination["name"]
+		trip_name.add_theme_font_size_override("font_size", 16)
+		trip_name.add_theme_color_override("font_color", Color(0.92, 0.98, 0.9))
+		trip_info.add_child(trip_name)
+		var trip_desc := Label.new()
+		trip_desc.text = str(destination["desc"])
+		trip_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		trip_desc.add_theme_font_size_override("font_size", 13)
+		trip_desc.add_theme_color_override("font_color", Color(0.72, 0.78, 0.76))
+		trip_info.add_child(trip_desc)
+		var trip_state := Label.new()
+		trip_state.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		trip_state.add_theme_font_size_override("font_size", 13)
+		trip_state.add_theme_color_override("font_color", Color(1.0, 0.84, 0.55))
+		trip_info.add_child(trip_state)
+		expedition_labels.append(trip_state)
+		var trip_button := Button.new()
+		trip_button.custom_minimum_size = Vector2(150, 44)
+		trip_button.add_theme_font_size_override("font_size", 14)
+		trip_button.pressed.connect(_start_expedition.bind(destination_id))
+		trip_row.add_child(trip_button)
+		expedition_buttons.append(trip_button)
+
+	expedition_box.add_child(_make_section_title("CATALISADORES RAROS", Color(0.86, 0.6, 1.0)))
+	expedition_box.add_child(_make_section_hint("Raridade de expedição na forja queima uma peça e empurra a qualidade da peça seguinte."))
+	catalyst_label = Label.new()
+	catalyst_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	catalyst_label.add_theme_font_size_override("font_size", 13)
+	catalyst_label.add_theme_color_override("font_color", Color(0.88, 0.76, 1.0))
+	expedition_box.add_child(catalyst_label)
+	catalyst_button = Button.new()
+	catalyst_button.custom_minimum_size = Vector2(240, 42)
+	catalyst_button.add_theme_font_size_override("font_size", 14)
+	catalyst_button.pressed.connect(_toggle_catalyst)
+	expedition_box.add_child(catalyst_button)
+
+	expedition_box.add_child(_make_section_title("DIÁRIO DE BORDO", Color(0.78, 0.95, 1.0)))
+	expedition_active_label = Label.new()
+	expedition_active_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	expedition_active_label.add_theme_font_size_override("font_size", 14)
+	expedition_active_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.55))
+	expedition_box.add_child(expedition_active_label)
+	expedition_log_label = Label.new()
+	expedition_log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	expedition_log_label.add_theme_font_size_override("font_size", 13)
+	expedition_log_label.add_theme_color_override("font_color", Color(0.76, 0.82, 0.86))
+	expedition_box.add_child(expedition_log_label)
 
 	library_box.add_child(_make_section_title("RECEITAS OCULTAS", Color(0.70, 0.90, 1.0)))
 	library_box.add_child(_make_section_hint("Ouro adianta receitas presas ao nível. A biblioteca reduz o custo de cada leitura."))
@@ -1239,7 +1327,7 @@ func _toggle_market_panel() -> void:
 		return
 	market_panel.visible = not market_panel.visible
 	if is_instance_valid(market_toggle_button):
-		market_toggle_button.text = "☰ Ocultar painel" if market_panel.visible else "☰ Abrir painel"
+		market_toggle_button.text = "☰ Ocultar" if market_panel.visible else "☰ Abrir"
 	audio.play("click")
 	_show_feedback("Mercado expandido." if market_panel.visible else "Recepção em foco.", Color(0.78, 0.95, 1.0))
 
@@ -1295,6 +1383,7 @@ func _set_sector(sector: String) -> void:
 	var is_reception := sector == "reception"
 	var is_library := sector == "library"
 	var is_sanctum := sector == "sanctum"
+	var is_expedition := sector == "expedition"
 	if is_instance_valid(background_layer):
 		var scene_path := "res://assets/reception_scene.png"
 		if is_forge and ResourceLoader.exists("res://assets/forge_close_scene.png"):
@@ -1303,20 +1392,22 @@ func _set_sector(sector: String) -> void:
 			scene_path = "res://assets/library_close_scene.png"
 		elif is_sanctum and ResourceLoader.exists("res://assets/sanctum_close_scene.png"):
 			scene_path = "res://assets/sanctum_close_scene.png"
+		elif is_expedition and ResourceLoader.exists("res://assets/shop_scene.png"):
+			scene_path = "res://assets/shop_scene.png"
 		elif ResourceLoader.exists("res://assets/reception_scene.png"):
 			scene_path = "res://assets/reception_scene.png"
 		elif ResourceLoader.exists("res://assets/shop_scene.png"):
 			scene_path = "res://assets/shop_scene.png"
 		background_layer.texture = load(scene_path)
 	if is_instance_valid(ambient_particles):
-		ambient_particles.color = Color(1.0, 0.43, 0.16, 0.46) if is_forge else Color(0.36, 0.72, 1.0, 0.38) if is_library else Color(0.73, 0.30, 1.0, 0.42) if is_sanctum else Color(0.85, 0.35, 1.0, 0.34)
+		ambient_particles.color = Color(1.0, 0.43, 0.16, 0.46) if is_forge else Color(0.36, 0.72, 1.0, 0.38) if is_library else Color(0.73, 0.30, 1.0, 0.42) if is_sanctum else Color(0.45, 0.95, 0.6, 0.4) if is_expedition else Color(0.85, 0.35, 1.0, 0.34)
 	_apply_sector_visibility()
 	if is_instance_valid(sector_title_label):
-		sector_title_label.text = "RECEPÇÃO • MERCADO E BALCÃO" if is_reception else "FORJA & OFICINA" if is_forge else "BIBLIOTECA ARCANA" if is_library else "SANTUÁRIO DE ARTEFATOS"
+		sector_title_label.text = "RECEPÇÃO • MERCADO E BALCÃO" if is_reception else "FORJA & OFICINA" if is_forge else "BIBLIOTECA ARCANA" if is_library else "EXPEDIÇÕES & RARIDADES" if is_expedition else "SANTUÁRIO DE ARTEFATOS"
 	if is_instance_valid(sector_hint_label):
-		sector_hint_label.text = "Compre ingredientes e venda itens no balcão. Os clientes chegam sozinhos para negociar." if is_reception else "Aqui apenas se fabrica: o ferreiro transforma ingredientes e ouro em mercadorias." if is_forge else "Aperfeiçoe talentos e adiante receitas presas ao nível." if is_library else "Relíquias carregadas de magia aguardam uma negociação cuidadosa."
+		sector_hint_label.text = "Compre ingredientes e venda itens no balcão. Os clientes chegam sozinhos para negociar." if is_reception else "Aqui apenas se fabrica: o ferreiro transforma ingredientes e ouro em mercadorias." if is_forge else "Aperfeiçoe talentos e adiante receitas presas ao nível." if is_library else "Nem tudo tem fornecedor. Mande o batedor buscar e torça pelo caminho de volta." if is_expedition else "Relíquias carregadas de magia aguardam uma negociação cuidadosa."
 	if is_instance_valid(market_toggle_button):
-		market_toggle_button.text = "☰ Ocultar painel" if is_instance_valid(market_panel) and market_panel.visible else "☰ Abrir painel"
+		market_toggle_button.text = "☰ Ocultar" if is_instance_valid(market_panel) and market_panel.visible else "☰ Abrir"
 	if is_instance_valid(reception_button):
 		reception_button.disabled = is_reception
 	if is_instance_valid(forge_button):
@@ -1325,8 +1416,10 @@ func _set_sector(sector: String) -> void:
 		library_button.disabled = is_library
 	if is_instance_valid(sanctum_button):
 		sanctum_button.disabled = is_sanctum
-	var sector_message := "A forja está em atividade." if is_forge else "Os grimórios sussurram novas receitas." if is_library else "O santuário pulsa com artefatos inquietos." if is_sanctum else "A recepção voltou ao foco."
-	_show_feedback(sector_message, Color(1.0, 0.82, 0.48) if is_forge else Color(0.70, 0.90, 1.0) if is_library else Color(0.86, 0.60, 1.0) if is_sanctum else Color(1.0, 0.78, 0.9))
+	if is_instance_valid(expedition_button):
+		expedition_button.disabled = is_expedition
+	var sector_message := "A forja está em atividade." if is_forge else "Os grimórios sussurram novas receitas." if is_library else "O santuário pulsa com artefatos inquietos." if is_sanctum else "O batedor está de botas calçadas." if is_expedition else "A recepção voltou ao foco."
+	_show_feedback(sector_message, Color(1.0, 0.82, 0.48) if is_forge else Color(0.70, 0.90, 1.0) if is_library else Color(0.86, 0.60, 1.0) if is_sanctum else Color(0.55, 0.95, 0.7) if is_expedition else Color(1.0, 0.78, 0.9))
 
 func _apply_sector_visibility() -> void:
 	# Uma caixa por setor: fabricar só na forja, comprar e vender só na recepção,
@@ -1339,6 +1432,8 @@ func _apply_sector_visibility() -> void:
 		library_box.visible = current_sector == "library"
 	if is_instance_valid(sanctum_box):
 		sanctum_box.visible = current_sector == "sanctum"
+	if is_instance_valid(expedition_box):
+		expedition_box.visible = current_sector == "expedition"
 	if is_instance_valid(scene_action_box):
 		scene_action_box.visible = current_sector == "library" or current_sector == "sanctum"
 
@@ -1439,8 +1534,12 @@ func _craft_product(index: int) -> void:
 	_consume_ingredients(item)
 	var duration := 6.0 + float(index) * 1.4 - float(alchemy_rank) * 0.7 - float(library_upgrade_level) * 0.45
 	duration /= Sanctum.scale(active_buffs, "craft")
-	craft_jobs.append({"index": index, "remaining": maxf(3.0, duration)})
+	var catalyst := _take_catalyst()
+	var job_luck := int(catalyst.get("catalyst_luck", 0))
+	craft_jobs.append({"index": index, "remaining": maxf(3.0, duration), "luck": job_luck})
 	last_event = "Forja iniciada: %s levará %.1fs de tempo de mundo." % [item["name"], maxf(3.0, duration)]
+	if not catalyst.is_empty():
+		last_event += " %s virou pó dentro da forma: a peça sai com mais sorte." % str(catalyst["name"])
 	audio.play("click")
 	_show_feedback("⚒ Fabricação em andamento.", Color(1.0, 0.82, 0.48))
 	_save_game()
@@ -1462,7 +1561,9 @@ func _advance_craft_jobs(game_seconds: float) -> void:
 		_add_xp(5)
 		_progress_daily_quest("craft", 1)
 		# Alquimia, biblioteca e bênçãos do santuário empurram a rolagem de qualidade.
-		var luck := alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5))
+		var luck := alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + int(job.get("luck", 0))
+		if int(job.get("luck", 0)) > 0:
+			catalyst_crafted += 1
 		var tier := Quality.roll(luck)
 		_add_piece(index, tier)
 		Economy.bump(economy_state, "product", str(item["id"]), -0.10)
@@ -1495,6 +1596,133 @@ func _consume_ingredients(item: Dictionary) -> void:
 	var recipe: Dictionary = item.get("ingredients", {})
 	for ingredient_id in recipe.keys():
 		ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) - int(recipe[ingredient_id])
+
+## Vagas de batedor na folha de pagamento. Logística 2 paga o segundo de estrada.
+func _expedition_slots() -> int:
+	return 2 if logistics_rank >= 2 else 1
+
+func _expedition_luck() -> int:
+	return alchemy_rank + logistics_rank + Sanctum.luck_bonus(active_buffs)
+
+func _expedition_on_route(id: String) -> Dictionary:
+	for trip in expeditions:
+		if str(trip.get("id", "")) == id:
+			return trip
+	return {}
+
+func _bar(progress: float) -> String:
+	var filled := clampi(int(round(progress * 8.0)), 0, 8)
+	return "█".repeat(filled) + "░".repeat(8 - filled)
+
+func _start_expedition(id: String) -> void:
+	var destination := Expedition.find(id)
+	if destination.is_empty():
+		return
+	if not Expedition.is_unlocked(destination, shop_day):
+		last_event = "%s ainda não está no mapa da loja. %s." % [destination["name"], Expedition.locked_hint(destination)]
+		_refresh_ui()
+		return
+	if expeditions.size() >= _expedition_slots():
+		last_event = "Só há %d batedor(es) contratados. Aperfeiçoe Logística para abrir outra vaga." % _expedition_slots()
+		_refresh_ui()
+		return
+	var cost := Expedition.cost_for(destination, logistics_rank)
+	if gold < cost:
+		last_event = "A passagem custa %d ouro. Sem adiantamento o batedor nem calça a bota." % cost
+		_refresh_ui()
+		return
+	gold -= cost
+	var duration := Expedition.duration_for(destination, logistics_rank)
+	expeditions.append({"id": id, "remaining": duration, "total": duration})
+	last_event = "%s partiu com %d ouro de passagem e volta em %s." % [destination["name"], cost, Expedition.days_label(duration)]
+	audio.play("click")
+	_show_feedback("🧭 Expedição iniciada.", Color(0.55, 0.95, 0.7))
+	_save_game()
+	_refresh_ui()
+
+func _advance_expeditions(game_seconds: float) -> void:
+	if expeditions.is_empty():
+		return
+	var arrived: Array[Dictionary] = []
+	for trip in expeditions:
+		trip["remaining"] = float(trip.get("remaining", 0.0)) - game_seconds
+		if float(trip["remaining"]) <= 0.0:
+			arrived.append(trip)
+	for trip in arrived:
+		expeditions.erase(trip)
+		_finish_expedition(trip)
+
+func _finish_expedition(entry: Dictionary) -> void:
+	var destination := Expedition.find(str(entry.get("id", "")))
+	if destination.is_empty():
+		return
+	var luck := _expedition_luck()
+	var loot := Expedition.roll_loot(destination, luck)
+	var mishap := Expedition.roll_mishap(destination, luck)
+	if str(mishap.get("kind", "")) == "perda":
+		loot.clear()
+	var parts: Array[String] = []
+	for drop in loot:
+		var drop_id := str(drop["id"])
+		var count := int(drop["count"])
+		ingredient_stock[drop_id] = int(ingredient_stock.get(drop_id, 0)) + count
+		# Carga extra no estoque caseiro esfria o mercado daquele ingrediente.
+		Economy.bump(economy_state, "ingredient", drop_id, -0.05 * float(count))
+		parts.append("%s x%d" % [Expedition.ingredient_name(drop_id), count])
+		if Ingredients.is_rare(drop_id):
+			rare_found += 1
+	expeditions_done += 1
+	_add_xp(9 + int(round(float(destination["danger"]) / 5.0)))
+	var text := "%s voltou de mãos abanando. A loja finge que não viu." % destination["name"] if parts.is_empty() else "%s retornou com: %s." % [destination["name"], ", ".join(parts)]
+	match str(mishap.get("kind", "")):
+		"furia":
+			fury = mini(5, fury + 1)
+			_update_demonic_form()
+		"reputacao":
+			reputation = maxi(0, reputation - 2)
+	if not mishap.is_empty():
+		text += " " + str(mishap["text"])
+	expedition_log.push_front(text)
+	while expedition_log.size() > 4:
+		expedition_log.pop_back()
+	last_event = text
+	if parts.is_empty():
+		audio.play("sad")
+	else:
+		audio.play("rare" if mishap.is_empty() else "coin")
+		_show_feedback("✦ Botim chegou!", Color(1.0, 0.86, 0.45))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Raridade mais fraca em estoque: guarda a brasa boa para peça grande.
+func _catalyst_available() -> Dictionary:
+	for rare in Ingredients.RARE_DATA:
+		if int(ingredient_stock.get(str(rare["id"]), 0)) > 0:
+			return rare
+	return {}
+
+func _toggle_catalyst() -> void:
+	if not catalyst_enabled and _catalyst_available().is_empty():
+		last_event = "Nenhuma raridade na prateleira. Mande uma expedição e torça pelo caminho."
+		_refresh_ui()
+		return
+	catalyst_enabled = not catalyst_enabled
+	last_event = "Catalisador armado: a próxima forja queima uma raridade por peça melhor." if catalyst_enabled else "Catalisador desarmado. A forja volta a trabalhar pelo preço de tabela."
+	audio.play("click")
+	_refresh_ui()
+
+## Queima a raridade escolhida e devolve a sorte que ela entrega na rolagem.
+func _take_catalyst() -> Dictionary:
+	if not catalyst_enabled:
+		return {}
+	var picked: Dictionary = _catalyst_available()
+	if picked.is_empty():
+		catalyst_enabled = false
+		return {}
+	var picked_id := str(picked["id"])
+	ingredient_stock[picked_id] = int(ingredient_stock.get(picked_id, 0)) - 1
+	return picked
 
 ## Barrinha de qualidade do produto, criada sob demanda para saves antigos que
 ## nunca tiveram `quality_stock` e para peças ganhas por eventos.
@@ -1806,6 +2034,7 @@ func _on_customer_tick() -> void:
 	_stage_customer_leaves()
 	_advance_craft_jobs(3.0)
 	Sanctum.advance(active_buffs, 3.0)
+	_advance_expeditions(3.0)
 	_set_seller_mood("demonic" if demonic_form_active else "neutral")
 	if is_instance_valid(reaction_label):
 		reaction_label.text = ""
@@ -2536,6 +2765,42 @@ func _refresh_ui() -> void:
 		if r < ritual_buttons.size():
 			ritual_buttons[r].text = "Ativo ✓" if running else "Rezar (%d)" % ritual_cost
 			ritual_buttons[r].disabled = running or gold < ritual_cost
+	for e in range(Expedition.size()):
+		var destination: Dictionary = Expedition.DATA[e]
+		var destination_id := str(destination["id"])
+		var trip_cost := Expedition.cost_for(destination, logistics_rank)
+		var open_route := Expedition.is_unlocked(destination, shop_day)
+		var on_the_road := _expedition_on_route(destination_id)
+		if e < expedition_labels.size():
+			if on_the_road:
+				expedition_labels[e].text = "🧭 Na estrada • faltam %s" % Expedition.days_label(maxf(0.0, float(on_the_road.get("remaining", 0.0))))
+			elif not open_route:
+				expedition_labels[e].text = "🔒 %s" % Expedition.locked_hint(destination)
+			else:
+				expedition_labels[e].text = "%s • risco %d%% • %s" % [Expedition.days_label(Expedition.duration_for(destination, logistics_rank)), int(destination["danger"]), Expedition.preview(destination)]
+			expedition_labels[e].add_theme_color_override("font_color", Color(1.0, 0.86, 0.45) if on_the_road != {} else Color(0.74, 0.82, 0.78))
+		if e < expedition_buttons.size():
+			expedition_buttons[e].text = "Voltando…" if on_the_road != {} else "Mandar (%d)" % trip_cost
+			expedition_buttons[e].disabled = on_the_road != {} or not open_route or gold < trip_cost or expeditions.size() >= _expedition_slots()
+	if is_instance_valid(expedition_active_label):
+		if expeditions.is_empty():
+			expedition_active_label.text = "Nenhuma viagem na estrada. Todos os batedores estão jogando cartas nos fundos."
+		else:
+			var routes: Array[String] = []
+			for trip in expeditions:
+				var trip_destination := Expedition.find(str(trip.get("id", "")))
+				var total := maxf(1.0, float(trip.get("total", 1.0)))
+				var progress := clampf(1.0 - float(trip.get("remaining", 0.0)) / total, 0.0, 1.0)
+				routes.append("%s [%s] %d%%" % [str(trip_destination.get("name", "?")), _bar(progress), int(round(progress * 100.0))])
+			expedition_active_label.text = "Vagas: %d/%d — %s" % [expeditions.size(), _expedition_slots(), "  |  ".join(routes)]
+	if is_instance_valid(expedition_log_label):
+		expedition_log_label.text = "Nenhuma mala voltou ainda." if expedition_log.is_empty() else "\n".join(expedition_log)
+	if is_instance_valid(catalyst_label):
+		var catalyst := _catalyst_available()
+		catalyst_label.text = "Disponível: %s (+%d de sorte na próxima peça)." % [str(catalyst["name"]), int(catalyst["catalyst_luck"])] if not catalyst.is_empty() else "Prateleira de raridades vazia. Expedições trazem o que o mercado não vende."
+	if is_instance_valid(catalyst_button):
+		catalyst_button.text = "Catalisador: ARMADO" if catalyst_enabled else "Catalisador: desarmado"
+		catalyst_button.disabled = _catalyst_available().is_empty() and not catalyst_enabled
 	var ad_cost := 75 + ad_level * 60
 	upgrade_button.text = "Propaganda infernal • %d ouro (nível %d)" % [ad_cost, ad_level]
 	upgrade_button.disabled = gold < ad_cost
@@ -2578,6 +2843,21 @@ func _read_buffs(saved) -> Dictionary:
 			result[str(saved_id)] = left
 	return result
 
+## Viagens na estrada voltam a andar no mesmo ponto; destino desconhecido é descartado.
+func _read_expeditions(saved) -> void:
+	expeditions.clear()
+	if not (saved is Array):
+		return
+	for entry in saved:
+		if not (entry is Dictionary):
+			continue
+		var trip: Dictionary = entry
+		var trip_id := str(trip.get("id", ""))
+		if Expedition.find(trip_id).is_empty():
+			continue
+		var total := maxf(1.0, float(trip.get("total", 1.0)))
+		expeditions.append({"id": trip_id, "remaining": clampf(float(trip.get("remaining", total)), 0.0, total), "total": total})
+
 func _save_game() -> void:
 	var config := ConfigFile.new()
 	config.set_value("game", "gold", gold)
@@ -2617,11 +2897,12 @@ func _save_game() -> void:
 	config.set_value("game", "active_buffs", active_buffs)
 	config.set_value("game", "stolen_tier", stolen_tier)
 	config.set_value("game", "best_quality_crafted", best_quality_crafted)
-	config.set_value("game", "economy_state", economy_state)
-	config.set_value("game", "active_buffs", active_buffs)
-	config.set_value("game", "stolen_tier", stolen_tier)
-	config.set_value("game", "best_quality_crafted", best_quality_crafted)
 	config.set_value("game", "rituals_performed", rituals_performed)
+	config.set_value("game", "expeditions", expeditions)
+	config.set_value("game", "expedition_log", expedition_log)
+	config.set_value("game", "expeditions_done", expeditions_done)
+	config.set_value("game", "rare_found", rare_found)
+	config.set_value("game", "catalyst_crafted", catalyst_crafted)
 	config.set_value("game", "total_ingredients_bought", total_ingredients_bought)
 	config.set_value("game", "premium_crafted", premium_crafted)
 	config.set_value("game", "happy_customers", happy_customers)
@@ -2713,6 +2994,15 @@ func _load_game() -> void:
 	_read_economy_state(config.get_value("game", "economy_state", {}))
 	active_buffs = _read_buffs(config.get_value("game", "active_buffs", {}))
 	stolen_tier = clampi(int(config.get_value("game", "stolen_tier", stolen_tier)), 0, Quality.size() - 1)
+	_read_expeditions(config.get_value("game", "expeditions", []))
+	expedition_log.clear()
+	var saved_log = config.get_value("game", "expedition_log", [])
+	if saved_log is Array:
+		for saved_line in saved_log:
+			expedition_log.append(str(saved_line))
+	expeditions_done = int(config.get_value("game", "expeditions_done", expeditions_done))
+	rare_found = int(config.get_value("game", "rare_found", rare_found))
+	catalyst_crafted = int(config.get_value("game", "catalyst_crafted", catalyst_crafted))
 	total_ingredients_bought = int(config.get_value("game", "total_ingredients_bought", total_ingredients_bought))
 	premium_crafted = int(config.get_value("game", "premium_crafted", premium_crafted))
 	happy_customers = int(config.get_value("game", "happy_customers", happy_customers))
@@ -2924,6 +3214,10 @@ func _check_achievements() -> void:
 		{"id": "market_barometer", "name": "Termômetro do Balcão (produto no pico de procura)", "condition": _max_product_heat() >= 0.8, "gold": 55, "rep": 3},
 		{"id": "ritual_apprentice", "name": "Aprendiz de Ritos (3 rituais)", "condition": rituals_performed >= 3, "gold": 40, "rep": 2},
 		{"id": "ritual_devotee", "name": "Fiel do Santuário (10 rituais)", "condition": rituals_performed >= 10, "gold": 100, "rep": 5, "pose": "book"},
+		{"id": "first_expedition", "name": "Pé na Estrada (primeira expedição)", "condition": expeditions_done >= 1, "gold": 30, "rep": 1},
+		{"id": "route_regular", "name": "Corredor do Abismo (10 expedições de volta)", "condition": expeditions_done >= 10, "gold": 90, "rep": 4, "pose": "relic"},
+		{"id": "rare_hoarder", "name": "Vitrine de Raridades (3 raridades no estoque)", "condition": rare_found >= 3, "gold": 70, "rep": 3},
+		{"id": "catalyst_touch", "name": "Toque de Catalisador (peça rara na forja)", "condition": catalyst_crafted >= 1, "gold": 60, "rep": 3, "pose": "relic"},
 		{"id": "library_master", "name": "Bibliotecária do Submundo (Biblioteca Nv.3)", "condition": library_upgrade_level >= 3, "gold": 80, "rep": 4, "pose": "book"},
 		{"id": "sanctum_keeper", "name": "Guardiã das Relíquias (Santuário Nv.3)", "condition": sanctum_upgrade_level >= 3, "gold": 90, "rep": 5, "pose": "relic"},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
@@ -2986,6 +3280,10 @@ func _get_achievement_summary() -> String:
 			"market_barometer": "Termômetro do Balcão",
 			"ritual_apprentice": "Aprendiz de Ritos",
 			"ritual_devotee": "Fiel do Santuário",
+			"first_expedition": "Pé na Estrada",
+			"route_regular": "Corredor do Abismo",
+			"rare_hoarder": "Vitrine de Raridades",
+			"catalyst_touch": "Toque de Catalisador",
 			"library_master": "Bibliotecária do Submundo",
 			"sanctum_keeper": "Guardiã das Relíquias",
 			"queue_charmer": "Ninguém sai da fila",
