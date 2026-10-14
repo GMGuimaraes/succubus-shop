@@ -296,8 +296,9 @@ func _build_ui() -> void:
 	sanctum_button.pressed.connect(_set_sector.bind("sanctum"))
 	header.add_child(sanctum_button)
 
-	var stats := HBoxContainer.new()
-	stats.add_theme_constant_override("separation", 24)
+	var stats := FlowContainer.new()
+	stats.add_theme_constant_override("h_separation", 24)
+	stats.add_theme_constant_override("v_separation", 8)
 	root.add_child(stats)
 
 	gold_label = _make_stat_label("Ouro: 0")
@@ -313,8 +314,9 @@ func _build_ui() -> void:
 	fury_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.55))
 	stats.add_child(fury_label)
 
-	var speed_row := HBoxContainer.new()
-	speed_row.add_theme_constant_override("separation", 10)
+	var speed_row := FlowContainer.new()
+	speed_row.add_theme_constant_override("h_separation", 10)
+	speed_row.add_theme_constant_override("v_separation", 6)
 	root.add_child(speed_row)
 	speed_label = Label.new()
 	speed_label.add_theme_font_size_override("font_size", 15)
@@ -342,8 +344,9 @@ func _build_ui() -> void:
 	talent_label.add_theme_color_override("font_color", Color(0.88, 0.83, 1.0))
 	root.add_child(talent_label)
 
-	var talent_row := HBoxContainer.new()
-	talent_row.add_theme_constant_override("separation", 8)
+	var talent_row := FlowContainer.new()
+	talent_row.add_theme_constant_override("h_separation", 8)
+	talent_row.add_theme_constant_override("v_separation", 6)
 	root.add_child(talent_row)
 	alchemy_button = Button.new()
 	alchemy_button.pressed.connect(_buy_talent.bind("alchemy"))
@@ -373,6 +376,7 @@ func _build_ui() -> void:
 	body.clip_contents = true
 	body.add_theme_constant_override("separation", 22)
 	root.add_child(body)
+	get_viewport().size_changed.connect(_update_body_orientation.bind(body))
 
 	var left := VBoxContainer.new()
 	market_panel = left
@@ -729,6 +733,7 @@ func _build_ui() -> void:
 	footer.add_theme_font_size_override("font_size", 12)
 	footer.add_theme_color_override("font_color", Color(0.62, 0.57, 0.68))
 	root.add_child(footer)
+	_update_body_orientation(body)
 
 func _build_visual_theme() -> Theme:
 	var visual_theme := Theme.new()
@@ -768,6 +773,13 @@ func _make_stat_label(text_value: String) -> Label:
 	label.add_theme_font_size_override("font_size", 22)
 	label.add_theme_color_override("font_color", Color(0.91, 1.0, 0.75))
 	return label
+
+func _update_body_orientation(body: BoxContainer) -> void:
+	if not is_instance_valid(body):
+		return
+	# Keep the illustrated shop beside the market on wide screens,
+	# and stack them on narrow windows such as small desktop displays.
+	body.vertical = get_viewport_rect().size.x < 900.0
 
 func _toggle_market_panel() -> void:
 	if not is_instance_valid(market_panel):
