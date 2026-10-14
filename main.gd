@@ -2573,6 +2573,9 @@ func _on_customer_tick() -> void:
 		best_score = maxi(best_score, business_score())
 		if steam != null:
 			steam.call("submit_score", business_score(), "Sua loja")
+		# O dia vira uma vez e o recorde nasce nesse instante: sem gravar aqui,
+		# quem fecha o jogo sem mover mais nada perde a virada.
+		_save_game()
 		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA)]
 	if imp_hired and ticks % 3 == 0:
 		_add_piece(0, 1)
@@ -3500,6 +3503,11 @@ func _save_game() -> void:
 	config.set_value("game", "known_recipes", known_recipes)
 	config.set_value("game", "queue_distractions", queue_distractions)
 	config.set_value("game", "products", products)
+	# O que a forja ainda não terminou é dinheiro do jogador em andamento: perder
+	# isso ao fechar o jogo era trabalhar de graça na última sessão do dia.
+	config.set_value("game", "ticks", ticks)
+	config.set_value("game", "craft_jobs", craft_jobs)
+	config.set_value("game", "catalyst_enabled", catalyst_enabled)
 	config.save(SAVE_PATH)
 
 func _load_game() -> void:
@@ -3622,6 +3630,22 @@ func _load_game() -> void:
 			if not recipe_key.is_empty() and not known_recipes.has(recipe_key):
 				known_recipes.append(recipe_key)
 	queue_distractions = int(config.get_value("game", "queue_distractions", queue_distractions))
+	ticks = maxi(0, int(config.get_value("game", "ticks", ticks)))
+	catalyst_enabled = bool(config.get_value("game", "catalyst_enabled", catalyst_enabled))
+	var saved_jobs = config.get_value("game", "craft_jobs", [])
+	craft_jobs.clear()
+	if saved_jobs is Array:
+		for saved_job in saved_jobs:
+			if not saved_job is Dictionary:
+				continue
+			var job_index := int(saved_job.get("index", -1))
+			if job_index < 0 or job_index >= products.size():
+				continue
+			craft_jobs.append({
+				"index": job_index,
+				"remaining": maxf(0.5, float(saved_job.get("remaining", 0.5))),
+				"luck": float(saved_job.get("luck", 0.0)),
+			})
 	var saved_achievements = config.get_value("game", "unlocked_achievements", [])
 	if saved_achievements is Array:
 		unlocked_achievements.clear()
@@ -3886,6 +3910,7 @@ func _grant_pack(free: bool) -> void:
 	last_event = text
 	_play_card_flip(card_id)
 	_refresh_ui()
+	_save_game()
 
 ## A carta sorteada dá um pulo na parede da coleção.
 func _play_card_flip(card_id: String) -> void:
@@ -3916,6 +3941,7 @@ func _publish_score() -> void:
 	last_event = "Resultado publicado no placar: %d pontos." % score
 	audio.play("coin")
 	_refresh_ui()
+	_save_game()
 
 func _on_leaderboard_ready(_rows: Array) -> void:
 	_refresh_ui()
