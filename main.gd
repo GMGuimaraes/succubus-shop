@@ -235,6 +235,12 @@ const STAGE_WALK_SPEED := 215.0
 const STAGE_STEP_SECONDS := 0.34
 ## Ordem das poses no ciclo: meio de passo, perna junta, outro meio de passo.
 const STAGE_WALK_SEQUENCE := [1, 0, 2]
+## Faixa da tela que o elenco pinta de cenário andável, e o pedaço dela que o
+## painel lateral toma de volta para cima para as imagens não chegarem cortadas.
+## A coluna do mercado devolve exatamente o mesmo respiro, então só o quadro de
+## interação cresce.
+const STAGE_BAND_SHARE := 0.30
+const SIDE_PANEL_LIFT := 0.10
 var stage_layer: Control
 var stage_front_layer: Control
 var stage_occluder: TextureRect
@@ -247,8 +253,9 @@ var _stage_retired: Array[Dictionary] = []
 var _stage_walker_timer: float = 2.0
 var _lane_depths: Array[float] = [0.08, 0.40, 0.82]
 var _lane_scales: Array[float] = [0.56, 0.78, 1.0]
-var _lane_alphas: Array[float] = [0.72, 0.88, 1.0]
+var _lane_alphas: Array[float] = [0.90, 0.96, 1.0]
 var _stage_back_band: Control
+var _market_top_guard: Control
 var _stage_room: String = "res://assets/shop_scene.png"
 var _seller_home: Vector2 = Vector2.ZERO
 var _stage_layout_key := Vector2(-1.0, -1.0)
@@ -423,9 +430,9 @@ func _spawn_stage_walker() -> void:
 	var walker := _make_stage_figure(_stage_crowd_frames(crowd), STAGE_FIGURE_HEIGHT)
 	var figure_scale: float = lane["scale"]
 	walker.scale = Vector2(figure_scale, figure_scale)
-	# Mais fundo na sala: mais escuro, mais frio e mais transparente.
-	var shade: float = 0.66 + 0.34 * lane["alpha"]
-	walker.modulate = Color(shade, shade * 0.97, shade * 1.02, lane["alpha"])
+	# Mais fundo na sala: um pouco mais frio e escuro, mas nunca fantasma.
+	var shade: float = lerpf(0.86, 1.0, (figure_scale - 0.5) / 0.5)
+	walker.modulate = Color(shade, shade * 0.98, shade * 1.02, lane["alpha"])
 	# O pivô no meio do corpo faz a respiração e o balanço girarem como gente, mas
 	# obriga a entrada e a saída a descontarem a meia altura desenhada.
 	walker.pivot_offset = walker.size / 2.0
@@ -714,10 +721,13 @@ func _room_meet() -> Vector2:
 func _layout_stage_figures() -> void:
 	if not is_instance_valid(stage_layer) or stage_layer.size.x <= 0:
 		return
-	# O salão respira com a janela: 40% da altura é cenário andável, o resto é UI.
-	var wanted := stage_layer.size.y * 0.40
+	# O salão respira com a janela: a faixa do palco é o cenário andável, e o
+	# painel lateral ainda toma um pedaço dela de volta para cima.
+	var wanted := stage_layer.size.y * STAGE_BAND_SHARE
 	if is_instance_valid(_stage_back_band) and absf(_stage_back_band.custom_minimum_size.y - wanted) > 2.0:
 		_stage_back_band.custom_minimum_size.y = wanted
+	if is_instance_valid(_market_top_guard):
+		_market_top_guard.custom_minimum_size.y = stage_layer.size.y * SIDE_PANEL_LIFT
 	var host_lane := _lane(1)
 	var seller_floor: float = host_lane["floor_y"]
 	_seller_home = Vector2(_room_meet().x * stage_layer.size.x - stage_seller.size.x * 0.5, seller_floor - stage_seller.size.y)
@@ -1099,6 +1109,13 @@ func _build_ui() -> void:
 	left.size_flags_stretch_ratio = 1.6
 	left.add_theme_constant_override("separation", 8)
 	body.add_child(left)
+
+	# O respiro que o palco cedeu ao painel lateral volta aqui: o mercado começa no
+	# mesmo lugar de antes e só o quadro de interação sobe.
+	_market_top_guard = Control.new()
+	_market_top_guard.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_market_top_guard.custom_minimum_size.y = 72.0
+	left.add_child(_market_top_guard)
 
 	var product_title := Label.new()
 	sector_title_label = product_title
@@ -1530,8 +1547,10 @@ func _build_ui() -> void:
 	var right_panel := PanelContainer.new()
 	right_panel.clip_contents = true
 	var right_panel_style := StyleBoxFlat.new()
-	right_panel_style.bg_color = Color(0.025, 0.018, 0.055, 0.90)
-	right_panel_style.border_color = Color(0.43, 0.25, 0.68, 0.95)
+	# Vidro fumê, não parede: o salão continua lendo-se através do quadro, mas o
+	# contraste basta para ele parecer o lugar onde se lê a conversa.
+	right_panel_style.bg_color = Color(0.025, 0.018, 0.055, 0.70)
+	right_panel_style.border_color = Color(0.43, 0.25, 0.68, 0.85)
 	right_panel_style.set_border_width_all(1)
 	right_panel_style.set_corner_radius_all(10)
 	right_panel_style.content_margin_left = 12
