@@ -131,7 +131,6 @@ var music_player: AudioStreamPlayer
 const GameAudio = preload("res://audio.gd")
 var audio: Node
 var mute_button: Button
-var feedback_audio_player: AudioStreamPlayer
 var toast_label: Label
 var toast_tween: Tween
 var market_panel: VBoxContainer
@@ -180,7 +179,6 @@ func _ready() -> void:
 	audio.settings_changed.connect(_apply_music_settings)
 	_load_game()
 	_build_ui()
-	_setup_feedback_audio()
 	_setup_background_music()
 	_apply_music_settings()
 	_refresh_ui()
@@ -854,7 +852,7 @@ func _activate_sector_feature() -> void:
 		_add_xp(xp_reward)
 		reputation += 1
 		last_event = "Você consulta um grimório vivo. Ele revela uma margem secreta e concede +%d XP." % xp_reward
-		_play_feedback_tone(740.0, 0.14, 0.14)
+		audio.play("rare")
 		_show_feedback("Conhecimento aplicado.", Color(0.70, 0.90, 1.0))
 	elif current_sector == "sanctum":
 		var affinity_reward := 2 + sanctum_upgrade_level
@@ -862,7 +860,7 @@ func _activate_sector_feature() -> void:
 		fury = maxi(0, fury - 1)
 		_update_demonic_form()
 		last_event = "Você acalma uma relíquia inquieta. A succubus recupera %d pontos de afinidade." % affinity_reward
-		_play_feedback_tone(560.0, 0.16, 0.14)
+		audio.play("happy")
 		_show_feedback("Relíquia harmonizada.", Color(0.86, 0.60, 1.0))
 	else:
 		last_event = "Escolha Biblioteca ou Santuário para interagir com um cenário do fundo."
@@ -949,15 +947,6 @@ func _play_seduction_peak_pose() -> void:
 	audio.play("talent")
 	_show_feedback("♥ Pose especial desbloqueada!", Color(1.0, 0.62, 0.88))
 
-func _setup_feedback_audio() -> void:
-	feedback_audio_player = AudioStreamPlayer.new()
-	var generator := AudioStreamGenerator.new()
-	generator.mix_rate = 22050.0
-	generator.buffer_length = 0.25
-	feedback_audio_player.stream = generator
-	feedback_audio_player.volume_db = -8.0
-	add_child(feedback_audio_player)
-
 func _setup_background_music() -> void:
 	var music_path := "res://assets/shop_theme_loop.mp3"
 	if not ResourceLoader.exists(music_path):
@@ -978,21 +967,6 @@ func _apply_music_settings() -> void:
 	if is_instance_valid(music_player):
 		music_player.stream_paused = audio.muted
 		music_player.volume_db = -13.0 + linear_to_db(maxf(audio.volume, 0.0001))
-
-func _play_feedback_tone(frequency: float, duration: float = 0.12, volume: float = 0.16) -> void:
-	if not is_instance_valid(feedback_audio_player):
-		return
-	feedback_audio_player.play()
-	var playback := feedback_audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
-	if playback == null:
-		return
-	var stream := feedback_audio_player.stream as AudioStreamGenerator
-	var frame_count := int(stream.mix_rate * duration)
-	for frame in range(frame_count):
-		var progress := float(frame) / float(maxi(1, frame_count))
-		var envelope := minf(1.0, minf(progress / 0.08, (1.0 - progress) / 0.18))
-		var sample := sin(TAU * frequency * float(frame) / stream.mix_rate) * volume * envelope
-		playback.push_frame(Vector2(sample, sample))
 
 func _show_feedback(message: String, color: Color = Color(1.0, 0.78, 0.9)) -> void:
 	if not is_instance_valid(toast_label):
