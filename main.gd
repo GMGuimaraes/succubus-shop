@@ -47,6 +47,7 @@ var library_upgrade_level: int = 0
 var sanctum_upgrade_level: int = 0
 var library_upgrade_button: Button
 var sanctum_upgrade_button: Button
+var sector_action_button: Button
 var queue_distractions: int = 0
 var ingredient_stock: Dictionary = {"essencia": 1, "pena": 1, "sal": 1, "vazio": 1, "po_lunar": 1, "tinta": 1}
 var premium_stock: Dictionary = {}
@@ -160,10 +161,17 @@ const SELLER_CHARMED_LINES := [
 	"Ela gira uma mecha de cabelo: “Sem estoque? Deixa comigo.” O cliente sai prometendo voltar."
 ]
 const SUCCUBUS_NEGOTIATION_LINES := [
-	"A succubus inclina o rosto: “Você pode pagar depois... mas vai ter que voltar para me agradecer.”",
-	"Ela apoia o cotovelo no balcão: “Para um aventureiro tão interessante, eu sempre encontro um desconto.”",
-	"A chefe pisca: “Não é magia. É só você querendo muito me impressionar.”",
-	"Ela desliza o item pelo balcão: “Leve. O preço é pequeno perto da história que você vai contar.”"
+"A succubus inclina o rosto: “Você pode pagar depois... mas vai ter que voltar para me agradecer.”",
+"Ela apoia o cotovelo no balcão: “Para um aventureiro tão interessante, eu sempre encontro um desconto.”",
+"A chefe pisca: “Não é magia. É só você querendo muito me impressionar.”",
+"Ela desliza o item pelo balcão: “Leve. O preço é pequeno perto da história que você vai contar.”"
+]
+const MEME_FLIRT_LINES := [
+"A chefe responde ao Mago do Quero Mana: “Mana eu tenho. Quero ver se você aguenta o preço.”",
+"Ela encara o Fiscal do Pix Astral: “Aproxima o cristal, querido. Se der erro, você paga com um elogio.”",
+"A succubus provoca o corredor: “Só mais uma run? Então fica mais uma negociação comigo.”",
+"Ela sorri para o cliente do bordão: “É sobre isso. E sobre você voltar amanhã.”",
+"A chefe aponta para o ladrão: “Ctrl+C não copia meu charme. Esse é proprietário.”"
 ]
 
 func _ready() -> void:
@@ -435,6 +443,10 @@ func _build_ui() -> void:
 	sanctum_upgrade_button.custom_minimum_size = Vector2(220, 36)
 	sanctum_upgrade_button.pressed.connect(_buy_sector_upgrade.bind("sanctum"))
 	left.add_child(sanctum_upgrade_button)
+	sector_action_button = Button.new()
+	sector_action_button.custom_minimum_size = Vector2(220, 40)
+	sector_action_button.pressed.connect(_activate_sector_feature)
+	left.add_child(sector_action_button)
 
 	products_box = VBoxContainer.new()
 	products_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -832,6 +844,28 @@ func _buy_sector_upgrade(sector: String) -> void:
 		last_event = "Santuário melhorado para o nível %d: relíquias amplificam o charme da succubus." % sanctum_upgrade_level
 	reputation += 1
 	_add_xp(8)
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+func _activate_sector_feature() -> void:
+	if current_sector == "library":
+		var xp_reward := 6 + library_upgrade_level * 3
+		_add_xp(xp_reward)
+		reputation += 1
+		last_event = "Você consulta um grimório vivo. Ele revela uma margem secreta e concede +%d XP." % xp_reward
+		_play_feedback_tone(740.0, 0.14, 0.14)
+		_show_feedback("Conhecimento aplicado.", Color(0.70, 0.90, 1.0))
+	elif current_sector == "sanctum":
+		var affinity_reward := 2 + sanctum_upgrade_level
+		affection = mini(100, affection + affinity_reward)
+		fury = maxi(0, fury - 1)
+		_update_demonic_form()
+		last_event = "Você acalma uma relíquia inquieta. A succubus recupera %d pontos de afinidade." % affinity_reward
+		_play_feedback_tone(560.0, 0.16, 0.14)
+		_show_feedback("Relíquia harmonizada.", Color(0.86, 0.60, 1.0))
+	else:
+		last_event = "Escolha Biblioteca ou Santuário para interagir com um cenário do fundo."
 	_check_achievements()
 	_save_game()
 	_refresh_ui()
@@ -1394,11 +1428,26 @@ func _trigger_random_event() -> void:
 				"message": "A succubus se apoia no balcão e sussurra um elogio indecente. Os aventureiros esquecem por alguns segundos que estavam com pressa.",
 				"gold": 12, "reputation": 2, "queue_distraction": true
 			},
-			{
-				"name": "Negociação com Olhar Demorado",
-				"message": "Ela promete um desconto para quem conseguir manter a compostura. Ninguém consegue, mas todos permanecem na fila.",
-				"gold": 18, "reputation": 3, "queue_distraction": true
-			}
+				{
+					"name": "Negociação com Olhar Demorado",
+					"message": "Ela promete um desconto para quem conseguir manter a compostura. Ninguém consegue, mas todos permanecem na fila.",
+					"gold": 18, "reputation": 3, "queue_distraction": true
+				},
+				{
+					"name": "Mana, Mas Com Charme",
+					"message": "O mago reclama da poção, a succubus responde com um sorriso e ele compra outra só para continuar a discussão.",
+					"gold": 26, "reputation": 3, "queue_distraction": true
+				},
+				{
+					"name": "Pix Astral Aprovado",
+					"message": "O cristal de pagamento pede um elogio antes de aprovar a transação. A chefe entrega dois e a fila aplaude.",
+					"gold": 24, "reputation": 2, "queue_distraction": true
+				},
+				{
+					"name": "Última Run, Prometo",
+					"message": "Um aventureiro promete que esta é a última compra. A succubus pisca: “Claro, querido. Eu também prometo.”",
+					"gold": 20, "reputation": 2, "queue_distraction": true
+				}
 	]
 	var event: Dictionary = events[randi() % events.size()]
 	gold = maxi(0, gold + int(event["gold"]))
@@ -1508,7 +1557,8 @@ func _set_negotiation_dialogue(profile: Dictionary, item: Dictionary, seduction_
 	if current_customer_patience <= 1:
 		customer_line = "“Rápido, por favor. Tenho um dragão me esperando.”"
 	if seduction_used:
-		seller_speech_label.text = "CHEFE: %s\n%s: %s" % [SUCCUBUS_NEGOTIATION_LINES.pick_random(), customer_name, customer_line]
+		var flirt_line: String = str(MEME_FLIRT_LINES.pick_random() if customer_name in ["Mago do Quero Mana", "Fiscal do Pix Astral", "Só Mais Uma Run", "Ladino do Ctrl+C", "Cliente do É Sobre Isso"] else SUCCUBUS_NEGOTIATION_LINES.pick_random())
+		seller_speech_label.text = "CHEFE: %s\n%s: %s" % [flirt_line, customer_name, customer_line]
 	else:
 		seller_speech_label.text = "CHEFE: “%s por %d ouro. Quer levar?”\n%s: %s" % [str(item.get("name", "isto")), int(item.get("price", 0)), customer_name, customer_line]
 
@@ -1660,6 +1710,9 @@ func _refresh_ui() -> void:
 		var sanctum_cost := 90 + sanctum_upgrade_level * 120
 		sanctum_upgrade_button.text = "Santuário Nv.%d • Upgrade %d ouro" % [sanctum_upgrade_level, sanctum_cost] if sanctum_upgrade_level < 5 else "Santuário Nv.5 • Máximo"
 		sanctum_upgrade_button.disabled = sanctum_upgrade_level >= 5 or gold < sanctum_cost
+	if is_instance_valid(sector_action_button):
+		sector_action_button.text = "Consultar grimório vivo" if current_sector == "library" else "Harmonizar relíquia" if current_sector == "sanctum" else "Interagir com o cenário"
+		sector_action_button.disabled = current_sector != "library" and current_sector != "sanctum"
 	event_label.text = last_event
 	if is_instance_valid(regulars_label):
 		var regular_lines: Array[String] = ["FREGUESES RECORRENTES"]
