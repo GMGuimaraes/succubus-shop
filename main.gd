@@ -160,6 +160,7 @@ var score_button: Button
 var right_title_label: Label
 var chapter_label: Label
 var chapter_button: Button
+var campaign_line: Label
 var ending_layer: Control
 var last_pack_card: String = ""
 var upgrade_button: Button
@@ -1163,6 +1164,14 @@ func _build_ui() -> void:
 	shop_title.add_theme_font_size_override("font_size", 22)
 	shop_title.add_theme_color_override("font_color", Color(1.0, 0.78, 0.9))
 	right.add_child(shop_title)
+
+	# O objetivo atual mora no painel lateral: a coluna da esquerda troca de
+	# setor, e o jogador precisa ver para onde a campanha está empurrando.
+	campaign_line = Label.new()
+	campaign_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	campaign_line.add_theme_font_size_override("font_size", 14)
+	campaign_line.add_theme_color_override("font_color", Color(0.82, 1.0, 0.86))
+	right.add_child(campaign_line)
 
 	var portrait_row := HBoxContainer.new()
 	portrait_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -2916,6 +2925,15 @@ func _refresh_ui() -> void:
 		score_button.text = "Publicar resultado • você está em %dº" % rank
 	if is_instance_valid(chapter_label):
 		chapter_label.text = _chapter_text()
+	if is_instance_valid(campaign_line):
+		var shown_chapter := Campaign.chapter(campaign_step)
+		if shown_chapter.is_empty():
+			campaign_line.text = "★ Império fundado • o balcão segue em modo livre"
+		else:
+			var still_missing := Campaign.missing(_campaign_stats(), shown_chapter).size()
+			campaign_line.text = "★ Objetivo %d/%d: %s%s" % [
+				campaign_step + 1, Campaign.size(), str(shown_chapter["name"]),
+				" • pronto para fechar!" if still_missing == 0 else " • falta %d" % still_missing]
 	if is_instance_valid(chapter_button):
 		var chapter := Campaign.chapter(campaign_step)
 		if chapter.is_empty():
