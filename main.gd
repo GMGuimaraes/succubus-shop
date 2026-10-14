@@ -243,6 +243,7 @@ var stage_seller: Control
 var stage_seller_body: Control
 var stage_customer: Control
 var _stage_walkers: Array[Dictionary] = []
+var _stage_retired: Array[Dictionary] = []
 var _stage_walker_timer: float = 2.0
 var _lane_depths: Array[float] = [0.08, 0.40, 0.82]
 var _lane_scales: Array[float] = [0.56, 0.78, 1.0]
@@ -410,11 +411,16 @@ func _process(delta: float) -> void:
 ## elenco são as artes de corpo inteiro dos fregueses, menores e mais frias quanto
 ## mais longe da câmera.
 func _spawn_stage_walker() -> void:
-	if _stage_walkers.size() >= 4:
+	# Um corpo fica reservado ao cliente do turno: com os quatro em cena nunca
+	# haveria quem entrar sem repetir alguém.
+	if _stage_walkers.size() >= STAGE_CROWD_SPRITES.size() - 1:
 		return
-	var depth := randi() % (_lane_depths.size() - 1)
-	var lane := _lane(depth)
-	var walker := _make_stage_figure(_stage_crowd_frames(randi()), STAGE_FIGURE_HEIGHT)
+	var crowd := _free_crowd_index()
+	if crowd < 0:
+		return
+	var depth := randf_range(0.05, 0.30)
+	var lane := _lane_at(depth)
+	var walker := _make_stage_figure(_stage_crowd_frames(crowd), STAGE_FIGURE_HEIGHT)
 	var figure_scale: float = lane["scale"]
 	walker.scale = Vector2(figure_scale, figure_scale)
 	# Mais fundo na sala: mais escuro, mais frio e mais transparente.
@@ -451,10 +457,20 @@ func _spawn_stage_walker() -> void:
 	# distância que a figura avança, então ninguém desliza nem corre parado.
 	var speed := STAGE_WALK_SPEED * figure_scale
 	var trip := create_tween()
-	trip.tween_property(walker, "position:x", last_c - half_body.x, absf(last_c - first_c) / speed).set_trans(Tween.TRANS_LINEAR)
+	var leg := absf(last_c - first_c) / speed
 	if turns:
+		# Ninguém faz curva em linha reta: os últimos passos encurtam, o corpo junta
+		# as pernas, vira, e só então a marcha retoma.
+		var slow := leg * 0.12
+		var near_last := last_c - (last_c - first_c) * 0.12
+		trip.tween_property(walker, "position:x", near_last - half_body.x, leg - slow).set_trans(Tween.TRANS_LINEAR)
+		trip.tween_property(walker, "position:x", last_c - half_body.x, slow).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 		trip.tween_callback(_turn_stage_walker.bind(walker))
-		trip.tween_property(walker, "position:x", first_c - half_body.x, absf(last_c - first_c) / speed).set_trans(Tween.TRANS_LINEAR)
+		trip.tween_interval(STAGE_STEP_SECONDS)
+		trip.tween_property(walker, "position:x", near_last - half_body.x, slow).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+		trip.tween_property(walker, "position:x", first_c - half_body.x, leg - slow).set_trans(Tween.TRANS_LINEAR)
+	else:
+		trip.tween_property(walker, "position:x", last_c - half_body.x, leg).set_trans(Tween.TRANS_LINEAR)
 	trip.tween_callback(_retire_walker.bind(walker))
 	# Um quadro novo a cada passo, com o corpo subindo no meio dele para o pé não
 	# parecer escorregando no chão.
@@ -467,18 +483,46 @@ func _spawn_stage_walker() -> void:
 	var bob := create_tween().set_loops()
 	bob.tween_property(walker, "position:y", base_y - 2.5, STAGE_STEP_SECONDS * 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	bob.tween_property(walker, "position:y", base_y, STAGE_STEP_SECONDS * 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-	_stage_walkers.append({"node": walker, "bob": bob, "stride": stride, "trip": trip})
+	_stage_walkers.append({"node": walker, "crowd": crowd, "bob": bob, "stride": stride, "trip": trip})
+
+## Que corpo do elenco já está em cena. Os quatro personagens se revezam: dois
+## iguais andando juntos liam o mesmo sprite colado duas vezes, e repetir o
+## freguês do turno destoava do balcão.
+func _free_crowd_index() -> int:
+	var taken: Array[int] = []
+	for entry in _stage_walkers:
+		taken.append(int(entry.get("crowd", -1)))
+	for i in range(_stage_retired.size() - 1, -1, -1):
+		if not is_instance_valid(_stage_retired[i]["node"]):
+			_stage_retired.remove_at(i)
+		else:
+			taken.append(int(_stage_retired[i]["crowd"]))
+	if is_instance_valid(stage_customer) and stage_customer.visible:
+		taken.append(int(stage_customer.get_meta("crowd", -1)))
+	var pool: Array[int] = []
+	for i in range(STAGE_CROWD_SPRITES.size()):
+		if not taken.has(i):
+			pool.append(i)
+	if pool.is_empty():
+		return -1
+	return pool[randi() % pool.size()]
 
 func _retire_walker(walker: Control) -> void:
+	var crowd := -1
 	for i in range(_stage_walkers.size()):
 		if _stage_walkers[i]["node"] == walker:
 			var entry: Dictionary = _stage_walkers[i]
+			crowd = int(entry.get("crowd", -1))
 			_stage_walkers.remove_at(i)
 			for key in ["bob", "stride", "trip"]:
 				var mover: Tween = entry[key]
 				if mover.is_valid():
 					mover.kill()
 			break
+	if crowd >= 0:
+		# O corpo ainda some da tela durante o fade: liberado antes, entraria
+		# duplicado em cena enquanto o velho se apaga.
+		_stage_retired.append({"node": walker, "crowd": crowd})
 	if not is_instance_valid(walker):
 		return
 	var fade := create_tween()
@@ -551,6 +595,14 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 	if not is_instance_valid(stage_customer) or stage_layer.size.x <= 0:
 		return
 	_dress_stage_figure(stage_customer, _stage_crowd_frames(portrait_index), _lane_height(2))
+	var body := absi(portrait_index) % STAGE_CROWD_SPRITES.size()
+	stage_customer.set_meta("crowd", body)
+	# O corpo do freguês do turno é dele. Se um transeunte já o vestia, o
+	# transeunte se apaga: dois do mesmo rosto na tela pareciam um sprite só
+	# colado duas vezes.
+	for entry in _stage_walkers.duplicate():
+		if int(entry.get("crowd", -1)) == body:
+			_retire_walker(entry["node"] as Control)
 	var front := _lane(2)
 	var floor_y: float = front["floor_y"] - stage_customer.size.y
 	if _customer_leave_tween != null and _customer_leave_tween.is_valid():
@@ -630,13 +682,27 @@ func _seller_lean_in() -> void:
 ## A chefe fica na camada do meio, atrás dos móveis; o cliente do turno na da
 ## frente, encostado no balcão pelo lado do freguês.
 func _lane(depth: int) -> Dictionary:
-	var i := clampi(depth, 0, _lane_depths.size() - 1)
+	return _lane_at(_lane_depths[clampi(depth, 0, _lane_depths.size() - 1)])
+
+## Profundidade contínua entre as três faixas. O elenco anda por aqui: um
+## transeunte pode ficar a meio caminho do fundo em vez de parar exatamente na
+## linha onde a chefe atende, que é o que colava os dois corpos numa mancha só.
+func _lane_at(depth: float) -> Dictionary:
 	var floor_line: Vector2 = STAGE_ROOM_FLOOR.get(_stage_room, Vector2(0.60, 0.80))
 	return {
-		"floor_y": lerpf(floor_line.x, floor_line.y, _lane_depths[i]) * stage_layer.size.y,
-		"scale": _lane_scales[i],
-		"alpha": _lane_alphas[i],
+		"floor_y": lerpf(floor_line.x, floor_line.y, clampf(depth, 0.0, 1.0)) * stage_layer.size.y,
+		"scale": _lane_stop(depth, _lane_scales),
+		"alpha": _lane_stop(depth, _lane_alphas),
 	}
+
+func _lane_stop(depth: float, values: Array[float]) -> float:
+	var stops := _lane_depths
+	var i := 0
+	while i + 1 < stops.size() and depth > stops[i + 1]:
+		i += 1
+	if i + 1 >= stops.size():
+		return values[stops.size() - 1]
+	return lerpf(values[i], values[i + 1], inverse_lerp(stops[i], stops[i + 1], depth))
 
 func _lane_height(depth: int) -> float:
 	return STAGE_FIGURE_HEIGHT * _lane_scales[clampi(depth, 0, _lane_scales.size() - 1)]
@@ -812,10 +878,13 @@ func _set_stage_flip(figure: Control, flipped: bool) -> void:
 	for body in figure.get_children():
 		(body as TextureRect).flip_h = flipped
 
-## Meia-volta no fim do piso andável: o corpo vira e o passo continua o mesmo.
+## Meia-volta no fim do piso andável: o corpo vira de pernas fechadas, porque
+## virar no meio de um passo trocaria de perna na cara do observador.
 func _turn_stage_walker(walker: Control) -> void:
 	if not is_instance_valid(walker):
 		return
+	_set_stage_frame(walker, 0)
+	walker.set_meta("stage_step", 0)
 	_set_stage_flip(walker, not bool(walker.get_meta("stage_flip", false)))
 
 ## Sem sombra de contato nenhuma figura fica de pé numa arte pintada. Os elipses
