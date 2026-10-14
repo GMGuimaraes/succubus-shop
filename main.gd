@@ -4,6 +4,9 @@ const SAVE_PATH := "user://succubus_shop_save.cfg"
 const Regulars = preload("res://regulars.gd")
 const Factions = preload("res://factions.gd")
 const Ingredients = preload("res://ingredients.gd")
+const Quality = preload("res://quality.gd")
+const Economy = preload("res://economy.gd")
+const Sanctum = preload("res://sanctum.gd")
 
 var gold: int = 80
 var reputation: int = 0
@@ -51,10 +54,18 @@ var library_upgrade_button: Button
 var sanctum_upgrade_button: Button
 var sector_action_button: Button
 var queue_distractions: int = 0
-var ingredient_stock: Dictionary = {"essencia": 1, "pena": 1, "sal": 1, "vazio": 1, "po_lunar": 1, "tinta": 1}
-var premium_stock: Dictionary = {}
+var ingredient_stock: Dictionary = {"essencia": 1, "pena": 1, "sal": 1, "vazio": 1, "tinta": 1, "po_lunar": 1}
+## Estoque de peças por qualidade: { id_do_produto: [torto, honesto, refinado, prima, mitico] }
+var quality_stock: Dictionary = {}
+## Mercado reativo: { "ingredient": {id: calor}, "product": {id: calor} }
+var economy_state: Dictionary = Economy.fresh_state()
+## Rituais ativos do santuário: { id_do_ritual: segundos_de_mundo_restantes }
+var active_buffs: Dictionary = {}
 var total_ingredients_bought: int = 0
+## Peças Refinado ou melhor já fabricadas (mantém a conquista "Mão de Midas").
 var premium_crafted: int = 0
+var best_quality_crafted: int = -1
+var rituals_performed: int = 0
 var talent_label: Label
 var alchemy_button: Button
 var trade_button: Button
@@ -107,6 +118,10 @@ var counter_buttons: Array = []
 var ingredient_sell_buttons: Array = []
 var recipe_labels: Array = []
 var recipe_buttons: Array = []
+var market_label: Label
+var ritual_label: Label
+var ritual_labels: Array = []
+var ritual_buttons: Array = []
 var upgrade_button: Button
 var imp_button: Button
 var private_button: Button
@@ -135,6 +150,7 @@ var current_sector: String = "reception"
 var current_customer_budget: int = 0
 var current_customer_patience: int = 0
 var stolen_item_name: String = ""
+var stolen_tier: int = 1
 var theft_recovery_available: bool = false
 var seduction_peak_triggered: bool = false
 var ambient_particles: CPUParticles2D
@@ -203,6 +219,7 @@ func _ready() -> void:
 	add_child(audio)
 	audio.settings_changed.connect(_apply_music_settings)
 	_load_game()
+	_sync_quality_stock()
 	_build_ui()
 	_apply_sector_visibility()
 	_setup_background_music()
@@ -562,8 +579,16 @@ func _build_ui() -> void:
 		row.add_child(craft)
 		craft_buttons.append(craft)
 
+	reception_box.add_child(_make_section_title("BOLETIM DO MERCADO", Color(1.0, 0.86, 0.45)))
+	reception_box.add_child(_make_section_hint("A loja reage ao que você compra e vende: estoque encalhado derruba o preço, demanda em alta empurra para cima."))
+	market_label = Label.new()
+	market_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	market_label.add_theme_font_size_override("font_size", 14)
+	market_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.62))
+	reception_box.add_child(market_label)
+
 	reception_box.add_child(_make_section_title("MERCADO DE INGREDIENTES", Color(0.78, 0.95, 1.0)))
-	reception_box.add_child(_make_section_hint("Os preços mudam a cada dia. Compre barato, fabrique caro, e revenda o que sobrar."))
+	reception_box.add_child(_make_section_hint("Os preços flutuam com o dia e com o seu movimento. Compre barato, fabrique caro, e revenda o que sobrar."))
 
 	for ingredient in Ingredients.DATA:
 		var ingredient_id := str(ingredient["id"])
@@ -649,6 +674,49 @@ func _build_ui() -> void:
 
 	sanctum_box.add_child(_make_section_title("RELÍQUIAS", Color(0.86, 0.60, 1.0)))
 	sanctum_box.add_child(_make_section_hint("Quanto mais alto o santuário, mais as relíquias acalmam o humor da chefe."))
+
+	sanctum_box.add_child(_make_section_title("RITUAIS ATIVOS", Color(0.73, 0.30, 1.0)))
+	ritual_label = Label.new()
+	ritual_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ritual_label.add_theme_font_size_override("font_size", 14)
+	ritual_label.add_theme_color_override("font_color", Color(0.88, 0.76, 1.0))
+	sanctum_box.add_child(ritual_label)
+
+	sanctum_box.add_child(_make_section_title("RITUAIS", Color(0.86, 0.60, 1.0)))
+	sanctum_box.add_child(_make_section_hint("Buffs custam ouro e queimam com o tempo de mundo. Rituais de alívio apagam penalidades já pagas."))
+
+	for ritual in Sanctum.DATA:
+		var ritual_id := str(ritual["id"])
+		var ritual_card := _make_sector_card(Color(0.075, 0.04, 0.12, 0.94), Color(0.55, 0.28, 0.72, 0.95))
+		sanctum_box.add_child(ritual_card)
+		var ritual_row := HBoxContainer.new()
+		ritual_row.add_theme_constant_override("separation", 12)
+		ritual_card.add_child(ritual_row)
+		var ritual_info := VBoxContainer.new()
+		ritual_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		ritual_row.add_child(ritual_info)
+		var ritual_name := Label.new()
+		ritual_name.text = "%s %s" % [ritual["icon"], ritual["name"]]
+		ritual_name.add_theme_font_size_override("font_size", 16)
+		ritual_name.add_theme_color_override("font_color", Color(0.93, 0.82, 1.0))
+		ritual_info.add_child(ritual_name)
+		var ritual_desc := Label.new()
+		ritual_desc.text = str(ritual["desc"])
+		ritual_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ritual_desc.add_theme_font_size_override("font_size", 13)
+		ritual_desc.add_theme_color_override("font_color", Color(0.74, 0.68, 0.82))
+		ritual_info.add_child(ritual_desc)
+		var ritual_state := Label.new()
+		ritual_state.add_theme_font_size_override("font_size", 13)
+		ritual_state.add_theme_color_override("font_color", Color(0.88, 0.76, 1.0))
+		ritual_info.add_child(ritual_state)
+		ritual_labels.append(ritual_state)
+		var ritual_button := Button.new()
+		ritual_button.custom_minimum_size = Vector2(150, 44)
+		ritual_button.add_theme_font_size_override("font_size", 14)
+		ritual_button.pressed.connect(_perform_ritual.bind(ritual_id))
+		ritual_row.add_child(ritual_button)
+		ritual_buttons.append(ritual_button)
 
 	library_box.add_child(_make_section_title("RECEITAS OCULTAS", Color(0.70, 0.90, 1.0)))
 	library_box.add_child(_make_section_hint("Ouro adianta receitas presas ao nível. A biblioteca reduz o custo de cada leitura."))
@@ -1149,6 +1217,7 @@ func _craft_product(index: int) -> void:
 	gold -= cost
 	_consume_ingredients(item)
 	var duration := 6.0 + float(index) * 1.4 - float(alchemy_rank) * 0.7 - float(library_upgrade_level) * 0.45
+	duration /= Sanctum.scale(active_buffs, "craft")
 	craft_jobs.append({"index": index, "remaining": maxf(3.0, duration)})
 	last_event = "Forja iniciada: %s levará %.1fs de tempo de mundo." % [item["name"], maxf(3.0, duration)]
 	audio.play("click")
@@ -1168,20 +1237,23 @@ func _advance_craft_jobs(game_seconds: float) -> void:
 		craft_jobs.erase(job)
 		var index := int(job.get("index", 0))
 		var item: Dictionary = products[index]
-		item["stock"] = int(item["stock"]) + 1
 		daily_crafts += 1
 		_add_xp(5)
 		_progress_daily_quest("craft", 1)
-		var premium_chance := 8 + 4 * alchemy_rank
-		if randi() % 100 < premium_chance:
-			var product_name := str(item["name"])
-			premium_stock[product_name] = int(premium_stock.get(product_name, 0)) + 1
+		# Alquimia, biblioteca e bênçãos do santuário empurram a rolagem de qualidade.
+		var luck := alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5))
+		var tier := Quality.roll(luck)
+		_add_piece(index, tier)
+		Economy.bump(economy_state, "product", str(item["id"]), -0.10)
+		var quality_name := str(Quality.tier(tier)["name"])
+		if tier >= 3:
 			premium_crafted += 1
-			last_event = "OBRA-PRIMA! %s saiu impecável e vale 50%% a mais. A chefe finge que foi de propósito." % product_name
+			best_quality_crafted = maxi(best_quality_crafted, tier)
+			last_event = "%s saiu %s! A chefe inspeciona a peça, finge surpresa e aumenta a etiqueta." % [item["name"], quality_name]
 			audio.play("rare")
-			_show_feedback("✦ Obra-prima criada!", Color(1.0, 0.86, 0.45))
+			_show_feedback("✦ Peça %s!" % quality_name, Color(str(Quality.tier(tier)["color"])))
 		else:
-			last_event = "Produzido: %s. O ferreiro bateu o martelo e pediu aplausos." % item["name"]
+			last_event = "Produzido: %s (%s). O ferreiro bateu o martelo e pediu aplausos." % [item["name"], quality_name]
 			audio.play("craft")
 			_show_feedback("Produto pronto para vender.")
 	_check_achievements()
@@ -1203,19 +1275,88 @@ func _consume_ingredients(item: Dictionary) -> void:
 	for ingredient_id in recipe.keys():
 		ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) - int(recipe[ingredient_id])
 
-## Estimativa conservadora: preço de venda base menos custo de fabricação e
-## preço atual de reposição dos ingredientes da receita.
+## Barrinha de qualidade do produto, criada sob demanda para saves antigos que
+## nunca tiveram `quality_stock` e para peças ganhas por eventos.
+func _quality_for(product_id: String) -> Array[int]:
+	if not quality_stock.has(product_id):
+		quality_stock[product_id] = Quality.empty_stock()
+	return quality_stock[product_id] as Array[int]
+
+## Peças que já existiam em saves antigos entram no registro como "Honesto";
+## nenhum estoque fica órfão do espectro de qualidade.
+func _sync_quality_stock() -> void:
+	for i in range(products.size()):
+		var item: Dictionary = products[i]
+		var counts := _quality_for(str(item["id"]))
+		var held := maxi(0, int(item["stock"]))
+		var registered := Quality.total(counts)
+		if registered < held:
+			counts[1] = int(counts[1]) + (held - registered)
+		elif registered > held:
+			var excess := registered - held
+			for level in range(Quality.size()):
+				if excess <= 0:
+					break
+				var cut := mini(int(counts[level]), excess)
+				counts[level] = int(counts[level]) - cut
+				excess -= cut
+			item["stock"] = Quality.total(counts)
+
+func _add_piece(index: int, tier: int) -> void:
+	var item: Dictionary = products[index]
+	item["stock"] = int(item["stock"]) + 1
+	var stock := _quality_for(str(item["id"]))
+	stock[tier] = int(stock[tier]) + 1
+
+## Tira uma peça da prateleira e devolve o nível dela. Clientes comuns e o balcão
+## levam a pior; ladrão e conhecedores escolhem a melhor. Peças anteriores ao
+## sistema de qualidade saem como "Honesto" e não alteram o registro.
+func _take_piece(index: int, mode: int) -> int:
+	var item: Dictionary = products[index]
+	item["stock"] = maxi(0, int(item["stock"]) - 1)
+	var stock := _quality_for(str(item["id"]))
+	var tier := Quality.take(stock, mode)
+	return 1 if tier < 0 else tier
+
+## Etiqueta da peça: preço base do catálogo multiplicado pelo nível de qualidade.
+func _piece_price(item: Dictionary, tier: int) -> float:
+	return float(item["price"]) * float(Quality.tier(tier)["mult"])
+
+## Olha a peça que sairia sem tirar da prateleira. Serve para a fila decidir o que
+## cabe no bolso antes de a venda consumir o estoque.
+func _peek_tier(index: int, mode: int) -> int:
+	var stock := _quality_for(str(products[index]["id"]))
+	for i in range(Quality.size()):
+		var candidate := i if mode == Quality.WORST else Quality.size() - 1 - i
+		if int(stock[candidate]) > 0:
+			return candidate
+	return 1
+
+## Preço de vitrine de um produto: peça provável vezes o humor do mercado.
+func _shelf_price(index: int) -> int:
+	var item: Dictionary = products[index]
+	return maxi(1, int(round(_piece_price(item, _peek_tier(index, Quality.WORST)) * _market_product_factor(item))))
+
+## O mercado reativo sobre a etiqueta: demanda do produto e escassez na prateleira.
+func _market_product_factor(item: Dictionary) -> float:
+	var product_id := str(item["id"])
+	return Economy.factor(economy_state, "product", product_id) * Economy.stock_factor(int(item["stock"]))
+
+## Estimativa conservadora: etiqueta de uma peça Honesta no mercado de hoje,
+## menos custo de fabricação e preço atual de reposição dos ingredientes.
 func _estimated_margin(item: Dictionary) -> int:
 	var craft_cost := maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
 	var ingredient_cost := 0
 	var recipe: Dictionary = item.get("ingredients", {})
 	for ingredient_id in recipe.keys():
 		ingredient_cost += _ingredient_price(str(ingredient_id)) * int(recipe[ingredient_id])
-	return int(item["price"]) - craft_cost - ingredient_cost
+	return int(round(_piece_price(item, 1) * _market_product_factor(item))) - craft_cost - ingredient_cost
 
 func _ingredient_price(ingredient_id: String) -> int:
-	var base := Ingredients.price_for_day(ingredient_id, shop_day)
-	return maxi(1, int(round(float(base) * (1.0 - 0.05 * logistics_rank))))
+	var base := float(Ingredients.price_for_day(ingredient_id, shop_day))
+	base *= Economy.factor(economy_state, "ingredient", ingredient_id)
+	base *= (1.0 - 0.05 * float(logistics_rank))
+	return maxi(1, int(round(base)))
 
 func _buy_ingredient(ingredient_id: String) -> void:
 	var price := _ingredient_price(ingredient_id)
@@ -1226,6 +1367,8 @@ func _buy_ingredient(ingredient_id: String) -> void:
 	gold -= price
 	ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) + 1
 	total_ingredients_bought += 1
+	# Toda compra aquece o mercado daquele ingrediente: comprar demais encarece.
+	Economy.bump(economy_state, "ingredient", ingredient_id, 0.14)
 	last_event = "Comprado: %s por %d ouro. O fornecedor jurou que era o preço de amigo." % [str(Ingredients.find(ingredient_id).get("name", ingredient_id)), price]
 	audio.play("buy")
 	_show_feedback("Ingrediente adicionado ao estoque.", Color(0.78, 0.95, 1.0))
@@ -1242,6 +1385,8 @@ func _sell_ingredient(ingredient_id: String) -> void:
 		return
 	var payout := maxi(1, int(round(float(_ingredient_price(ingredient_id)) * 0.6)))
 	ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) - 1
+	# Devolver material ao mercado cria oferta e derruba a etiqueta dele.
+	Economy.bump(economy_state, "ingredient", ingredient_id, -0.12)
 	gold += payout
 	daily_gold_earned += payout
 	_progress_daily_quest("gold", payout)
@@ -1251,20 +1396,22 @@ func _sell_ingredient(ingredient_id: String) -> void:
 	_save_game()
 	_refresh_ui()
 
-## Venda no balcão: ouro certo e imediato por 70% do preço, sem reputação, vínculo
-## nem bônus de facção. Serve para girar estoque enquanto a fila não vem.
+## Venda no balcão: ouro certo e imediato por 70% da etiqueta da peça, sem
+## reputação, vínculo nem bônus de facção. Serve para girar estoque enquanto a
+## fila não vem. A prateleira empurrada desvaloriza o produto.
 func _sell_from_counter(index: int) -> void:
 	var item: Dictionary = products[index]
 	if int(item["stock"]) <= 0:
 		last_event = "Prateleira vazia: %s só existe na sua imaginação." % item["name"]
 		_refresh_ui()
 		return
-	item["stock"] = int(item["stock"]) - 1
-	var payout := maxi(1, int(round(float(item["price"]) * 0.7)))
+	var tier := _take_piece(index, Quality.WORST)
+	var payout := maxi(1, int(round(_piece_price(item, tier) * _market_product_factor(item) * 0.7)))
+	Economy.bump(economy_state, "product", str(item["id"]), 0.12)
 	gold += payout
 	daily_gold_earned += payout
 	_progress_daily_quest("gold", payout)
-	last_event = "Venda no balcão: %s por %d ouro. Levou sem agradecer, mas pagou." % [item["name"], payout]
+	last_event = "Venda no balcão: %s %s por %d ouro. Levou sem agradecer, mas pagou." % [item["name"], str(Quality.tier(tier)["name"]).to_lower(), payout]
 	audio.play("coin")
 	_show_feedback("+%d ouro no balcão." % payout, Color(1.0, 0.86, 0.45))
 	_check_achievements()
@@ -1299,9 +1446,85 @@ func _learn_recipe(index: int) -> void:
 	_save_game()
 	_refresh_ui()
 
-## Produto em alta no dia: vende por 30% a mais. Determinístico por dia.
+## Produto em alta: o mais procurado no mercado reativo. Sem demanda clara de
+## ninguém, cai no sorteio determinístico do dia para sempre existir um destaque.
 func _demand_index() -> int:
+	var ids: Array[String] = []
+	for item in products:
+		ids.append(str(item["id"]))
+	var hottest := Economy.hottest(economy_state, "product", ids)
+	if not hottest.is_empty():
+		var index := _product_index(hottest)
+		if index >= 0:
+			return index
 	return posmod(abs(hash("demanda:%d" % shop_day)), products.size())
+
+## Calor máximo entre os produtos: usado pela conquista do termômetro.
+func _max_product_heat() -> float:
+	var best := 0.0
+	for item in products:
+		best = maxf(best, Economy.heat(economy_state, "product", str(item["id"])))
+	return best
+
+## Ritual do santuário: buff entra na lista com a duração escalada pelo nível,
+## alívio resolve a penalidade na hora.
+func _perform_ritual(ritual_id: String) -> void:
+	var item := Sanctum.find(ritual_id)
+	if item.is_empty():
+		return
+	var cost := Sanctum.cost_for(item, sanctum_upgrade_level)
+	if gold < cost:
+		last_event = "%s custa %d de ouro. A relíquia boceja e volta a dormir." % [item["name"], cost]
+		_refresh_ui()
+		return
+	var kind := str(item.get("kind", "buff"))
+	if kind == "buff" and Sanctum.is_active(active_buffs, ritual_id):
+		last_event = "%s ainda está queimando. Rezar duas vezes não acende a mesma vela." % item["name"]
+		_refresh_ui()
+		return
+	if kind == "relief":
+		var resolved := _apply_ritual_relief(item)
+		if not resolved:
+			return
+	gold -= cost
+	if kind == "buff":
+		Sanctum.start(active_buffs, ritual_id, sanctum_upgrade_level)
+	rituals_performed += 1
+	_add_xp(4)
+	last_event = "Ritual concluído: %s. O santuário estala, cheira a enxofre doce e a loja sente o efeito." % item["name"]
+	audio.play("rare")
+	_show_feedback("✦ %s ativo." % item["name"], Color(0.86, 0.60, 1.0))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Rituais de alívio só funcionam sobre penalidade real; cada um retorna false
+## quando não há nada a consertar, e o ouro fica no bolso.
+func _apply_ritual_relief(item: Dictionary) -> bool:
+	var ritual_id := str(item["id"])
+	if ritual_id == "penitencia":
+		if fury <= 0:
+			last_event = "Nenhuma fúria para dissolver: a chefe está de bom humor demais para a penitência."
+			_refresh_ui()
+			return false
+		fury = maxi(0, fury - int(item.get("fury", 0)))
+		_update_demonic_form()
+		return true
+	if ritual_id == "perdao_vendido":
+		if reputation >= 5:
+			last_event = "O perdão só vende para quem deve. Sua reputação já está acima da média."
+			_refresh_ui()
+			return false
+		reputation += int(item.get("rep", 0))
+		return true
+	if ritual_id == "rastro_sagrado":
+		if not theft_recovery_available or stolen_item_name.is_empty():
+			last_event = "O rastro sagrado não pega cheiro de furto recente."
+			_refresh_ui()
+			return false
+		_recover_stolen_item()
+		return true
+	return true
 
 func _buy_advertising() -> void:
 	var cost := 75 + ad_level * 60
@@ -1360,19 +1583,21 @@ func _pick_regular() -> Dictionary:
 func _on_customer_tick() -> void:
 	ticks += 1
 	_advance_craft_jobs(3.0)
+	Sanctum.advance(active_buffs, 3.0)
 	_set_seller_mood("demonic" if demonic_form_active else "neutral")
 	if is_instance_valid(reaction_label):
 		reaction_label.text = ""
 	if ticks % 20 == 0:
 		shop_day += 1
+		Economy.advance_day(economy_state)
 		daily_quest_index = (daily_quest_index + 1) % 4
 		daily_quest_progress = 0
 		daily_quest_claimed = false
 		daily_gold_earned = 0
 		daily_crafts = 0
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou." % shop_day
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA)]
 	if imp_hired and ticks % 3 == 0:
-		products[0]["stock"] = int(products[0]["stock"]) + 1
+		_add_piece(0, 1)
 		last_event = "Seu diabrete fabricou uma poção. Ele perguntou se isso conta como experiência profissional."
 
 	# Eventos raros podem acontecer mesmo quando a loja está sem estoque.
@@ -1438,19 +1663,23 @@ func _on_customer_tick() -> void:
 		_animate_customer_arrival(profile)
 		var preferred_index: int = _product_index(str(profile["favorite"]))
 		current_customer_budget = int(profile.get("budget", 50)) + trade_rank * 8
-		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank) / world_speed())))
+		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank + Sanctum.patience_bonus(active_buffs)) / world_speed())))
 		var seduction_used := false
 		if is_instance_valid(customer_emotion_label):
 			customer_emotion_label.text = "🏃 pressa" if current_customer_patience <= 1 else "🙂 observando"
 		if bool(profile.get("thief", false)) and current_customer_patience <= 1:
-			_handle_thief_escape(profile, available)
-			_check_achievements()
-			_save_game()
-			_refresh_ui()
-			return
+			if Sanctum.guards(active_buffs):
+				last_event = "%s enfiou a mão na prateleira, mas o Selo da Cadeia estalou e a mão saiu vazia. Ele ainda pagou o que levou." % str(profile.get("name", "O cliente"))
+				_show_feedback("⛓ Furto barrado pelo selo.", Color(0.75, 1.0, 0.72))
+			else:
+				_handle_thief_escape(profile, available)
+				_check_achievements()
+				_save_game()
+				_refresh_ui()
+				return
 		var affordable: Array[int] = []
 		for affordable_index in available:
-			if int(products[affordable_index]["price"]) <= current_customer_budget:
+			if _shelf_price(affordable_index) <= current_customer_budget:
 				affordable.append(affordable_index)
 		if affordable.is_empty():
 			var charm_negotiation := adult_content_enabled and charm_rank > 0 and randi() % 100 < 25 + charm_rank * 12 + sanctum_upgrade_level * 5
@@ -1463,7 +1692,7 @@ func _on_customer_tick() -> void:
 				reputation += 1 + _reputation_seduction_bonus()
 				last_event = "%s suspira: “Meu orçamento é curto...” %s O cliente reconsidera." % [profile["name"], SUCCUBUS_NEGOTIATION_LINES.pick_random()]
 				for affordable_index in available:
-					if int(products[affordable_index]["price"]) <= current_customer_budget:
+					if _shelf_price(affordable_index) <= current_customer_budget:
 						affordable.append(affordable_index)
 			else:
 				last_event = "%s não conseguiu pagar nenhum item e saiu %s: “Volto quando meu bolso parar de chorar.”" % [profile["name"], "com pressa" if current_customer_patience <= 1 else "frustrado"]
@@ -1488,34 +1717,33 @@ func _on_customer_tick() -> void:
 				reputation += _reputation_seduction_bonus()
 
 		var item: Dictionary = products[chosen_index]
-		item["stock"] = int(item["stock"]) - 1
-		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier()
+		var piece_tier := _take_piece(chosen_index, Quality.WORST)
+		var quality_name := str(Quality.tier(piece_tier)["name"])
+		var base_label := _piece_price(item, piece_tier)
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item)
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
-			preference_bonus = maxi(2, int(round(float(item["price"]) * 0.25)))
-			last_event = "%s comprou %s e pagou %d de bônus! %s" % [
-				profile["name"], item["name"], preference_bonus, profile["line"]
+			preference_bonus = maxi(2, int(round(base_label * 0.25)))
+			last_event = "%s comprou %s (%s) e pagou %d de bônus! %s" % [
+				profile["name"], item["name"], quality_name, preference_bonus, profile["line"]
 			]
 		else:
-			last_event = "%s comprou %s. %s" % [
-				profile["name"], item["name"], profile["line"]
+			last_event = "%s comprou %s (%s). %s" % [
+				profile["name"], item["name"], quality_name, profile["line"]
 			]
-		var sale_price: int = int(round(float(item["price"]) * price_multiplier)) + preference_bonus
-		if chosen_index == _demand_index():
-			var demand_bonus := int(round(float(item["price"]) * 0.30))
-			sale_price += demand_bonus
-			last_event += "\nProduto em alta hoje: +%d ouro." % demand_bonus
-		var premium_count := int(premium_stock.get(str(item["name"]), 0))
-		if premium_count > 0:
-			var premium_bonus := int(round(float(item["price"]) * 0.50))
-			sale_price += premium_bonus
-			premium_stock[str(item["name"])] = premium_count - 1
-			last_event += "\nVenda de obra-prima: +%d ouro." % premium_bonus
+		var sale_price: int = int(round(base_label * price_multiplier)) + preference_bonus
+		var product_heat := Economy.heat(economy_state, "product", str(item["id"]))
+		if product_heat >= 0.30:
+			last_event += "\n%s está em alta: a etiqueta subiu %.0f%%." % [item["name"], product_heat * 100.0]
+		elif product_heat <= -0.15:
+			last_event += "\n%s está encalhado: o mercado pagou %.0f%% menos." % [item["name"], absf(product_heat) * 100.0]
+		# Vender cria fila, e fila é sinal de demanda: a peça volta mais cara amanhã.
+		Economy.bump(economy_state, "product", str(item["id"]), 0.22)
 		var faction_id := str(profile.get("faction", ""))
 		var faction_bonus := 0
 		if not faction_id.is_empty():
 			var faction_tier := Factions.tier_for(int(faction_standing.get(faction_id, 0)))
-			faction_bonus = int(round(float(item["price"]) * Factions.price_bonus(faction_tier)))
+			faction_bonus = int(round(base_label * Factions.price_bonus(faction_tier)))
 			sale_price += faction_bonus
 		var fulfilled_personal_request := profile.has("personal_request") and bool(profile["personal_request"]) and preferred_index == chosen_index
 		var headline_locked := false
@@ -1722,7 +1950,8 @@ func _handle_thief_escape(profile: Dictionary, available: Array[int]) -> void:
 		return
 	var stolen_index := available[randi() % available.size()]
 	var stolen_item: Dictionary = products[stolen_index]
-	stolen_item["stock"] = maxi(0, int(stolen_item["stock"]) - 1)
+	# Ladrão tem faro: leva a melhor peça da prateleira.
+	stolen_tier = _take_piece(stolen_index, Quality.BEST)
 	stolen_item_name = str(stolen_item["name"])
 	theft_recovery_available = true
 	fury = mini(5, fury + 2)
@@ -1740,10 +1969,13 @@ func _recover_stolen_item() -> void:
 		last_event = "Nenhum item foi roubado. A succubus guarda o rastreador e finge que foi tudo planejado."
 		_refresh_ui()
 		return
-	for item in products:
-		if str(item.get("name", "")) == stolen_item_name:
-			item["stock"] = int(item.get("stock", 0)) + 1
+	var stolen_index := -1
+	for i in range(products.size()):
+		if str(products[i].get("name", "")) == stolen_item_name:
+			stolen_index = i
 			break
+	if stolen_index >= 0:
+		_add_piece(stolen_index, clampi(stolen_tier, 0, Quality.size() - 1))
 	theft_recovery_available = false
 	last_event = "Rastreamento concluído: %s recuperado. O ladrão deixou um pedido de desculpas e uma gorjeta simbólica." % stolen_item_name
 	stolen_item_name = ""
@@ -1918,6 +2150,8 @@ func _refresh_ui() -> void:
 	if is_instance_valid(sector_action_button):
 		sector_action_button.text = "Consultar grimório vivo" if current_sector == "library" else "Harmonizar relíquia" if current_sector == "sanctum" else "Interagir com o cenário"
 		sector_action_button.disabled = current_sector != "library" and current_sector != "sanctum"
+	if is_instance_valid(ritual_label):
+		ritual_label.text = Sanctum.summary(active_buffs)
 	event_label.text = last_event
 	if is_instance_valid(regulars_label):
 		var regular_lines: Array[String] = ["FREGUESES RECORRENTES"]
@@ -1972,7 +2206,8 @@ func _refresh_ui() -> void:
 		var ingredient_id := str(ingredient["id"])
 		var held := int(ingredient_stock.get(ingredient_id, 0))
 		var price := _ingredient_price(ingredient_id)
-		ingredient_labels[i].text = "%s | Estoque: %d | Preço: %d ouro" % [ingredient["name"], held, price]
+		var trend := Economy.trend_marker(Economy.heat(economy_state, "ingredient", ingredient_id))
+		ingredient_labels[i].text = "%s %s | Estoque: %d | Preço: %d ouro" % [ingredient["name"], trend, held, price]
 		ingredient_buttons[i].text = "Comprar (%d)" % price
 		ingredient_buttons[i].disabled = gold < price
 		var resale := maxi(1, int(round(float(price) * 0.6)))
@@ -1993,11 +2228,13 @@ func _refresh_ui() -> void:
 		var item: Dictionary = products[i]
 		var unlocked := _is_product_unlocked(item)
 		var required_level: int = int(item.get("required_level", 1))
-		var premium_count := int(premium_stock.get(str(item["name"]), 0))
+		var quality := _quality_for(str(item["id"]))
 		var demand_marker := "  ✦ EM ALTA" if i == _demand_index() else ""
+		var heat_marker := Economy.trend_marker(Economy.heat(economy_state, "product", str(item["id"])))
+		var shelf := _shelf_price(i)
 		if unlocked:
 			var margin := _estimated_margin(item)
-			product_labels[i].text = "%s%s\nEstoque: %d  •  Premium: %d  •  Venda: %d ouro" % [item["name"], demand_marker, item["stock"], premium_count, item["price"]]
+			product_labels[i].text = "%s%s %s\nEstoque: %d  •  Vitrine: %d ouro\nPeças: %s" % [item["name"], demand_marker, heat_marker, item["stock"], shelf, Quality.summary(quality)]
 			product_margin_labels[i].text = "Margem estimada: %s%d ouro" % ["+" if margin >= 0 else "−", abs(margin)]
 			product_margin_labels[i].add_theme_color_override("font_color", Color(0.65, 1.0, 0.72) if margin >= 0 else Color(1.0, 0.55, 0.55))
 		else:
@@ -2015,8 +2252,8 @@ func _refresh_ui() -> void:
 		craft_buttons[i].text = "Na fila" if already_queued else "Fabricar (%d)" % craft_cost if unlocked and missing_ingredients.is_empty() else "Faltam ingredientes" if unlocked else "Receita bloqueada"
 		craft_buttons[i].disabled = already_queued or craft_jobs.size() >= 3 or not unlocked or gold < craft_cost or not missing_ingredients.is_empty()
 		var counter_stock := int(item["stock"])
-		var counter_payout := maxi(1, int(round(float(item["price"]) * 0.7)))
-		counter_labels[i].text = "%s | Estoque: %d | Balcão paga %d ouro" % [item["name"], counter_stock, counter_payout]
+		var counter_payout := maxi(1, int(round(float(shelf) * 0.7)))
+		counter_labels[i].text = "%s | Estoque: %d | Balcão leva a pior: %s | Paga %d ouro" % [item["name"], counter_stock, str(Quality.tier(_peek_tier(i, Quality.WORST))["name"]), counter_payout]
 		counter_buttons[i].text = "Vender (%d)" % counter_payout
 		counter_buttons[i].disabled = counter_stock <= 0
 		var recipe_id := str(item["id"])
@@ -2037,6 +2274,26 @@ func _refresh_ui() -> void:
 			recipe_labels[i].text = "🔒 %s • exige nível %d" % [item["name"], required_level]
 			recipe_buttons[i].text = "Aprender (%d)" % recipe_cost
 			recipe_buttons[i].disabled = gold < recipe_cost
+	if is_instance_valid(market_label):
+		var hot := _demand_index()
+		var hot_text := " • Em alta: %s" % str(products[hot]["name"]) if hot >= 0 else ""
+		market_label.text = "Dia %d — %s%s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA), hot_text]
+	for r in range(Sanctum.DATA.size()):
+		var ritual: Dictionary = Sanctum.DATA[r]
+		var ritual_id := str(ritual["id"])
+		var ritual_cost := Sanctum.cost_for(ritual, sanctum_upgrade_level)
+		var running := Sanctum.is_active(active_buffs, ritual_id)
+		if r < ritual_labels.size():
+			if running:
+				ritual_labels[r].text = "✦ Em curso: %s" % Sanctum.remaining_label(active_buffs, ritual_id)
+			elif Sanctum.is_buff(ritual):
+				ritual_labels[r].text = "Em espera • duração escala com o santuário (Nv.%d)" % sanctum_upgrade_level
+			else:
+				ritual_labels[r].text = "Alívio de penalidade • uso imediato"
+			ritual_labels[r].add_theme_color_override("font_color", Color(1.0, 0.86, 0.45) if running else Color(0.74, 0.68, 0.82))
+		if r < ritual_buttons.size():
+			ritual_buttons[r].text = "Ativo ✓" if running else "Rezar (%d)" % ritual_cost
+			ritual_buttons[r].disabled = running or gold < ritual_cost
 	var ad_cost := 75 + ad_level * 60
 	upgrade_button.text = "Propaganda infernal • %d ouro (nível %d)" % [ad_cost, ad_level]
 	upgrade_button.disabled = gold < ad_cost
@@ -2052,6 +2309,32 @@ func _refresh_ui() -> void:
 	else:
 		imp_button.text = "Contratar diabrete • 125 ouro"
 		imp_button.disabled = gold < 125
+
+## Ruidos de saves antigos ou de versões diferentes do mercado: aproveita só o
+## calor válido e mantém a estrutura {"ingredient": {}, "product": {}}.
+func _read_economy_state(saved) -> void:
+	if not saved is Dictionary:
+		return
+	for group in ["ingredient", "product"]:
+		var saved_group = saved.get(group, {})
+		if not saved_group is Dictionary:
+			continue
+		var table: Dictionary = economy_state[group]
+		for saved_id in saved_group.keys():
+			table[str(saved_id)] = clampf(float(saved_group[saved_id]), Economy.MIN_HEAT, Economy.MAX_HEAT)
+
+func _read_buffs(saved) -> Dictionary:
+	var result: Dictionary = {}
+	if not saved is Dictionary:
+		return result
+	for saved_id in saved.keys():
+		var ritual := Sanctum.find(str(saved_id))
+		if ritual.is_empty() or not Sanctum.is_buff(ritual):
+			continue
+		var left := float(saved[saved_id])
+		if left > 0.0:
+			result[str(saved_id)] = left
+	return result
 
 func _save_game() -> void:
 	var config := ConfigFile.new()
@@ -2087,7 +2370,16 @@ func _save_game() -> void:
 	config.set_value("game", "charm_rank", charm_rank)
 	config.set_value("game", "logistics_rank", logistics_rank)
 	config.set_value("game", "ingredient_stock", ingredient_stock)
-	config.set_value("game", "premium_stock", premium_stock)
+	config.set_value("game", "quality_stock", quality_stock)
+	config.set_value("game", "economy_state", economy_state)
+	config.set_value("game", "active_buffs", active_buffs)
+	config.set_value("game", "stolen_tier", stolen_tier)
+	config.set_value("game", "best_quality_crafted", best_quality_crafted)
+	config.set_value("game", "economy_state", economy_state)
+	config.set_value("game", "active_buffs", active_buffs)
+	config.set_value("game", "stolen_tier", stolen_tier)
+	config.set_value("game", "best_quality_crafted", best_quality_crafted)
+	config.set_value("game", "rituals_performed", rituals_performed)
 	config.set_value("game", "total_ingredients_bought", total_ingredients_bought)
 	config.set_value("game", "premium_crafted", premium_crafted)
 	config.set_value("game", "happy_customers", happy_customers)
@@ -2152,9 +2444,33 @@ func _load_game() -> void:
 	var saved_ingredients = config.get_value("game", "ingredient_stock", ingredient_stock)
 	if saved_ingredients is Dictionary:
 		ingredient_stock = saved_ingredients.duplicate(true)
-	var saved_premium = config.get_value("game", "premium_stock", {})
-	if saved_premium is Dictionary:
-		premium_stock = saved_premium.duplicate(true)
+	# Migração do save antigo: `premium_stock` guardava bonus flutuante por nome de
+	# produto. As peças viram estoque real de Obra-prima no registro por id.
+	var saved_quality = config.get_value("game", "quality_stock", {})
+	if saved_quality is Dictionary:
+		for product_id in saved_quality.keys():
+			var counts: Array[int] = Quality.empty_stock()
+			var saved_counts = saved_quality[product_id]
+			if saved_counts is Array:
+				for i in range(mini(saved_counts.size(), counts.size())):
+					counts[i] = maxi(0, int(saved_counts[i]))
+			quality_stock[str(product_id)] = counts
+	var legacy_premium = config.get_value("game", "premium_stock", {})
+	if legacy_premium is Dictionary:
+		for legacy_name in legacy_premium.keys():
+			var legacy_count := maxi(0, int(legacy_premium[legacy_name]))
+			if legacy_count == 0:
+				continue
+			for i in range(products.size()):
+				if str(products[i]["name"]) == str(legacy_name):
+					for _repeat in range(legacy_count):
+						_add_piece(i, 3)
+					break
+	best_quality_crafted = clampi(int(config.get_value("game", "best_quality_crafted", best_quality_crafted)), -1, Quality.size() - 1)
+	rituals_performed = int(config.get_value("game", "rituals_performed", rituals_performed))
+	_read_economy_state(config.get_value("game", "economy_state", {}))
+	active_buffs = _read_buffs(config.get_value("game", "active_buffs", {}))
+	stolen_tier = clampi(int(config.get_value("game", "stolen_tier", stolen_tier)), 0, Quality.size() - 1)
 	total_ingredients_bought = int(config.get_value("game", "total_ingredients_bought", total_ingredients_bought))
 	premium_crafted = int(config.get_value("game", "premium_crafted", premium_crafted))
 	happy_customers = int(config.get_value("game", "happy_customers", happy_customers))
@@ -2298,7 +2614,8 @@ func _xp_required() -> int:
 
 func _add_xp(amount: int) -> void:
 	var previous_level := player_level
-	player_xp += amount
+	# O Sussurro Ancestral do santuário turbinou todo XP enquanto a vela queima.
+	player_xp += int(round(float(amount) * Sanctum.scale(active_buffs, "xp")))
 	var levels_gained := 0
 	while player_xp >= _xp_required():
 		player_xp -= _xp_required()
@@ -2360,7 +2677,11 @@ func _check_achievements() -> void:
 		{"id": "faction_noted", "name": "Diplomacia do balcão (facção Notada)", "condition": _max_faction_tier() >= 1, "gold": 35, "rep": 2},
 		{"id": "faction_respected", "name": "Embaixadora infernal (facção Respeitada)", "condition": _max_faction_tier() >= 2, "gold": 60, "rep": 4},
 		{"id": "ingredient_buyer", "name": "Fornecedor VIP (10 ingredientes comprados)", "condition": total_ingredients_bought >= 10, "gold": 25, "rep": 1},
-		{"id": "premium_artisan", "name": "Mão de Midas (3 produtos premium)", "condition": premium_crafted >= 3, "gold": 45, "rep": 2},
+		{"id": "premium_artisan", "name": "Mão de Midas (3 peças de alto nível)", "condition": premium_crafted >= 3, "gold": 45, "rep": 2},
+		{"id": "myth_piece", "name": "Peça Mítica (uma lenda saiu da bigorna)", "condition": best_quality_crafted >= 4, "gold": 150, "rep": 8, "pose": "relic"},
+		{"id": "market_barometer", "name": "Termômetro do Balcão (produto no pico de procura)", "condition": _max_product_heat() >= 0.8, "gold": 55, "rep": 3},
+		{"id": "ritual_apprentice", "name": "Aprendiz de Ritos (3 rituais)", "condition": rituals_performed >= 3, "gold": 40, "rep": 2},
+		{"id": "ritual_devotee", "name": "Fiel do Santuário (10 rituais)", "condition": rituals_performed >= 10, "gold": 100, "rep": 5, "pose": "book"},
 		{"id": "library_master", "name": "Bibliotecária do Submundo (Biblioteca Nv.3)", "condition": library_upgrade_level >= 3, "gold": 80, "rep": 4, "pose": "book"},
 		{"id": "sanctum_keeper", "name": "Guardiã das Relíquias (Santuário Nv.3)", "condition": sanctum_upgrade_level >= 3, "gold": 90, "rep": 5, "pose": "relic"},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
@@ -2419,6 +2740,10 @@ func _get_achievement_summary() -> String:
 		"faction_respected": "Embaixadora infernal",
 			"ingredient_buyer": "Fornecedor VIP",
 			"premium_artisan": "Mão de Midas",
+			"myth_piece": "Peça Mítica",
+			"market_barometer": "Termômetro do Balcão",
+			"ritual_apprentice": "Aprendiz de Ritos",
+			"ritual_devotee": "Fiel do Santuário",
 			"library_master": "Bibliotecária do Submundo",
 			"sanctum_keeper": "Guardiã das Relíquias",
 			"queue_charmer": "Ninguém sai da fila",
