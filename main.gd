@@ -10,6 +10,7 @@ const Sanctum = preload("res://sanctum.gd")
 const Expedition = preload("res://expedition.gd")
 const Cards = preload("res://cards.gd")
 const Campaign = preload("res://campaign.gd")
+const Origin = preload("res://origin.gd")
 const SteamBridge = preload("res://steam_bridge.gd")
 
 var gold: int = 80
@@ -36,6 +37,13 @@ var regular_arc_seen: Dictionary = {}
 var epilogue_pending: Array[String] = []
 ## True quando a fila zerou e a loja ficou só com a chefe.
 var epilogue_done: bool = false
+## Cenas de origem já exibidas. São a única memória da chefe e da patrona que o
+## save guarda: o texto todo está em origin.gd.
+var origin_seen: Array[String] = []
+var origin_layer: Control
+## O que abrir quando a lembrança fechar: é como o capítulo final emenda o painel
+## do império na cena do andar de cima sem empilhar os dois quadros.
+var _origin_next: Callable = Callable()
 var faction_standing: Dictionary = {}
 var adult_content_enabled: bool = true
 var private_moments_unlocked: int = 0
@@ -273,6 +281,8 @@ var private_button: Button
 var romance_label: Label
 var romance_button: Button
 var arc_label: Label
+var origin_label: Label
+var origin_button: Button
 var adult_toggle_button: Button
 var recover_theft_button: Button
 var fury_label: Label
@@ -2146,6 +2156,20 @@ func _build_ui() -> void:
 	arc_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.78))
 	right.add_child(arc_label)
 
+	origin_label = Label.new()
+	origin_label.custom_minimum_size = Vector2(280, 60)
+	origin_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	origin_label.add_theme_font_size_override("font_size", 12)
+	origin_label.add_theme_color_override("font_color", Color(0.85, 0.7, 1.0))
+	right.add_child(origin_label)
+
+	origin_button = Button.new()
+	origin_button.custom_minimum_size.y = 40
+	origin_button.text = "Relembrar"
+	origin_button.visible = false
+	origin_button.pressed.connect(_reread_origin)
+	right.add_child(origin_button)
+
 	faction_label = Label.new()
 	faction_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	faction_label.add_theme_font_size_override("font_size", 13)
@@ -3114,6 +3138,10 @@ func _on_customer_tick() -> void:
 		# prazo de um dia que já passou.
 		_advance_commission()
 		_save_game()
+		# A última lembrança não depende de capítulo nenhum: ela chega na manhã
+		# seguinte a ter fechado o império, quando a loja já não tem meta nova.
+		if game_completed:
+			_reveal_origin(Origin.chapter_scene(Campaign.size()))
 	if imp_hired and ticks % 3 == 0:
 		_imp_work()
 
@@ -4138,6 +4166,13 @@ func _refresh_ui() -> void:
 		romance_label.text = _romance_text()
 	if is_instance_valid(arc_label):
 		arc_label.text = _arc_text()
+	if is_instance_valid(origin_label):
+		origin_label.text = _origin_text()
+	if is_instance_valid(origin_button):
+		var has_memory := not origin_seen.is_empty()
+		origin_button.visible = has_memory and not is_instance_valid(origin_layer)
+		if has_memory:
+			origin_button.text = "Relembrar: %s" % str(Origin.find(origin_seen[origin_seen.size() - 1]).get("title", "lembrança"))
 	if is_instance_valid(romance_button):
 		var invited: Dictionary = Regulars.find(romance_pending)
 		var next_step := _romance_stage_of(romance_pending)
@@ -4223,6 +4258,7 @@ func _save_game() -> void:
 	config.set_value("game", "regular_arc_seen", regular_arc_seen)
 	config.set_value("game", "epilogue_pending", epilogue_pending)
 	config.set_value("game", "epilogue_done", epilogue_done)
+	config.set_value("game", "origin_seen", origin_seen)
 	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
@@ -4337,6 +4373,12 @@ func _load_game() -> void:
 			if not Regulars.find(str(queued_id)).is_empty():
 				epilogue_pending.append(str(queued_id))
 	epilogue_done = bool(config.get_value("game", "epilogue_done", epilogue_done))
+	var saved_origins = config.get_value("game", "origin_seen", [])
+	if saved_origins is Array:
+		for scene_id in saved_origins:
+			var known: Dictionary = Origin.find(str(scene_id))
+			if not known.is_empty() and not origin_seen.has(str(known["id"])):
+				origin_seen.append(str(known["id"]))
 	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
 	demonic_form_active = adult_content_enabled and fury >= 4
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
@@ -4801,6 +4843,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "arc_stories", "name": "Contadora de histórias (3 fichas no Ato III)", "condition": _arc_at_least(3) >= 3, "gold": 200, "rep": 9, "pose": "book"},
 		{"id": "arc_finals", "name": "Elenco completo (3 fichas no Ato IV)", "condition": _arc_at_least(4) >= 3, "gold": 240, "rep": 11, "pose": "relic"},
 		{"id": "epilogue_farewell", "name": "A última rodada (despedida encerrada)", "condition": epilogue_done, "gold": 150, "rep": 8, "pose": "relic"},
+		{"id": "origin_first", "name": "Andar de cima (primeira lembrança)", "condition": origin_seen.size() >= 1, "gold": 40, "rep": 2},
+		{"id": "origin_all", "name": "Duas vidas no mesmo balcão (todas as lembranças)", "condition": origin_seen.size() >= Origin.size(), "gold": 220, "rep": 9, "pose": "book"},
 		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"}
 	]
 
@@ -4880,7 +4924,7 @@ func business_score() -> int:
 	return gold + reputation * 20 + customers_served * 6 + Cards.owned_count(card_counts) * 40 \
 		+ player_level * 25 + premium_crafted * 15 + expeditions_done * 20 + rituals_performed * 10 \
 		+ campaign_step * 60 + private_moments_unlocked * 8 + _romance_steps_paid() * 20 \
-		+ _arc_acts_announced() * 12 + (1200 if game_completed else 0)
+		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0)
 
 func _publish_score() -> void:
 	var score := business_score()
@@ -4958,7 +5002,11 @@ func _claim_chapter() -> void:
 	if is_final:
 		game_completed = true
 		_start_epilogue()
-		_show_ending()
+		# A cena do andar de cima vem antes dos créditos: o final da campanha é a
+		# resposta para a pergunta que as lembranças vinham fazendo.
+		_reveal_origin(Origin.chapter_scene(campaign_step - 1), _show_ending)
+	else:
+		_reveal_origin(Origin.chapter_scene(campaign_step - 1))
 	_check_achievements()
 	_save_game()
 	_refresh_ui()
@@ -5052,6 +5100,139 @@ func _close_ending() -> void:
 	if is_instance_valid(ending_layer):
 		ending_layer.visible = false
 	audio.play("click")
+
+## O prêmio de uma lembrança é fixo: quem descobre de onde vem a loja cobra em caixa,
+## mas não é a cena que paga o aluguel — é o capítulo que a liberou.
+const ORIGIN_REWARD := {"gold": 45, "rep": 2, "xp": 35}
+
+## Abre a cena, paga uma única vez e emenda no que vier depois (o painel do final,
+## por exemplo). Cena já vista não abre de novo sozinha: só pelo botão de relembrar.
+func _reveal_origin(scene: Dictionary, after: Callable = Callable()) -> void:
+	if scene.is_empty() or origin_seen.has(str(scene["id"])):
+		if after.is_valid():
+			after.call()
+		return
+	origin_seen.append(str(scene["id"]))
+	gold += int(ORIGIN_REWARD["gold"])
+	daily_gold_earned += int(ORIGIN_REWARD["gold"])
+	reputation += int(ORIGIN_REWARD["rep"])
+	_add_xp(int(ORIGIN_REWARD["xp"]))
+	_show_origin(scene)
+	_origin_next = after
+	_check_achievements()
+	_save_game()
+
+## O quadro da lembrança: texto parado na tela, sem balcão, sem tique, sem venda. É
+## o único momento da loja em que a leitura manda no relógio.
+func _show_origin(scene: Dictionary) -> void:
+	if scene.is_empty():
+		return
+	if is_instance_valid(origin_layer):
+		origin_layer.queue_free()
+	origin_layer = null
+	var dim := ColorRect.new()
+	dim.color = Color(0.03, 0.01, 0.05, 0.93)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(dim)
+	origin_layer = dim
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.add_child(center)
+
+	var panel := PanelContainer.new()
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.08, 0.03, 0.11, 0.99)
+	panel_style.border_color = Color(0.85, 0.62, 1.0, 0.95)
+	panel_style.set_border_width_all(2)
+	panel_style.set_corner_radius_all(14)
+	panel_style.content_margin_left = 28
+	panel_style.content_margin_right = 28
+	panel_style.content_margin_top = 22
+	panel_style.content_margin_bottom = 22
+	panel.add_theme_stylebox_override("panel", panel_style)
+	center.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(600, 0)
+	box.add_theme_constant_override("separation", 10)
+	panel.add_child(box)
+
+	var who := Label.new()
+	who.text = "LEMBRANÇA • %s" % Origin.who_label(scene)
+	who.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	who.add_theme_font_size_override("font_size", 14)
+	who.add_theme_color_override("font_color", Color(0.78, 0.62, 0.92))
+	box.add_child(who)
+
+	var title := Label.new()
+	title.text = str(scene["title"])
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 26)
+	title.add_theme_color_override("font_color", Color(1.0, 0.83, 0.45))
+	box.add_child(title)
+
+	var body := Label.new()
+	body.text = "\n\n".join(PackedStringArray(scene["lines"]))
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_theme_font_size_override("font_size", 16)
+	body.add_theme_color_override("font_color", Color(0.93, 0.89, 0.96))
+	box.add_child(body)
+
+	var cost := Label.new()
+	cost.text = "Anotado no livro-razão: +%d ouro, +%d fama, +%d XP." % [
+		int(ORIGIN_REWARD["gold"]), int(ORIGIN_REWARD["rep"]), int(ORIGIN_REWARD["xp"])
+	]
+	cost.add_theme_font_size_override("font_size", 13)
+	cost.add_theme_color_override("font_color", Color(0.72, 0.66, 0.8))
+	box.add_child(cost)
+
+	var close_button := Button.new()
+	close_button.text = "Voltar ao balcão"
+	close_button.custom_minimum_size = Vector2(240, 46)
+	close_button.pressed.connect(_close_origin)
+	box.add_child(close_button)
+	world_timer.stop()
+	audio.play("rare")
+	_refresh_ui()
+
+## Fechar a lembrança devolve o relógio à loja e emenda o que a cena estava
+## segurando — o painel do final, no último capítulo.
+func _close_origin() -> void:
+	if is_instance_valid(origin_layer):
+		origin_layer.queue_free()
+	origin_layer = null
+	world_timer.start()
+	audio.play("click")
+	# O botão de relembrar abre o quadro sem prêmio: a cena já foi paga no dia em
+	# que a loja a descobriu.
+	_refresh_ui()
+	if _origin_next.is_valid():
+		var next := _origin_next
+		_origin_next = Callable()
+		next.call()
+
+## Painel das memórias: o que a loja já contou de si e o que ainda está trancado
+## em capítulo.
+func _origin_text() -> String:
+	var lines: Array[String] = ["LEMBRANÇAS DO ANDAR DE CIMA"]
+	if origin_seen.is_empty():
+		lines.append("· feche um capítulo e a loja conta de onde veio")
+		return "\n".join(lines)
+	for scene in Origin.DATA:
+		if origin_seen.has(str(scene["id"])):
+			lines.append("✦ %s — %s" % [scene["title"], Origin.who_label(scene)])
+	var left := Origin.size() - origin_seen.size()
+	if left > 0:
+		lines.append("· %d lembranças ainda trancadas em capítulo" % left)
+	return "\n".join(lines)
+
+## Reler é de graça: reabre a última cena descoberta sem pagar o prêmio outra vez.
+func _reread_origin() -> void:
+	if origin_seen.is_empty():
+		return
+	_show_origin(Origin.find(origin_seen[origin_seen.size() - 1]))
 
 func _board_text() -> String:
 	if steam == null:
