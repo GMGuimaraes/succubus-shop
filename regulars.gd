@@ -13,6 +13,7 @@ const TIER_NAMES: Array[String] = ["Novo rosto", "Conhecido", "Freguês", "Devot
 # 4 ladina, 5 clérigo, 6 mercadora, 7 nobre, 8 goblin, 9 cobrador.
 # "faction" aponta para um id em factions.gd.
 # "lines" tem uma lista de falas por nível; a primeira fala do nível 0 é a apresentação.
+# "romance" são as três falas da escada de confiança: convite, encontro e momento a dois.
 # Mantenha o favorito em um produto de nível baixo: capítulos pedem três compras favoritas.
 const DATA: Array = [
 	{
@@ -33,6 +34,11 @@ const DATA: Array = [
 			"“Você sabe meu nome de cabeça? Ninguém sabe meu nome de cabeça.”",
 			"“Eu tenho um lugar fixo na sua loja agora? Tipo uma cadeira? Posso trazer uma cadeira.”",
 			"“Juro por minha espada, meu escudo e esta poção: nunca mais compro em outra loja.”"
+		],
+		"romance": [
+			"“Um convite? Eu enfrentei um dragão sem tremer. Por que estou tremendo por um café?”",
+			"“Ficamos até o sol nascer. Eu jurei proteger a loja. Ninguém atacou. Ataquei só o bolo.”",
+			"“Sir Aldric, nível um, de joelhos, e não foi numa batalha. A senhora pode guardar a minha espada.”"
 		]
 	},
 	{
@@ -53,6 +59,11 @@ const DATA: Array = [
 			"“Você lembrou meu nome. Que... estranho. Que bom. Quer dizer, tanto faz.”",
 			"“Eu trouxe um presente. É só um marcador de livro. Não é nada. Pegue logo.”",
 			"“Pronto, falei! Eu gosto daqui. E do... atendimento. Do atendimento!”"
+		],
+		"romance": [
+			"“Um café? Óbvio que eu aceito. Não é por você. É pela cafeína.”",
+			"“Conjurei duas estrelas para iluminar a mesa. Foi profissional. Só profissional. Para de olhar.”",
+			"“Apaguei todas as velas menos uma. O grimório ficou fechado a noite inteira.”"
 		]
 	},
 	{
@@ -73,6 +84,11 @@ const DATA: Array = [
 			"“Você sabe meu nome! Isso vai para o meu diário de campanha.”",
 			"“Posso te chamar de amiga? Ou de mestra? Ou... dos dois?”",
 			"“Eu juro: se alguém falar mal da sua loja, eu choro na frente dele. Isso dói mais que machado.”"
+		],
+		"romance": [
+			"“Convidar o bárbaro? O bárbaro obedece. O bárbaro também está corando, não conte a ninguém.”",
+			"“Levei flores. Grandes. Arranquei a árvore inteira, mas as flores ficaram presas, então isso conta como ramalhete.”",
+			"“Deitei a machadinha no chão pela primeira vez em doze anos. Fica aí. Hoje eu não vou precisar dela.”"
 		]
 	},
 	{
@@ -93,6 +109,11 @@ const DATA: Array = [
 			"“Gostei de você. Isso é perigoso. Para os dois.”",
 			"“Pode pôr meu nome no caderno de fregueses. A lápis, para eu poder fugir da dívida.”",
 			"“Minha reputação de ladra está arruinada. E sabe de uma coisa? Eu adorei.”"
+		],
+		"romance": [
+			"“Convite com hora e lugar? Quer que eu invada a loja? ...Posso invadir a loja?”",
+			"“Roubei um beijo e devolvi com juros. Está virando um negócio péssimo para o meu histórico.”",
+			"“Pela primeira vez na vida entrei num quarto pela porta e não levei nada. Só fiquei.”"
 		]
 	},
 	{
@@ -113,6 +134,11 @@ const DATA: Array = [
 			"“Que honra! Ser lembrado numa loja tão... movimentada.”",
 			"“Posso abençoar a sua porta? De graça. Meu primeiro serviço sem cobrar.”",
 			"“Eu trairia meu deus por um desconto seu. Mas é só o dízimo de volta. Só o dízimo.”"
+		],
+		"romance": [
+			"“Café a duas luzes? Posso benzer a mesa. É minha desculpa favorita para ficar mais perto.”",
+			"“Perdoei todos os pecados da cidade hoje. Cheguei em casa e cometi três por conta própria.”",
+			"“Renunciei por uma noite. Os deuses são compreensivos. Ou estavam olhando para o outro lado.”"
 		]
 	},
 	{
@@ -133,6 +159,11 @@ const DATA: Array = [
 			"“Vou te chamar de sócia. Não responde nada, que fica estranho escrito.”",
 			"“Você é a única pessoa desta cidade que me empresta planilha de graça.”",
 			"“Se a guilda dos mercadores souber que a gente se dá bem, eu perco meu cargo.”"
+		],
+		"romance": [
+			"“Encontro comercial ou pessoal? Preciso registrar direito, pela contabilidade do meu coração.”",
+			"“Jantamos dividindo a conta e a planilha. Nunca dividi nada tão bem.”",
+			"“Fechei o escritório, apaguei o quadro de horários e ainda assim marquei ponto. Melhor dia fiscal da minha vida.”"
 		]
 	},
 	{
@@ -153,6 +184,11 @@ const DATA: Array = [
 			"“Você lembra do meu nome. Minha família não lembra, mas você lembra.”",
 			"“Vim de carruagem hoje. Na nobreza isso é praticamente uma declaração.”",
 			"“Não direi a ninguém que volto tanto. Isso arruína todo o meu mistério.”"
+		],
+		"romance": [
+			"“Um convite? Aceito três, se precisar que eu lembre de dizer sim.”",
+			"“Saímos e eu esqueci o guarda-chuva, o cocheiro e o meu próprio nome. Lembrei do seu dez vezes.”",
+			"“Bebi o elixir da memória de propósito, para escolher lembrar só desta noite. É a primeira coisa que decido guardar.”"
 		]
 	},
 	{
@@ -173,6 +209,11 @@ const DATA: Array = [
 			"“Você lembrou que eu sou um goblin e não um entregador!”",
 			"“Ganhei um crachá da loja. É de papel. Vou carregar para sempre.”",
 			"“Te apresentei como 'minha contato no setor'. Soa mais honesto assim.”"
+		],
+		"romance": [
+			"“Me convidou? Isso é networking ou é sério? Meu chefe diz que é sério quando você paga a conta.”",
+			"“Reservei a mesa do VIP. Era a única mesa. Mas o garçom chorou, então no fim consegui.”",
+			"“Tenho vinte anos e sou estagiário há dois. Ainda assim, fui eu quem apagou a luz.”"
 		]
 	},
 	{
@@ -193,6 +234,11 @@ const DATA: Array = [
 			"“Você paga antes de eu pedir. Raro. Comovente. Registrado em triplicata.”",
 			"“Minha chefe quer conhecer você. Não é convite. É auditoria.”",
 			"“Chamam sua loja de 'seguro' no submundo. Não é elogio. É política.”"
+		],
+		"romance": [
+			"“Recebi o convite. Está em triplicata, com firma reconhecida e a data do nosso primeiro encontro.”",
+			"“Cobrei a noite inteira. Na última casa, confessei que só trabalhava tanto para ter com quem voltar.”",
+			"“Assinei o único contrato desta cidade sem cláusula de saída. E o meu nome está na sua página.”"
 		]
 	}
 ]

@@ -22,6 +22,11 @@ var regular_bonds: Dictionary = {}
 var regular_orders_completed: Dictionary = {}
 var regular_story_progress: Dictionary = {}
 var regular_story_completed: Array[String] = []
+## Degrau da escada de confiança já pago por cada freguês, de zero a três.
+var romance_stage: Dictionary = {}
+## Freguês que saiu do balcão a fim de um convite. A oferta acende sozinha quando
+## a visita rendeu vínculo e vale até a virada do dia.
+var romance_pending: String = ""
 var faction_standing: Dictionary = {}
 var adult_content_enabled: bool = true
 var private_moments_unlocked: int = 0
@@ -256,6 +261,8 @@ var last_pack_card: String = ""
 var upgrade_button: Button
 var imp_button: Button
 var private_button: Button
+var romance_label: Label
+var romance_button: Button
 var adult_toggle_button: Button
 var recover_theft_button: Button
 var fury_label: Label
@@ -467,6 +474,9 @@ var _stage_room: String = "res://assets/shop_scene.png"
 var _seller_home: Vector2 = Vector2.ZERO
 var _stage_layout_key := Vector2(-1.0, -1.0)
 var _seller_lean_tween: Tween
+## A coreografia do convite: espera a chegada, junta o par e arma as poses. Click
+## repetido cancela a anterior, senão duas cenas brigariam pela mesma chefe.
+var _romance_cue: Tween
 var _customer_bob: Tween
 ## Se o balcão atendeu bem quem está no palco agora. Decide se a visita dá uma
 ## olhada nas prateleiras na saída ou vai direto à porta.
@@ -483,6 +493,9 @@ var expedition_button: Button
 var current_sector: String = "reception"
 var current_customer_budget: int = 0
 var current_customer_patience: int = 0
+## Quem está no salão neste instante, vazio para visita avulsa. A cena de romance
+## precisa saber se o par já está em cena ou se tem de chamá-lo de volta.
+var current_regular_id: String = ""
 ## A fila encantada por um evento raro deixa o próximo cliente mais paciente. O
 ## bônus fica guardado aqui porque o evento dispara antes de qualquer visita: sem
 ## isto ele somava paciência de um balcão vazio.
@@ -559,6 +572,22 @@ const MEME_FLIRT_LINES := [
 "A succubus provoca o corredor: “Só mais uma run? Então fica mais uma negociação comigo.”",
 "Ela sorri para o cliente do bordão: “É sobre isso. E sobre você voltar amanhã.”",
 "A chefe aponta para o ladrão: “Ctrl+C não copia meu charme. Esse é proprietário.”"
+]
+## A escada de confiança de um freguês: cada degrau cobra visitas de balcão e
+## ouro na hora, e paga de volta para sempre na conta dele. O degrau três é o
+## beijo sem mostrar nada — a cena corta antes, e o que fica no save é o bônus,
+## não a imagem.
+const ROMANCE_STEPS: Array[Dictionary] = [
+	{"name": "Convite", "bond": 5, "gold": 40, "pose": "ousadia", "price": 0.08, "tip": 0, "bond_bonus": 1, "xp": 12, "rep": 1},
+	{"name": "Encontro", "bond": 9, "gold": 120, "pose": "danca", "price": 0.16, "tip": 0, "bond_bonus": 1, "xp": 25, "rep": 2},
+	{"name": "Momento a dois", "bond": 15, "gold": 280, "pose": "beijo", "price": 0.25, "tip": 20, "bond_bonus": 2, "xp": 45, "rep": 3},
+]
+## O quadro que a tela mostra em cada degrau: as duas figuras se aproximam no
+## mesmo salão, a pose bate com o texto, e a casa não filma o resto.
+const ROMANCE_SCENES: Array[String] = [
+	"A chefe vira a placa de FECHADO, atravessa o balcão e chama %s pelo nome: “Hoje a rodada é minha.”",
+	"As luzes da loja baixam. Uma mesa aparece no meio do salão, e %s puxa a cadeira da chefe antes de sentar.",
+	"O salão fica às escuras menos num canto, onde a chefe e %s riem baixo até a última vela apagar. O resto a casa não mostra."
 ]
 
 func _ready() -> void:
@@ -835,6 +864,9 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 			_retire_walker(entry["node"] as Control)
 	var front := _lane(2)
 	_customer_served = false
+	# O corpo é outro cliente agora: se o anterior saiu de cena com uma pose no ar,
+	# a trava não pode congelar o passo deste.
+	stage_customer.set_meta("emotion_pose", false)
 	stage_customer.modulate = Color(1.0, 0.95, 0.98, front["alpha"])
 	stage_customer.rotation_degrees = 0.0
 	stage_customer.pivot_offset = stage_customer.size / 2.0
@@ -848,6 +880,9 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 	# aperta o passo: a batida do pé encurta na mesma proporção da caminhada, e
 	# ninguém desliza pelo chão nem corre com as pernas paradas.
 	var pace := clampf(_path_time(stage_customer, path) / STAGE_ARRIVE_SECONDS, 1.0, STAGE_MAX_PACE)
+	# Quanto falta para ele parar, guardado no corpo: uma cena que queira o
+	# freguês plantado no balcão precisa esperar exatamente esse tempo.
+	stage_customer.set_meta("arrive_left", _path_time(stage_customer, path) / pace)
 	var walk := create_tween()
 	_walk_path(walk, stage_customer, path, pace)
 	walk.tween_callback(_stage_customer_stops)
@@ -935,6 +970,7 @@ func _stage_customer_stops() -> void:
 	_customer_bob = null
 	if is_instance_valid(stage_customer):
 		stage_customer.rotation_degrees = 0.0
+		stage_customer.set_meta("arrive_left", 0.0)
 		_set_stage_frame(stage_customer, 0)
 		# Parado no balcão ele não tem mais ciclo de passo: o pose de emoção que
 		# vier precisa devolver o corpo para as pernas juntas, não para o meio de
@@ -1291,6 +1327,10 @@ func _set_stage_frame(figure: Control, index: int) -> void:
 
 func _advance_stage_frame(figure: Control) -> void:
 	if not is_instance_valid(figure):
+		return
+	# A batida do passo não pode atropelar uma pose de emoção no ar: sem esta trava
+	# o gesto durava um ciclo de perna e ninguém via a cena acontecendo.
+	if bool(figure.get_meta("emotion_pose", false)):
 		return
 	# Só o ciclo de caminhada avança sozinho; as poses de emoção ficam depois dele
 	# na lista e aparecem quando algo as pede.
@@ -2147,6 +2187,17 @@ func _build_ui() -> void:
 	private_button.pressed.connect(_show_private_moment)
 	right.add_child(private_button)
 
+	romance_label = Label.new()
+	romance_label.custom_minimum_size = Vector2(280, 78)
+	romance_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	romance_label.add_theme_color_override("font_color", Color(1.0, 0.74, 0.86))
+	right.add_child(romance_label)
+
+	romance_button = Button.new()
+	romance_button.custom_minimum_size.y = 44
+	romance_button.pressed.connect(_advance_romance_step)
+	right.add_child(romance_button)
+
 	adult_toggle_button = Button.new()
 	adult_toggle_button.custom_minimum_size.y = 40
 	adult_toggle_button.pressed.connect(_toggle_adult_content)
@@ -2159,7 +2210,7 @@ func _build_ui() -> void:
 	right.add_child(recover_theft_button)
 
 	var footer := Label.new()
-	footer.text = "Protótipo 0.6 • Loja mágica, negócios duvidosos • Facções, fregueses e contratos • Conteúdo sensual opcional"
+	footer.text = "Protótipo 0.6 • Loja mágica, negócios duvidosos • Facções, romances de balcão e contratos • Conteúdo sensual opcional"
 	footer.add_theme_font_size_override("font_size", 12)
 	footer.add_theme_color_override("font_color", Color(0.62, 0.57, 0.68))
 	root.add_child(footer)
@@ -3021,6 +3072,8 @@ func _on_customer_tick() -> void:
 		daily_quest_claimed = false
 		daily_gold_earned = 0
 		daily_crafts = 0
+		# O convite esperou o dia todo e não foi aceito: ele tem orgulho próprio.
+		romance_pending = ""
 		# Fechou o dia, fechou o balanço: o placar recebe o resultado da virada.
 		best_score = maxi(best_score, business_score())
 		if steam != null:
@@ -3088,6 +3141,7 @@ func _on_customer_tick() -> void:
 				{"name": "Capitã do Contrabando Afetivo", "favorite": "caixa_misteriosa", "line": "“Tudo que eu vendo é de procedência duvidosa e coração sincero.”", "faction": "mercadores", "portrait": 15, "budget": 210, "patience": 1, "thief": true}
 			]
 		var profile: Dictionary = profiles[randi() % profiles.size()]
+		current_regular_id = ""
 		if randi() % 100 < 35:
 			var regular: Dictionary = _pick_regular()
 			var regular_id := str(regular["id"])
@@ -3108,6 +3162,7 @@ func _on_customer_tick() -> void:
 				"personal_request": personal_request,
 				"faction": str(regular.get("faction", "aventureiros"))
 			}
+			current_regular_id = regular_id
 		_animate_customer_arrival(profile)
 		var preferred_index: int = _product_index(str(profile["favorite"]))
 		current_customer_budget = int(profile.get("budget", 50)) + trade_rank * 8
@@ -3176,7 +3231,7 @@ func _on_customer_tick() -> void:
 			# Saiu torto da forja e o cliente viu: ninguém esconde a careta.
 			_show_stage_emotion(stage_customer, "nojo")
 		var base_label := _piece_price(item, piece_tier)
-		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item)
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", "")))
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
 			preference_bonus = maxi(2, int(round(base_label * 0.25)))
@@ -3220,7 +3275,7 @@ func _on_customer_tick() -> void:
 			var regular_id := str(profile["regular_id"])
 			var old_bond := int(regular_bonds.get(regular_id, 0))
 			var old_tier := Regulars.tier_for(old_bond)
-			var new_bond := old_bond + 1 + (2 if fulfilled_personal_request else 0)
+			var new_bond := old_bond + 1 + (2 if fulfilled_personal_request else 0) + _romance_bond_bonus(regular_id)
 			regular_bonds[regular_id] = new_bond
 			var new_tier := Regulars.tier_for(new_bond)
 			var regular_data: Dictionary = Regulars.find(regular_id)
@@ -3242,6 +3297,14 @@ func _on_customer_tick() -> void:
 					headline_locked = true
 				else:
 					last_event += "\nMissão pessoal: %d/3 compras favoritas." % story_progress
+			var romance_tip := _romance_tip(regular_id)
+			if romance_tip > 0:
+				gold += romance_tip
+				daily_gold_earned += romance_tip
+				last_event += "\n%s deixa uma gorjeta de coração sobre o balcão: +%d ouro." % [
+					regular_data.get("short", "O freguês"), romance_tip
+				]
+			_offer_romance(regular_id, new_bond)
 		if not faction_id.is_empty():
 			var old_standing := int(faction_standing.get(faction_id, 0))
 			var old_faction_tier := Factions.tier_for(old_standing)
@@ -3721,6 +3784,7 @@ func _show_stage_emotion(figure: Control, emotion: String) -> void:
 			frame = i
 			break
 	_set_stage_frame(figure, frame)
+	figure.set_meta("emotion_pose", true)
 	var hold := create_tween()
 	hold.tween_interval(0.9)
 	hold.tween_callback(_restore_stage_walk_frame.bind(figure))
@@ -3729,6 +3793,7 @@ func _show_stage_emotion(figure: Control, emotion: String) -> void:
 func _restore_stage_walk_frame(figure: Control) -> void:
 	if not is_instance_valid(figure):
 		return
+	figure.set_meta("emotion_pose", false)
 	var frames := int(figure.get_meta("walk_frames", figure.get_child_count()))
 	if frames < 3:
 		_set_stage_frame(figure, 0)
@@ -3804,7 +3869,11 @@ func _refresh_ui() -> void:
 				continue
 			var tier := Regulars.tier_for(bond)
 			var orders_done := int(regular_orders_completed.get(regular_id, 0))
-			regular_lines.append("%s — %s (%d visitas, %d pedidos)" % [regular["short"], Regulars.TIER_NAMES[tier], bond, orders_done])
+			var courted := _romance_stage_of(regular_id)
+			regular_lines.append("%s — %s (%d visitas, %d pedidos)%s" % [
+				regular["short"], Regulars.TIER_NAMES[tier], bond, orders_done,
+				" ♥%d" % courted if courted > 0 else ""
+			])
 			if regular_story_completed.has(regular_id):
 				regular_lines.append("  ✦ História concluída")
 			elif bond >= 3:
@@ -4020,6 +4089,24 @@ func _refresh_ui() -> void:
 	upgrade_button.disabled = gold < ad_cost
 	private_button.text = "Momento especial (afinidade 5)" if affection >= 5 else "Momento especial • afinidade %d/5" % affection
 	private_button.disabled = affection < 5
+	if is_instance_valid(romance_label):
+		romance_label.text = _romance_text()
+	if is_instance_valid(romance_button):
+		var invited: Dictionary = Regulars.find(romance_pending)
+		var next_step := _romance_stage_of(romance_pending)
+		if romance_pending.is_empty() or invited.is_empty():
+			romance_button.text = "Convidar freguês • nenhum convite pendente"
+			romance_button.disabled = true
+		elif next_step >= ROMANCE_STEPS.size():
+			romance_button.text = "%s • coração completo" % invited.get("short", "Freguês")
+			romance_button.disabled = true
+		else:
+			var step_data: Dictionary = ROMANCE_STEPS[next_step]
+			romance_button.text = "%s de %s • %d ouro • %d visitas" % [
+				step_data["name"], invited.get("short", ""), step_data["gold"], step_data["bond"]
+			]
+			romance_button.disabled = gold < int(step_data["gold"]) \
+				or int(regular_bonds.get(romance_pending, 0)) < int(step_data["bond"])
 	adult_toggle_button.text = "Cenas sensuais: LIGADAS" if adult_content_enabled else "Cenas sensuais: DESLIGADAS"
 	if is_instance_valid(recover_theft_button):
 		recover_theft_button.text = "Rastrear: %s" % stolen_item_name if theft_recovery_available else "Rastrear item roubado"
@@ -4085,6 +4172,7 @@ func _save_game() -> void:
 	config.set_value("game", "regular_orders_completed", regular_orders_completed)
 	config.set_value("game", "regular_story_progress", regular_story_progress)
 	config.set_value("game", "regular_story_completed", regular_story_completed)
+	config.set_value("game", "romance_stage", romance_stage)
 	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
@@ -4177,6 +4265,10 @@ func _load_game() -> void:
 	var saved_factions = config.get_value("game", "faction_standing", {})
 	if saved_factions is Dictionary:
 		faction_standing = saved_factions.duplicate(true)
+	var saved_romance = config.get_value("game", "romance_stage", {})
+	if saved_romance is Dictionary:
+		for saved_id in saved_romance.keys():
+			romance_stage[str(saved_id)] = clampi(int(saved_romance[saved_id]), 0, ROMANCE_STEPS.size())
 	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
 	demonic_form_active = adult_content_enabled and fury >= 4
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
@@ -4633,6 +4725,9 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "private_sanctuary", "name": "Cantinho reservado (5 momentos só da loja)", "condition": private_moments_unlocked >= 5, "gold": 90, "rep": 3},
 		{"id": "commission_first", "name": "Palavra de loja (primeira encomenda fechada)", "condition": commissions_finished >= 1, "gold": 60, "rep": 3},
 		{"id": "commission_five", "name": "Casa de confiança (5 encomendas fechadas)", "condition": commissions_finished >= 5, "gold": 200, "rep": 8},
+		{"id": "romance_first", "name": "Primeiro convite (um freguês na escada)", "condition": _romance_steps_paid() >= 1, "gold": 50, "rep": 3},
+		{"id": "romance_dates", "name": "Coração ocupado (3 degraus pagos)", "condition": _romance_steps_paid() >= 3, "gold": 120, "rep": 6},
+		{"id": "romance_devoted", "name": "Amor de balcão (3 fregueses no degrau final)", "condition": _romance_at_least(3) >= 3, "gold": 260, "rep": 10, "pose": "relic"},
 		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"}
 	]
 
@@ -4711,7 +4806,7 @@ func _play_card_flip(card_id: String) -> void:
 func business_score() -> int:
 	return gold + reputation * 20 + customers_served * 6 + Cards.owned_count(card_counts) * 40 \
 		+ player_level * 25 + premium_crafted * 15 + expeditions_done * 20 + rituals_performed * 10 \
-		+ campaign_step * 60 + private_moments_unlocked * 8 + (1200 if game_completed else 0)
+		+ campaign_step * 60 + private_moments_unlocked * 8 + _romance_steps_paid() * 20 + (1200 if game_completed else 0)
 
 func _publish_score() -> void:
 	var score := business_score()
@@ -4904,6 +4999,160 @@ func _get_achievement_summary() -> String:
 		var marker := "✓" if unlocked_achievements.has(str(achievement["id"])) else "○"
 		lines.append("%s %s" % [marker, str(achievement["name"]).split(" (")[0]])
 	return "\n".join(lines)
+
+## Degrau já pago por este freguês; zero quando ele ainda é só um rosto no balcão.
+func _romance_stage_of(regular_id: String) -> int:
+	return clampi(int(romance_stage.get(regular_id, 0)), 0, ROMANCE_STEPS.size())
+
+## Quanto o apaixonado paga a mais, para sempre.
+func _romance_price_factor(regular_id: String) -> float:
+	var stage := _romance_stage_of(regular_id)
+	return (1.0 + float(ROMANCE_STEPS[stage - 1]["price"])) if stage > 0 else 1.0
+
+## Visita de quem já tem história vale mais vínculo que visita comum.
+func _romance_bond_bonus(regular_id: String) -> int:
+	var stage := _romance_stage_of(regular_id)
+	return int(ROMANCE_STEPS[stage - 1]["bond_bonus"]) if stage > 0 else 0
+
+## Só o degrau final deixa gorjeta no balcão, e ela cresce com a loja.
+func _romance_tip(regular_id: String) -> int:
+	var stage := _romance_stage_of(regular_id)
+	if stage < ROMANCE_STEPS.size():
+		return 0
+	return int(ROMANCE_STEPS[stage - 1]["tip"]) + player_level
+
+## A oferta acende sozinha quando a visita rendeu vínculo suficiente: o convite
+## espera no painel até a virada do dia. Quem chegou primeiro fica no lugar — a
+## promessa de um freguês não é trocada no meio pela de outro.
+func _offer_romance(regular_id: String, bond: int) -> void:
+	if not romance_pending.is_empty() and romance_pending != regular_id:
+		return
+	var step := _romance_stage_of(regular_id)
+	if step < ROMANCE_STEPS.size() and bond >= int(ROMANCE_STEPS[step]["bond"]):
+		romance_pending = regular_id
+
+func _romance_steps_paid() -> int:
+	var total := 0
+	for regular_id in romance_stage.keys():
+		total += _romance_stage_of(str(regular_id))
+	return total
+
+func _romance_at_least(step: int) -> int:
+	var total := 0
+	for regular_id in romance_stage.keys():
+		if _romance_stage_of(str(regular_id)) >= step:
+			total += 1
+	return total
+
+## Painel da escada: quem subiu degrau e quanto isso muda a conta dele.
+func _romance_text() -> String:
+	var lines: Array[String] = ["CORAÇÃO DO BALCÃO"]
+	var any := false
+	for regular in Regulars.DATA:
+		var stage := _romance_stage_of(str(regular["id"]))
+		if stage <= 0:
+			continue
+		any = true
+		lines.append("♥ %s — %s (+%d%% na conta)%s" % [
+			regular["short"], ROMANCE_STEPS[stage - 1]["name"],
+			int(round(float(ROMANCE_STEPS[stage - 1]["price"]) * 100.0)),
+			" • gorjeta a cada compra" if stage >= ROMANCE_STEPS.size() else ""
+		])
+	if any:
+		return "\n".join(lines)
+	lines.append("· nenhum freguês caiu de amores ainda")
+	lines.append("· atenda bem, chegue a 5 visitas e o convite acende aqui")
+	return "\n".join(lines)
+
+## O par precisa estar em cena para a tela registrar os dois. Se quem já está no
+## salão é o convidado, a cena começa já; senão ele volta pela porta, e a cena
+## espera o tempo da caminhada dele antes de pôr os dois lado a lado.
+func _summon_romance_partner(regular_id: String, portrait_index: int) -> float:
+	if is_instance_valid(stage_customer) and stage_customer.visible and current_regular_id == regular_id:
+		return clampf(float(stage_customer.get_meta("arrive_left", 0.0)), 0.0, STAGE_ARRIVE_SECONDS)
+	if is_instance_valid(stage_customer) and stage_customer.visible:
+		_stage_customer_leaves()
+	current_regular_id = regular_id
+	_stage_customer_arrives(portrait_index)
+	return clampf(float(stage_customer.get_meta("arrive_left", 0.0)), 0.0, STAGE_ARRIVE_SECONDS)
+
+## A chefe contorna o balcão e vai até o freguês: o par aparece junto no mesmo
+## salão, sem moldura e sem cenário novo.
+func _seller_joins_customer() -> void:
+	if not is_instance_valid(stage_seller) or not is_instance_valid(stage_layer):
+		return
+	if _seller_lean_tween != null and _seller_lean_tween.is_valid():
+		_seller_lean_tween.kill()
+	var partner := _room_meet().y * stage_layer.size.x
+	var gap := stage_seller.size.x * 0.30
+	# Ela para de lado dele, do lado de casa, sem passar por cima do corpo.
+	var side := partner + gap if partner < _seller_home.x else partner - gap
+	_seller_lean_tween = create_tween()
+	_seller_lean_tween.tween_property(stage_seller, "position", Vector2(side, _seller_home.y), 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_seller_lean_tween.parallel().tween_property(stage_seller, "rotation_degrees", 0.0, 0.3).set_trans(Tween.TRANS_SINE)
+	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", Vector2(1.05, 1.05), 0.5).set_trans(Tween.TRANS_SINE)
+	_seller_lean_tween.tween_interval(2.2)
+	_seller_lean_tween.tween_property(stage_seller, "position", _seller_home, 0.7).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", Vector2.ONE, 0.7).set_trans(Tween.TRANS_SINE)
+
+## Sobe um degrau da escada do freguês convidado: cobra o vínculo e o ouro, põe o
+## par lado a lado no salão e trava o bônus econômico permanente dele.
+func _advance_romance_step() -> void:
+	var invited: Dictionary = Regulars.find(romance_pending)
+	if romance_pending.is_empty() or invited.is_empty():
+		last_event = "Ninguém saiu do balcão a fim de um convite. Venda bem primeiro, depois converse."
+		_refresh_ui()
+		return
+	var step := _romance_stage_of(romance_pending)
+	if step >= ROMANCE_STEPS.size():
+		romance_pending = ""
+		last_event = "%s já subiu a escada inteira com a chefe. Não há degrau novo para pagar." % invited.get("short", "O freguês")
+		_refresh_ui()
+		return
+	var requirement: Dictionary = ROMANCE_STEPS[step]
+	var bond := int(regular_bonds.get(romance_pending, 0))
+	if bond < int(requirement["bond"]):
+		last_event = "%s ainda não confia o bastante: %s pede %d visitas, e vocês têm %d." % [
+			invited.get("short", "O freguês"), requirement["name"], requirement["bond"], bond
+		]
+		_refresh_ui()
+		return
+	var cost := int(requirement["gold"])
+	if gold < cost:
+		last_event = "%s custa %d ouro. A conta de um encontro não fica no fiado." % [requirement["name"], cost]
+		_refresh_ui()
+		return
+	var regular_id := romance_pending
+	gold -= cost
+	romance_pending = ""
+	romance_stage[regular_id] = step + 1
+	_play_sensual_reception_moment()
+	var wait := _summon_romance_partner(regular_id, int(invited["portrait"]))
+	var pose := str(requirement["pose"])
+	# A cena acontece quando ele para no balcão, não antes: por isso a chefe espera
+	# o tempo da caminhada antes de contornar o balcão e os dois assumirem a pose.
+	if _romance_cue != null and _romance_cue.is_valid():
+		_romance_cue.kill()
+	_romance_cue = create_tween()
+	_romance_cue.tween_interval(wait)
+	_romance_cue.tween_callback(_seller_joins_customer)
+	_romance_cue.tween_callback(_show_stage_emotion.bind(stage_seller_body, pose))
+	_romance_cue.tween_callback(_show_stage_emotion.bind(stage_customer, pose))
+	reputation += int(requirement["rep"])
+	_add_affection(4 + step * 2)
+	_add_xp(int(requirement["xp"]))
+	var reached_top := step + 1 >= ROMANCE_STEPS.size()
+	if reached_top:
+		private_moments_unlocked += 1
+	last_event = "%s\n%s  A conta dele agora sai %d%% mais cara, para sempre." % [
+		str(ROMANCE_SCENES[step]) % invited["short"], str(invited["romance"][step]),
+		int(round(float(requirement["price"]) * 100.0))
+	]
+	audio.play("talent" if reached_top else "happy")
+	_show_feedback("♥ %s • %s" % [requirement["name"], invited["short"]], Color(1.0, 0.62, 0.88))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
 
 func _show_private_moment() -> void:
 	if affection < 5:
