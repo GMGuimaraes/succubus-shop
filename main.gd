@@ -189,12 +189,41 @@ const STAGE_HOST_SPRITES: Array[String] = [
 	"res://assets/stage_seller.png",
 	"res://assets/stage_seller_lean.png",
 ]
-const STAGE_CROWD_SPRITES := [
-	["res://assets/stage_adventurer.png", "res://assets/stage_adventurer_walk1.png", "res://assets/stage_adventurer_walk2.png"],
-	["res://assets/stage_mage.png", "res://assets/stage_mage_walk1.png", "res://assets/stage_mage_walk2.png"],
-	["res://assets/stage_noble.png", "res://assets/stage_noble_walk1.png", "res://assets/stage_noble_walk2.png"],
-	["res://assets/stage_goblin.png", "res://assets/stage_goblin_walk1.png", "res://assets/stage_goblin_walk2.png"],
+## Nomes dos corpos do elenco, não listas de arquivos: a animação de cada um é
+## tudo que existir em assets/ seguindo a convenção stage_<corpo>.png (pernas
+## juntas), stage_<corpo>_walk1.png, _walk2.png ... na ordem. Colocar um quadro
+## novo na pasta já aumenta o ciclo, sem tocar neste arquivo. Pose de emoção
+## obedece a mesma regra: stage_<corpo>_<emoção>.png, com as emoções de
+## STAGE_EMOTION_POSES. Personagem sem arte de emoção simplesmente não a usa.
+const STAGE_CROWD_BODIES: Array[String] = [
+	"adventurer",
+	"mage",
+	"noble",
+	"goblin",
 ]
+## Emoções que o elenco sabe representar quando a arte existir. Os apelidos vêm
+## dos momentos pedidos: espanto, felicidade, ousadia, desconfiança, briga, beijo.
+const STAGE_EMOTION_POSES: Array[String] = [
+	"espanto",
+	"felicidade",
+	"ousadia",
+	"desconfianca",
+	"briga",
+	"beijo",
+]
+## Humor da visita -> pose. Uma mesma pose cobre mais de um estado quando a
+## diferença é só de cor.
+const STAGE_MOOD_POSE := {
+	"delighted": "felicidade",
+	"content": "felicidade",
+	"disappointed": "desconfianca",
+	"hurry": "espanto",
+	"flirt": "beijo",
+	"anger": "briga",
+	"dare": "ousadia",
+}
+var _stage_frame_cache: Dictionary = {}
+var _stage_sequence_cache: Dictionary = {}
 ## Móveis pintados que ficam NA FRENTE do elenco, por sala, em coordenadas
 ## normais (x, y, largura, altura) batendo com o STRETCH_SCALE do fundo. É o que
 ## faz a figura sumir de cintura para baixo ao passar atrás do balcão.
@@ -234,7 +263,18 @@ const STAGE_FIGURE_HEIGHT := 250.0
 const STAGE_WALK_SPEED := 215.0
 const STAGE_STEP_SECONDS := 0.34
 ## Ordem das poses no ciclo: meio de passo, perna junta, outro meio de passo.
-const STAGE_WALK_SEQUENCE := [1, 0, 2]
+## Ciclo de passo de um corpo: todos os frames de caminhada e depois a pose de
+## pernas juntas, um por batida. Com três artes isso é [1, 2, 0]; com doze, é o
+## meio de passo passando por cada posição do passo, e a animação fica fluida.
+func _stage_walk_sequence(count: int) -> Array[int]:
+	if _stage_sequence_cache.has(count):
+		return _stage_sequence_cache[count]
+	var sequence: Array[int] = []
+	for i in range(1, count):
+		sequence.append(i)
+	sequence.append(0)
+	_stage_sequence_cache[count] = sequence
+	return sequence
 ## Faixa da tela que o elenco pinta de cenário andável, e o pedaço dela que o
 ## painel lateral toma de volta para cima para as imagens não chegarem cortadas.
 ## A coluna do mercado devolve exatamente o mesmo respiro, então só o quadro de
@@ -424,14 +464,14 @@ func _process(delta: float) -> void:
 func _spawn_stage_walker() -> void:
 	# Um corpo fica reservado ao cliente do turno: com os quatro em cena nunca
 	# haveria quem entrar sem repetir alguém.
-	if _stage_walkers.size() >= STAGE_CROWD_SPRITES.size() - 1:
+	if _stage_walkers.size() >= STAGE_CROWD_BODIES.size() - 1:
 		return
 	var crowd := _free_crowd_index()
 	if crowd < 0:
 		return
 	var depth := randf_range(0.05, 0.30)
 	var lane := _lane_at(depth)
-	var walker := _make_stage_figure(_stage_crowd_frames(crowd), STAGE_FIGURE_HEIGHT)
+	var walker := _make_stage_poses(crowd, STAGE_FIGURE_HEIGHT)
 	var figure_scale: float = lane["scale"]
 	walker.scale = Vector2(figure_scale, figure_scale)
 	# Mais fundo na sala: um pouco mais frio e escuro, mas nunca fantasma.
@@ -511,7 +551,7 @@ func _free_crowd_index() -> int:
 	if is_instance_valid(stage_customer) and stage_customer.visible:
 		taken.append(int(stage_customer.get_meta("crowd", -1)))
 	var pool: Array[int] = []
-	for i in range(STAGE_CROWD_SPRITES.size()):
+	for i in range(STAGE_CROWD_BODIES.size()):
 		if not taken.has(i):
 			pool.append(i)
 	if pool.is_empty():
@@ -605,9 +645,8 @@ func _host_enters_room() -> void:
 func _stage_customer_arrives(portrait_index: int) -> void:
 	if not is_instance_valid(stage_customer) or stage_layer.size.x <= 0:
 		return
-	_dress_stage_figure(stage_customer, _stage_crowd_frames(portrait_index), _lane_height(2))
-	var body := absi(portrait_index) % STAGE_CROWD_SPRITES.size()
-	stage_customer.set_meta("crowd", body)
+	var body := absi(portrait_index) % STAGE_CROWD_BODIES.size()
+	_dress_stage_poses(stage_customer, body, _lane_height(2))
 	# O corpo do freguês do turno é dele. Se um transeunte já o vestia, o
 	# transeunte se apaga: dois do mesmo rosto na tela pareciam um sprite só
 	# colado duas vezes.
@@ -776,10 +815,12 @@ func _build_stage(root: Control) -> void:
 	stage_seller = Control.new()
 	stage_seller.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stage_layer.add_child(stage_seller)
-	stage_seller_body = _make_stage_figure(STAGE_HOST_SPRITES, _lane_height(1))
+	stage_seller_body = _make_stage_figure(_stage_host_poses(), _lane_height(1))
+	stage_seller_body.set_meta("stage_body", "seller")
+	stage_seller_body.set_meta("walk_frames", 1)
 	stage_seller.size = stage_seller_body.size
 	stage_seller.add_child(stage_seller_body)
-	stage_customer = _make_stage_figure(_stage_crowd_frames(0), _lane_height(2))
+	stage_customer = _make_stage_poses(0, _lane_height(2))
 	stage_customer.visible = false
 	stage_front_layer.add_child(stage_customer)
 	stage_layer.draw.connect(_draw_stage_shadows.bind(stage_layer, false))
@@ -819,11 +860,68 @@ func _apply_room_props(scene_path: String) -> void:
 	if is_instance_valid(stage_occluder) and ResourceLoader.exists(scene_path):
 		stage_occluder.texture = load(scene_path)
 
+## Nome do corpo de um índice do elenco, com rotação: a lista pode crescer e
+## qualquer índice fora dela continua desenhando alguém.
+func _stage_body_name(index: int) -> String:
+	return STAGE_CROWD_BODIES[absi(index) % STAGE_CROWD_BODIES.size()]
+
+## Ciclo de caminhada do corpo: a pose parada e depois cada _walkN que existir,
+## até o primeiro buraco. O resultado é memoizado porque spawns e trocas de sala
+## perguntam pelos mesmos nomes o tempo todo.
 func _stage_crowd_frames(index: int) -> Array[String]:
-	var frames: Array[String] = []
-	for path in STAGE_CROWD_SPRITES[absi(index) % STAGE_CROWD_SPRITES.size()]:
-		frames.append(str(path))
+	var body := _stage_body_name(index)
+	if _stage_frame_cache.has(body):
+		return _stage_frame_cache[body]
+	var frames: Array[String] = ["res://assets/stage_%s.png" % body]
+	var step := 1
+	while step <= 24:
+		var candidate := "res://assets/stage_%s_walk%d.png" % [body, step]
+		if not ResourceLoader.exists(candidate):
+			break
+		frames.append(candidate)
+		step += 1
+	_stage_frame_cache[body] = frames
 	return frames
+
+## Pose de emoção do corpo, ou vazio quando a arte ainda não existe.
+func _stage_emotion_frame(index: int, emotion: String) -> String:
+	return _body_emotion_frame(_stage_body_name(index), emotion)
+
+static func _body_emotion_frame(body: String, emotion: String) -> String:
+	if emotion.is_empty():
+		return ""
+	var candidate := "res://assets/stage_%s_%s.png" % [body, emotion]
+	return candidate if ResourceLoader.exists(candidate) else ""
+
+## As poses da chefe: as duas fixas do balcão e, atrás delas, cada emoção que a
+## arte dela já tiver. A chefe é o "corpo zero" da mesma convenção do elenco.
+static func _stage_host_poses() -> Array[String]:
+	var poses: Array[String] = []
+	for path in STAGE_HOST_SPRITES:
+		poses.append(str(path))
+	for emotion in STAGE_EMOTION_POSES:
+		var path := _body_emotion_frame("seller", emotion)
+		if not path.is_empty() and not poses.has(path):
+			poses.append(path)
+	return poses
+
+## Todas as artes de um corpo numa lista só: o ciclo de caminhada primeiro, depois
+## cada emoção desenhada. A figura veste tudo de uma vez e escolhe o quadro por
+## índice, então trocar de emoção não recarrega textura nenhuma.
+func _stage_pose_set(index: int) -> Array[String]:
+	var poses := _stage_crowd_frames(index).duplicate()
+	for emotion in STAGE_EMOTION_POSES:
+		var path := _stage_emotion_frame(index, emotion)
+		if not path.is_empty():
+			poses.append(path)
+	return poses
+
+## Veste a figura com as poses e lembra onde a caminhada termina e a emoção começa.
+func _dress_stage_poses(figure: Control, index: int, height: float) -> void:
+	_dress_stage_figure(figure, _stage_pose_set(index), height)
+	figure.set_meta("walk_frames", _stage_crowd_frames(index).size())
+	figure.set_meta("crowd", index)
+	figure.set_meta("stage_body", _stage_body_name(index))
 
 ## Um corpo por pose, todos alinhados pelo pé central da caixa. Só a pose do meio
 ## do passo fica visível, e trocar de frame não mexe no tamanho nem no pivô.
@@ -866,6 +964,13 @@ func _make_stage_figure(paths: Array[String], height: float) -> Control:
 	_dress_stage_figure(figure, paths, height)
 	return figure
 
+## Figura do elenco já vestida com caminhada e emoções, pronta para reagir.
+func _make_stage_poses(index: int, height: float) -> Control:
+	var figure := Control.new()
+	figure.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dress_stage_poses(figure, index, height)
+	return figure
+
 func _set_stage_frame(figure: Control, index: int) -> void:
 	var bodies := figure.get_children()
 	if bodies.is_empty():
@@ -877,15 +982,19 @@ func _set_stage_frame(figure: Control, index: int) -> void:
 func _advance_stage_frame(figure: Control) -> void:
 	if not is_instance_valid(figure):
 		return
-	if figure.get_child_count() < 3:
+	# Só o ciclo de caminhada avança sozinho; as poses de emoção ficam depois dele
+	# na lista e aparecem quando algo as pede.
+	var frames := int(figure.get_meta("walk_frames", figure.get_child_count()))
+	if frames < 3:
 		var next := int(figure.get_meta("stage_frame", 0)) + 1
 		figure.set_meta("stage_frame", next)
 		_set_stage_frame(figure, next)
 		return
-	# Três poses do mesmo corpo: meio de passo, perna junta, outro meio de passo.
+	# Pose parada + todos os meios de passo desenhados, um por batida.
 	var step := int(figure.get_meta("stage_step", 0)) + 1
 	figure.set_meta("stage_step", step)
-	_set_stage_frame(figure, STAGE_WALK_SEQUENCE[step % STAGE_WALK_SEQUENCE.size()])
+	var sequence := _stage_walk_sequence(frames)
+	_set_stage_frame(figure, sequence[step % sequence.size()])
 
 func _set_stage_flip(figure: Control, flipped: bool) -> void:
 	figure.set_meta("stage_flip", flipped)
@@ -1967,6 +2076,7 @@ func _play_sensual_reception_moment() -> void:
 	if not adult_content_enabled or not is_instance_valid(seller_portrait):
 		return
 	_seller_lean_in()
+	_show_stage_emotion(stage_seller_body, "ousadia")
 	if sensual_tween != null and sensual_tween.is_valid():
 		sensual_tween.kill()
 	seller_portrait.pivot_offset = seller_portrait.size / 2.0
@@ -1980,6 +2090,7 @@ func _play_sensual_reception_moment() -> void:
 func _play_seduction_peak_pose() -> void:
 	if not adult_content_enabled or not is_instance_valid(seller_portrait):
 		return
+	_show_stage_emotion(stage_seller_body, "beijo")
 	if sensual_tween != null and sensual_tween.is_valid():
 		sensual_tween.kill()
 	seller_portrait.pivot_offset = seller_portrait.size / 2.0
@@ -3155,14 +3266,46 @@ func _stage_customer_react(mood: String) -> void:
 		tint = Color(1.0, 0.78, 0.60, 1.0)
 	elif mood == "delighted":
 		tint = Color(1.0, 0.72, 0.86, 1.0)
+	_show_stage_emotion(stage_customer, str(STAGE_MOOD_POSE.get(mood, "")))
 	var react := create_tween()
 	react.tween_property(stage_customer, "modulate", tint, 0.18)
 	react.tween_property(stage_customer, "modulate", Color.WHITE, 0.5)
+
+## Toca a pose de emoção do corpo, se ela existir: o quadro aparece, segura um
+## instante e volta para o ciclo de caminhada. Sem arte, nada muda — o reagir por
+## cor e balanço continua sozinho.
+func _show_stage_emotion(figure: Control, emotion: String) -> void:
+	if emotion.is_empty() or not is_instance_valid(figure):
+		return
+	var path := _body_emotion_frame(str(figure.get_meta("stage_body", "")), emotion)
+	if path.is_empty():
+		return
+	var frame := 0
+	for i in range(figure.get_child_count()):
+		if str((figure.get_child(i) as TextureRect).texture.resource_path) == path:
+			frame = i
+			break
+	_set_stage_frame(figure, frame)
+	var hold := create_tween()
+	hold.tween_interval(0.9)
+	hold.tween_callback(_restore_stage_walk_frame.bind(figure))
+
+## Depois da pose de emoção o corpo retoma o passo exatamente de onde parou.
+func _restore_stage_walk_frame(figure: Control) -> void:
+	if not is_instance_valid(figure):
+		return
+	var frames := int(figure.get_meta("walk_frames", figure.get_child_count()))
+	if frames < 3:
+		_set_stage_frame(figure, 0)
+		return
+	var step := int(figure.get_meta("stage_step", 0))
+	_set_stage_frame(figure, _stage_walk_sequence(frames)[step % frames])
 
 func _update_demonic_form() -> void:
 	if adult_content_enabled and fury >= 4 and not demonic_form_active:
 		demonic_form_active = true
 		_set_seller_mood("demonic")
+		_show_stage_emotion(stage_seller_body, "briga")
 		last_event = "A FÚRIA CHEGOU AO LIMITE! A succubus assume sua forma demoníaca: “Respirem. Eu ainda sei negociar.”"
 		if is_instance_valid(seller_portrait):
 			seller_portrait.modulate = Color(1.0, 0.55, 0.62, 1.0)
