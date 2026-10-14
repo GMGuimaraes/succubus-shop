@@ -27,6 +27,9 @@ var romance_stage: Dictionary = {}
 ## Freguês que saiu do balcão a fim de um convite. A oferta acende sozinha quando
 ## a visita rendeu vínculo e vale até a virada do dia.
 var romance_pending: String = ""
+## Ato mais alto já anunciado da ficha de cada freguês. Serve para a cena não se
+## repetir a cada venda: o ato sobe com o progresso, e a loja só comemora uma vez.
+var regular_arc_seen: Dictionary = {}
 var faction_standing: Dictionary = {}
 var adult_content_enabled: bool = true
 var private_moments_unlocked: int = 0
@@ -263,6 +266,7 @@ var imp_button: Button
 var private_button: Button
 var romance_label: Label
 var romance_button: Button
+var arc_label: Label
 var adult_toggle_button: Button
 var recover_theft_button: Button
 var fury_label: Label
@@ -588,6 +592,16 @@ const ROMANCE_SCENES: Array[String] = [
 	"A chefe vira a placa de FECHADO, atravessa o balcão e chama %s pelo nome: “Hoje a rodada é minha.”",
 	"As luzes da loja baixam. Uma mesa aparece no meio do salão, e %s puxa a cadeira da chefe antes de sentar.",
 	"O salão fica às escuras menos num canto, onde a chefe e %s riem baixo até a última vela apagar. O resto a casa não mostra."
+]
+## Os quatro atos da ficha de um freguês, na ordem em que a loja os descobre. Não
+## há timer nem escolha: cada ato é derivado de um progresso que o jogo já mede —
+## a primeira visita, o nível Conhecido, o capítulo pessoal e o convite pago. O
+## prêmio cresce porque a ficha vale mais quando ela já custou dias de balcão.
+const ARC_REWARDS: Array[Dictionary] = [
+	{"gold": 20, "rep": 1, "xp": 10},
+	{"gold": 45, "rep": 2, "xp": 20},
+	{"gold": 90, "rep": 3, "xp": 35},
+	{"gold": 160, "rep": 5, "xp": 60},
 ]
 
 func _ready() -> void:
@@ -2119,6 +2133,13 @@ func _build_ui() -> void:
 	regulars_label.add_theme_color_override("font_color", Color(0.82, 0.78, 1.0))
 	right.add_child(regulars_label)
 
+	arc_label = Label.new()
+	arc_label.custom_minimum_size = Vector2(280, 96)
+	arc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	arc_label.add_theme_font_size_override("font_size", 12)
+	arc_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.78))
+	right.add_child(arc_label)
+
 	faction_label = Label.new()
 	faction_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	faction_label.add_theme_font_size_override("font_size", 13)
@@ -3305,6 +3326,7 @@ func _on_customer_tick() -> void:
 					regular_data.get("short", "O freguês"), romance_tip
 				]
 			_offer_romance(regular_id, new_bond)
+			_check_regular_acts(regular_id)
 		if not faction_id.is_empty():
 			var old_standing := int(faction_standing.get(faction_id, 0))
 			var old_faction_tier := Factions.tier_for(old_standing)
@@ -3870,9 +3892,10 @@ func _refresh_ui() -> void:
 			var tier := Regulars.tier_for(bond)
 			var orders_done := int(regular_orders_completed.get(regular_id, 0))
 			var courted := _romance_stage_of(regular_id)
-			regular_lines.append("%s — %s (%d visitas, %d pedidos)%s" % [
+			regular_lines.append("%s — %s (%d visitas, %d pedidos)%s • Ato %d" % [
 				regular["short"], Regulars.TIER_NAMES[tier], bond, orders_done,
-				" ♥%d" % courted if courted > 0 else ""
+				" ♥%d" % courted if courted > 0 else "",
+				_arc_act(regular_id)
 			])
 			if regular_story_completed.has(regular_id):
 				regular_lines.append("  ✦ História concluída")
@@ -4091,6 +4114,8 @@ func _refresh_ui() -> void:
 	private_button.disabled = affection < 5
 	if is_instance_valid(romance_label):
 		romance_label.text = _romance_text()
+	if is_instance_valid(arc_label):
+		arc_label.text = _arc_text()
 	if is_instance_valid(romance_button):
 		var invited: Dictionary = Regulars.find(romance_pending)
 		var next_step := _romance_stage_of(romance_pending)
@@ -4173,6 +4198,7 @@ func _save_game() -> void:
 	config.set_value("game", "regular_story_progress", regular_story_progress)
 	config.set_value("game", "regular_story_completed", regular_story_completed)
 	config.set_value("game", "romance_stage", romance_stage)
+	config.set_value("game", "regular_arc_seen", regular_arc_seen)
 	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
@@ -4269,6 +4295,15 @@ func _load_game() -> void:
 	if saved_romance is Dictionary:
 		for saved_id in saved_romance.keys():
 			romance_stage[str(saved_id)] = clampi(int(saved_romance[saved_id]), 0, ROMANCE_STEPS.size())
+	# A ficha é nova neste save: quem já tinha visitas e capítulo não ganha o prêmio
+	# do ato atrasado no primeiro tique, só entra no placar com o ato já alcançado.
+	var saved_arcs = config.get_value("game", "regular_arc_seen", {})
+	if saved_arcs is Dictionary:
+		for arc_id in saved_arcs.keys():
+			regular_arc_seen[str(arc_id)] = clampi(int(saved_arcs[arc_id]), 0, ARC_REWARDS.size())
+	for regular in Regulars.DATA:
+		var arc_id := str(regular["id"])
+		regular_arc_seen[arc_id] = maxi(int(regular_arc_seen.get(arc_id, 0)), _arc_act(arc_id))
 	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
 	demonic_form_active = adult_content_enabled and fury >= 4
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
@@ -4728,6 +4763,10 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "romance_first", "name": "Primeiro convite (um freguês na escada)", "condition": _romance_steps_paid() >= 1, "gold": 50, "rep": 3},
 		{"id": "romance_dates", "name": "Coração ocupado (3 degraus pagos)", "condition": _romance_steps_paid() >= 3, "gold": 120, "rep": 6},
 		{"id": "romance_devoted", "name": "Amor de balcão (3 fregueses no degrau final)", "condition": _romance_at_least(3) >= 3, "gold": 260, "rep": 10, "pose": "relic"},
+		{"id": "arc_second", "name": "Ficha aberta (um freguês no Ato II)", "condition": _arc_at_least(2) >= 1, "gold": 40, "rep": 3},
+		{"id": "arc_faces", "name": "Casa cheia (nove fichas no Ato I)", "condition": _arc_at_least(1) >= Regulars.DATA.size(), "gold": 120, "rep": 6},
+		{"id": "arc_stories", "name": "Contadora de histórias (3 fichas no Ato III)", "condition": _arc_at_least(3) >= 3, "gold": 200, "rep": 9, "pose": "book"},
+		{"id": "arc_finals", "name": "Elenco completo (3 fichas no Ato IV)", "condition": _arc_at_least(4) >= 3, "gold": 240, "rep": 11, "pose": "relic"},
 		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"}
 	]
 
@@ -4806,7 +4845,8 @@ func _play_card_flip(card_id: String) -> void:
 func business_score() -> int:
 	return gold + reputation * 20 + customers_served * 6 + Cards.owned_count(card_counts) * 40 \
 		+ player_level * 25 + premium_crafted * 15 + expeditions_done * 20 + rituals_performed * 10 \
-		+ campaign_step * 60 + private_moments_unlocked * 8 + _romance_steps_paid() * 20 + (1200 if game_completed else 0)
+		+ campaign_step * 60 + private_moments_unlocked * 8 + _romance_steps_paid() * 20 \
+		+ _arc_acts_announced() * 12 + (1200 if game_completed else 0)
 
 func _publish_score() -> void:
 	var score := business_score()
@@ -5064,6 +5104,107 @@ func _romance_text() -> String:
 	lines.append("· atenda bem, chegue a 5 visitas e o convite acende aqui")
 	return "\n".join(lines)
 
+## Ato atual da ficha de um freguês. Nada aqui é contador novo: os quatro atos são
+## lidos de progresso que a loja já mede — a primeira visita, o nível Conhecido, o
+## capítulo pessoal fechado e o convite pago.
+func _arc_act(regular_id: String) -> int:
+	var bond := int(regular_bonds.get(regular_id, 0))
+	if bond <= 0:
+		return 0
+	if _romance_stage_of(regular_id) >= 1:
+		return 4
+	if regular_story_completed.has(regular_id):
+		return 3
+	if bond >= Regulars.THRESHOLDS[1]:
+		return 2
+	return 1
+
+## A linha inteira do ato, como está escrita na ficha do freguês.
+func _arc_line(regular_id: String, act: int) -> String:
+	var arcs: Array = Regulars.find(regular_id).get("arc", [])
+	return str(arcs[act - 1]) if act >= 1 and arcs.size() >= act else ""
+
+## Só o título do ato, sem o "ATO IV —" de cabeçalho e sem o corpo: o número já vai
+## na manchete, e o texto inteiro está na ficha do painel.
+func _arc_head(line: String) -> String:
+	var cut := line.find(":")
+	var title := line.substr(0, cut).strip_edges() if cut > 0 else line
+	var dash := title.find("— ")
+	return title.substr(dash + 2).strip_edges() if dash >= 0 else title
+
+## O que falta para o ato seguinte, dito na ficha para o jogador não adivinhar.
+func _arc_next_hint(regular_id: String) -> String:
+	var short_name := str(Regulars.find(regular_id).get("short", "O freguês"))
+	match _arc_act(regular_id):
+		0:
+			return "Próximo ato: atenda %s uma vez." % short_name
+		1:
+			return "Próximo ato: %d visitas para o Ato II." % Regulars.THRESHOLDS[1]
+		2:
+			return "Próximo ato: 3 compras do item favorito dele para o Ato III."
+		3:
+			return "Próximo ato: pague o Convite para o Ato IV."
+	return "Ficha completa: não há ato novo a descobrir."
+
+## Anuncia cada ato que o freguês acabou de alcançar e paga a ficha por ele. Uma
+## vez só por ato: o save guarda o teto já anunciado de cada um.
+func _check_regular_acts(regular_id: String) -> void:
+	var act := _arc_act(regular_id)
+	var seen := int(regular_arc_seen.get(regular_id, 0))
+	if act <= seen:
+		return
+	regular_arc_seen[regular_id] = act
+	var regular: Dictionary = Regulars.find(regular_id)
+	for i in range(seen + 1, act + 1):
+		var reward: Dictionary = ARC_REWARDS[i - 1]
+		var purse := int(reward["gold"]) + player_level * 4
+		gold += purse
+		daily_gold_earned += purse
+		reputation += int(reward["rep"])
+		_add_xp(int(reward["xp"]))
+		var arc_msg := "FICHA DE %s • ato %d: %s (+%d ouro, +%d XP, +%d fama)" % [
+			regular.get("short", "Freguês"), i, _arc_head(_arc_line(regular_id, i)),
+			purse, int(reward["xp"]), int(reward["rep"])
+		]
+		# A ficha nunca troca a manchete da venda: o ato chega como rodapé da
+		# mesma visita, junto do nível de amizade e do capítulo que subiram.
+		last_event = last_event + "\n" + arc_msg
+	_check_achievements()
+
+func _arc_at_least(act: int) -> int:
+	var total := 0
+	for regular in Regulars.DATA:
+		if _arc_act(str(regular["id"])) >= act:
+			total += 1
+	return total
+
+func _arc_acts_announced() -> int:
+	var total := 0
+	for regular_id in regular_arc_seen.keys():
+		total += clampi(int(regular_arc_seen[regular_id]), 0, ARC_REWARDS.size())
+	return total
+
+## A ficha do freguês que está no balcão agora: quem ele é, o ato em que a loja o
+## deixou e quanto falta para o próximo. Sem ninguém conhecido na cena, a ficha
+## explica como se abre a primeira.
+func _arc_text() -> String:
+	var regular: Dictionary = Regulars.find(current_regular_id)
+	if regular.is_empty() or int(regular_bonds.get(current_regular_id, 0)) <= 0:
+		return "\n".join([
+			"FICHA DO FREGUÊS",
+			"· ninguém conhecido no balcão",
+			"· atenda o mesmo rosto e a ficha dele abre aqui",
+		])
+	var regular_id := str(regular["id"])
+	var act := _arc_act(regular_id)
+	var lines: Array[String] = ["FICHA DE %s • Ato %d" % [regular["short"], act]]
+	lines.append(str(regular.get("background", "")))
+	var line := _arc_line(regular_id, act)
+	if not line.is_empty():
+		lines.append(line)
+	lines.append(_arc_next_hint(regular_id))
+	return "\n".join(lines)
+
 ## O par precisa estar em cena para a tela registrar os dois. Se quem já está no
 ## salão é o convidado, a cena começa já; senão ele volta pela porta, e a cena
 ## espera o tempo da caminhada dele antes de pôr os dois lado a lado.
@@ -5148,6 +5289,7 @@ func _advance_romance_step() -> void:
 		str(ROMANCE_SCENES[step]) % invited["short"], str(invited["romance"][step]),
 		int(round(float(requirement["price"]) * 100.0))
 	]
+	_check_regular_acts(regular_id)
 	audio.play("talent" if reached_top else "happy")
 	_show_feedback("♥ %s • %s" % [requirement["name"], invited["short"]], Color(1.0, 0.62, 0.88))
 	_check_achievements()
