@@ -2616,10 +2616,18 @@ func _on_customer_tick() -> void:
 			available.append(i)
 
 	if available.is_empty():
-		_animate_customer_arrival({"name": "Cliente Misterioso", "portrait": 2, "faction": "mercadores"})
+		# Prateleira vazia também é cena: quem bate na porta é um dos fregueses,
+		# e cada um deles já tem uma reclamação escrita para este momento exato.
+		var visitor: Dictionary = _pick_regular()
+		var grumble := str(visitor.get("empty", "“Sem nada na prateleira? Eu volto... quem sabe.”"))
+		_animate_customer_arrival({
+			"name": visitor["name"],
+			"portrait": int(visitor.get("portrait", 2)),
+			"faction": str(visitor.get("faction", "mercadores"))
+		})
 		_set_customer_status("CLIENTE: foi embora")
 		_set_seller_mood("surprised")
-		last_event = "Um cliente entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. Reabasteça a loja para não perder vendas."
+		last_event = "%s entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. %s Reabasteça a loja para não perder vendas." % [visitor["short"], grumble]
 		_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank)
 	else:
 		var profiles: Array[Dictionary] = [
