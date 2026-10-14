@@ -3311,18 +3311,108 @@ func _set_customer_status(text: String) -> void:
 	if is_instance_valid(status_label):
 		status_label.text = text
 
+## O balcão ouve a campanha. Cada capítulo muda o que a rua comenta e o que a
+## chefe responde, então a mesma venda soa diferente na loja vazia do primeiro dia
+## e no império do sétimo. A chave é o id do capítulo em campaign.gd;
+## "pos_campanha" vale depois que a história fecha.
+const CHAPTER_CUSTOMER_LINES := {
+	"portas_abertas": [
+		"Ouvi que a casa abriu ontem. Vim ver se era boato.",
+		"Ninguém nesta rua conhece o balcão ainda.",
+		"Entrei porque a chuva lá fora não pede licença.",
+	],
+	"primeira_fornada": [
+		"Dizem que a bigorna daqui esfriou semana passada.",
+		"Vim pela fornada nova, antes que acabe.",
+		"Cheiro de poção fresca. Valeu a caminhada.",
+	],
+	"freguesia": [
+		"Terceira vez que piso aqui. Já tenho cupom?",
+		"Meus amigos mandaram perguntar se você lembra deles.",
+		"A fila cresceu. Perdi meu lugar por sua culpa.",
+	],
+	"estrada_e_bigorna": [
+		"Mandaram gente pela estrada. Trouxeram coisa boa?",
+		"Item de expedição custa caro. Eu sei, eu esperei.",
+		"A caravana voltou? Então quero o que ela trouxe.",
+	],
+	"casa_arrumada": [
+		"Agora tem arquivo, santuário e ritual? Que casa.",
+		"Dizem que aqui se harmoniza relíquia. Meu anel, talvez?",
+		"Loja arrumada assusta mais que a bagunça.",
+	],
+	"colecionadora": [
+		"Todo mundo na guilda trocando carta. Você tem o álbum?",
+		"Trouxe duas repetidas. Aceita troca ou é só venda?",
+		"Falta uma carta pra fechar a coleção da casa, hein.",
+	],
+	"imperio": [
+		"A corte fala desta loja. Cuidado com o que vou pedir.",
+		"Se o império é seu, por que a fila é minha?",
+		"Vim de longe. Espero preço de quem veio de longe.",
+	],
+	"pos_campanha": [
+		"Estava aqui quando isto era só uma mesa.",
+		"Todo mundo conhece a casa agora. Inclusive a cobrança.",
+		"Voltei só pra ver se era tão bom quanto contam.",
+	],
+}
+
+const CHAPTER_SELLER_LINES := {
+	"portas_abertas": [
+		"Casa nova, preço de quem ainda precisa da freguesia",
+		"Ainda estamos aprendendo o gosto da rua",
+	],
+	"primeira_fornada": [
+		"Saí da bigorna agora. Está quente, literalmente",
+		"Fornada nova: a primeira leva sai com desconto moral",
+	],
+	"freguesia": [
+		"Você já é de casa. Casa que cobra, mas de casa",
+		"Freguesia boa é a que volta. Você voltou",
+	],
+	"estrada_e_bigorna": [
+		"Voltei da estrada com isto aqui. E com histórias que não",
+		"Ingrediente de expedição tem preço de expedição",
+	],
+	"casa_arrumada": [
+		"Casa arrumada, preço ajustado. Tudo no lugar",
+		"Ritual feito, prateleira cheia. Pode perguntar",
+	],
+	"colecionadora": [
+		"Repetida vira ouro, ouro vira pacote. Matemática de loja",
+		"Complete a coleção que a casa comemora junto",
+	],
+	"imperio": [
+		"Império não se anuncia. Cobra",
+		"Aqui é balcão, não embaixada — mas atendo os dois",
+	],
+	"pos_campanha": [
+		"Fechar o império foi a parte fácil. Manter é o preço",
+		"A casa é lendária. O troco é real",
+	],
+}
+
 func _set_negotiation_dialogue(profile: Dictionary, item: Dictionary, seduction_used: bool, favorite_item: bool) -> void:
 	if not is_instance_valid(seller_speech_label):
 		return
 	var customer_name := str(profile.get("name", "Aventureiro"))
+	var chapter_key := "pos_campanha" if game_completed else str(Campaign.chapter(campaign_step).get("id", ""))
 	var customer_line := "“Isso parece exatamente o que eu precisava.”" if favorite_item else "“Não era meu primeiro plano, mas parece útil.”"
+	var chapter_customer: Array = CHAPTER_CUSTOMER_LINES.get(chapter_key, [])
+	if not chapter_customer.is_empty() and randi() % 100 < 55:
+		customer_line = "“%s”" % str(chapter_customer.pick_random())
 	if current_customer_patience <= 1:
 		customer_line = "“Rápido, por favor. Tenho um dragão me esperando.”"
 	if seduction_used:
 		var flirt_line: String = str(MEME_FLIRT_LINES.pick_random() if customer_name in ["Mago do Quero Mana", "Fiscal do Pix Astral", "Só Mais Uma Run", "Ladino do Ctrl+C", "Cliente do É Sobre Isso"] else SUCCUBUS_NEGOTIATION_LINES.pick_random())
 		seller_speech_label.text = "CHEFE: %s\n%s: %s" % [flirt_line, customer_name, customer_line]
 	else:
-		seller_speech_label.text = "CHEFE: “%s por %d ouro. Quer levar?”\n%s: %s" % [str(item.get("name", "isto")), int(item.get("price", 0)), customer_name, customer_line]
+		var offer := "“%s por %d ouro. Quer levar?”" % [str(item.get("name", "isto")), int(item.get("price", 0))]
+		var chapter_seller: Array = CHAPTER_SELLER_LINES.get(chapter_key, [])
+		if not chapter_seller.is_empty() and randi() % 100 < 40:
+			offer = "“%s” — %d ouro" % [str(chapter_seller.pick_random()), int(item.get("price", 0))]
+		seller_speech_label.text = "CHEFE: %s\n%s: %s" % [offer, customer_name, customer_line]
 
 func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 	var text := ""
