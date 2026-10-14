@@ -274,6 +274,10 @@ var expedition_button: Button
 var current_sector: String = "reception"
 var current_customer_budget: int = 0
 var current_customer_patience: int = 0
+## A fila encantada por um evento raro deixa o próximo cliente mais paciente. O
+## bônus fica guardado aqui porque o evento dispara antes de qualquer visita: sem
+## isto ele somava paciência de um balcão vazio.
+var distraction_pending: int = 0
 var stolen_item_name: String = ""
 var stolen_tier: int = 1
 var theft_recovery_available: bool = false
@@ -2613,7 +2617,7 @@ func _on_customer_tick() -> void:
 
 	if available.is_empty():
 		_animate_customer_arrival({"name": "Cliente Misterioso", "portrait": 2, "faction": "mercadores"})
-		status_label.text = "CLIENTE: foi embora"
+		_set_customer_status("CLIENTE: foi embora")
 		_set_seller_mood("surprised")
 		last_event = "Um cliente entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. Reabasteça a loja para não perder vendas."
 		_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank)
@@ -2659,7 +2663,8 @@ func _on_customer_tick() -> void:
 		_animate_customer_arrival(profile)
 		var preferred_index: int = _product_index(str(profile["favorite"]))
 		current_customer_budget = int(profile.get("budget", 50)) + trade_rank * 8
-		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank + Sanctum.patience_bonus(active_buffs)) / world_speed())) - _fury_patience_loss())
+		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank + Sanctum.patience_bonus(active_buffs) + distraction_pending) / world_speed())) - _fury_patience_loss())
+		distraction_pending = 0
 		var seduction_used := false
 		if is_instance_valid(customer_emotion_label):
 			customer_emotion_label.text = "🏃 pressa" if current_customer_patience <= 1 else "🙂 observando"
@@ -2694,7 +2699,7 @@ func _on_customer_tick() -> void:
 				last_event = "%s não conseguiu pagar nenhum item e saiu %s: “Volto quando meu bolso parar de chorar.”" % [profile["name"], "com pressa" if current_customer_patience <= 1 else "frustrado"]
 				disappointed_customers += 1
 				reputation = maxi(0, reputation - 1)
-				status_label.text = "CLIENTE: saiu sem comprar"
+				_set_customer_status("CLIENTE: saiu sem comprar")
 				if is_instance_valid(customer_emotion_label):
 					customer_emotion_label.text = "😤 frustração"
 				_play_customer_reaction("disappointed")
@@ -2808,7 +2813,7 @@ func _on_customer_tick() -> void:
 		_progress_daily_quest("customers", 1)
 		_progress_daily_quest("gold", sale_price)
 		_add_affection(1 + charm_rank + sanctum_upgrade_level)
-		status_label.text = "CLIENTE: %s" % profile["name"]
+		_set_customer_status("CLIENTE: %s" % profile["name"])
 		_set_seller_mood("happy")
 		_react_to_visit("delighted" if preferred_index == chosen_index else "content", seduction_used)
 		_set_negotiation_dialogue(profile, item, seduction_used, preferred_index == chosen_index)
@@ -2894,13 +2899,13 @@ func _trigger_random_event() -> void:
 	last_event = "EVENTO: %s! %s" % [event["name"], event["message"]]
 	if bool(event.get("queue_distraction", false)):
 		queue_distractions += 1
-		current_customer_patience += 1 + sanctum_upgrade_level
+		distraction_pending += 1 + sanctum_upgrade_level
 		seduction_attempts += 1
 		seduction_successes += 1
 		_add_affection(2 + sanctum_upgrade_level)
 		if is_instance_valid(customer_emotion_label):
 			customer_emotion_label.text = "💘 distraído"
-		status_label.text = "CLIENTE: distraído pelo charme"
+		_set_customer_status("CLIENTE: distraído pelo charme")
 		_play_sensual_reception_moment()
 	audio.play("rare")
 	_show_feedback("Evento raro!", Color(1.0, 0.86, 0.45))
@@ -2964,7 +2969,7 @@ func _handle_thief_escape(profile: Dictionary, available: Array[int]) -> void:
 	theft_recovery_available = true
 	fury = mini(5, fury + 2)
 	_update_demonic_form()
-	status_label.text = "CLIENTE: ladrão escapou"
+	_set_customer_status("CLIENTE: ladrão escapou")
 	if is_instance_valid(customer_emotion_label):
 		customer_emotion_label.text = "🏃 ladrão"
 	last_event = "%s pegou %s e correu! A succubus rosna: “Ninguém rouba da minha loja e sai sem deixar um recibo.”" % [profile.get("name", "O cliente"), stolen_item_name]
@@ -2993,6 +2998,13 @@ func _recover_stolen_item() -> void:
 	_show_feedback("Item recuperado.", Color(0.75, 1.0, 0.72))
 	_save_game()
 	_refresh_ui()
+
+## O status do balcão é a única linha que a lógica de visita escreve fora do
+## refresh geral, e ela dispara em caminho que existe antes da UI montar (sonda
+## headless, setor trocado). Ninguém deve travar por causa de um rótulo.
+func _set_customer_status(text: String) -> void:
+	if is_instance_valid(status_label):
+		status_label.text = text
 
 func _set_negotiation_dialogue(profile: Dictionary, item: Dictionary, seduction_used: bool, favorite_item: bool) -> void:
 	if not is_instance_valid(seller_speech_label):

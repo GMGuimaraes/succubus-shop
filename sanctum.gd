@@ -150,8 +150,10 @@ static func sum(active: Dictionary, key: String) -> float:
 	return total
 
 ## Fator multiplicativo 1.0 + soma do campo, com teto para nada quebrar a economia.
-static func scale(active: Dictionary, key: String, ceiling: float = 1.0) -> float:
-	return 1.0 + minf(ceiling, sum(active, key))
+## O piso existe porque "craft" vira divisor do tempo de forja: um ritual futuro de
+## penalidade não pode deixar o resultado zero e a fabricação virar infinita.
+static func scale(active: Dictionary, key: String, ceiling: float = 1.0, floor: float = 0.25) -> float:
+	return clampf(1.0 + sum(active, key), floor, 1.0 + ceiling)
 
 static func guards(active: Dictionary) -> bool:
 	return sum(active, "guard") >= 1.0
