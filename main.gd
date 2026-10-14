@@ -30,6 +30,12 @@ var romance_pending: String = ""
 ## Ato mais alto já anunciado da ficha de cada freguês. Serve para a cena não se
 ## repetir a cada venda: o ato sobe com o progresso, e a loja só comemora uma vez.
 var regular_arc_seen: Dictionary = {}
+## Fila da despedida: quem ainda vai passar pelo balcão para dizer tchau depois do
+## último capítulo. Entra um por tique, na ordem de quem menos visitou, para que o
+## mais fiel seja o último a sair da tela.
+var epilogue_pending: Array[String] = []
+## True quando a fila zerou e a loja ficou só com a chefe.
+var epilogue_done: bool = false
 var faction_standing: Dictionary = {}
 var adult_content_enabled: bool = true
 var private_moments_unlocked: int = 0
@@ -3111,6 +3117,22 @@ func _on_customer_tick() -> void:
 	if imp_hired and ticks % 3 == 0:
 		_imp_work()
 
+	# A última rodada não é venda. Um freguês por tique entra, olha o salão, acena e
+	# volta a sair pela porta; a loja segue fabricando e expedindo enquanto isso.
+	if not epilogue_pending.is_empty():
+		_stage_farewell_visit(str(epilogue_pending.pop_front()))
+		if epilogue_pending.is_empty():
+			epilogue_done = true
+			_show_stage_emotion(stage_seller_body, "sono")
+			# A frase de quem saiu por último é a manchete, e a conquista que ela
+			# acende não pode apagar a despedida: o texto volta depois da checagem.
+			var headline := last_event
+			_check_achievements()
+			last_event = headline + "\nEPILOGO: a última rodada acabou. A chefe apaga uma vela, vira a placa e deixa a porta destrancada mesmo assim."
+			_save_game()
+		_refresh_ui()
+		return
+
 	# Eventos raros podem acontecer mesmo quando a loja está sem estoque.
 	if randi() % 100 < 7 + library_upgrade_level * 2:
 		_trigger_random_event()
@@ -4199,6 +4221,8 @@ func _save_game() -> void:
 	config.set_value("game", "regular_story_completed", regular_story_completed)
 	config.set_value("game", "romance_stage", romance_stage)
 	config.set_value("game", "regular_arc_seen", regular_arc_seen)
+	config.set_value("game", "epilogue_pending", epilogue_pending)
+	config.set_value("game", "epilogue_done", epilogue_done)
 	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
@@ -4304,6 +4328,15 @@ func _load_game() -> void:
 	for regular in Regulars.DATA:
 		var arc_id := str(regular["id"])
 		regular_arc_seen[arc_id] = maxi(int(regular_arc_seen.get(arc_id, 0)), _arc_act(arc_id))
+	# A fila da despedida é a única coisa do epílogo que precisa sobreviver ao
+	# fechamento do jogo: quem saiu no meio da última rodada não pode perder a vez.
+	epilogue_pending.clear()
+	var saved_epilogue = config.get_value("game", "epilogue_pending", [])
+	if saved_epilogue is Array:
+		for queued_id in saved_epilogue:
+			if not Regulars.find(str(queued_id)).is_empty():
+				epilogue_pending.append(str(queued_id))
+	epilogue_done = bool(config.get_value("game", "epilogue_done", epilogue_done))
 	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
 	demonic_form_active = adult_content_enabled and fury >= 4
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
@@ -4767,6 +4800,7 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "arc_faces", "name": "Casa cheia (nove fichas no Ato I)", "condition": _arc_at_least(1) >= Regulars.DATA.size(), "gold": 120, "rep": 6},
 		{"id": "arc_stories", "name": "Contadora de histórias (3 fichas no Ato III)", "condition": _arc_at_least(3) >= 3, "gold": 200, "rep": 9, "pose": "book"},
 		{"id": "arc_finals", "name": "Elenco completo (3 fichas no Ato IV)", "condition": _arc_at_least(4) >= 3, "gold": 240, "rep": 11, "pose": "relic"},
+		{"id": "epilogue_farewell", "name": "A última rodada (despedida encerrada)", "condition": epilogue_done, "gold": 150, "rep": 8, "pose": "relic"},
 		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"}
 	]
 
@@ -4923,6 +4957,7 @@ func _claim_chapter() -> void:
 	_show_stage_emotion(stage_customer, "danca")
 	if is_final:
 		game_completed = true
+		_start_epilogue()
 		_show_ending()
 	_check_achievements()
 	_save_game()
@@ -4979,6 +5014,33 @@ func _show_ending() -> void:
 	body_text.add_theme_font_size_override("font_size", 16)
 	body_text.add_theme_color_override("font_color", Color(0.92, 0.88, 0.96))
 	box.add_child(body_text)
+
+	var farewell_title := Label.new()
+	farewell_title.text = "A DESPEDIDA DO BALCÃO"
+	farewell_title.add_theme_font_size_override("font_size", 18)
+	farewell_title.add_theme_color_override("font_color", Color(1.0, 0.74, 0.86))
+	box.add_child(farewell_title)
+
+	# A lista cresce com o elenco atendido e o painel não pode estourar a tela: o
+	# rolamento fica dentro do próprio quadro do final.
+	var farewell_scroll := ScrollContainer.new()
+	farewell_scroll.custom_minimum_size = Vector2(560, 190)
+	farewell_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(farewell_scroll)
+	var farewell_text := Label.new()
+	farewell_text.text = _epilogue_text()
+	farewell_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	farewell_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	farewell_text.add_theme_font_size_override("font_size", 14)
+	farewell_text.add_theme_color_override("font_color", Color(0.9, 0.84, 0.94))
+	farewell_scroll.add_child(farewell_text)
+
+	var farewell_note := Label.new()
+	farewell_note.text = "Eles ainda passam um por vez no salão para acenar. Pode fechar esta tela e ficar olhando."
+	farewell_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	farewell_note.add_theme_font_size_override("font_size", 13)
+	farewell_note.add_theme_color_override("font_color", Color(0.72, 0.66, 0.8))
+	box.add_child(farewell_note)
 
 	var close_button := Button.new()
 	close_button.text = "Voltar a administrar"
@@ -5204,6 +5266,79 @@ func _arc_text() -> String:
 		lines.append(line)
 	lines.append(_arc_next_hint(regular_id))
 	return "\n".join(lines)
+
+## Ordena a despedida por vínculo: quem pouco apareceu sai primeiro e o mais fiel é
+## o último corpo a atravessar a porta.
+func _compare_bond(a: Dictionary, b: Dictionary) -> bool:
+	return int(a["bond"]) < int(b["bond"])
+
+## Monta a fila da despedida com quem realmente pisou na loja. Quem nunca veio não
+## tem despedida: o epílogo registra o vazio em vez de fingir um elenco.
+func _start_epilogue() -> void:
+	epilogue_pending.clear()
+	epilogue_done = false
+	var met: Array = []
+	for regular in Regulars.DATA:
+		var regular_id := str(regular["id"])
+		var bond := int(regular_bonds.get(regular_id, 0))
+		if bond > 0:
+			met.append({"id": regular_id, "bond": bond})
+	met.sort_custom(_compare_bond)
+	for entry in met:
+		epilogue_pending.append(str(entry["id"]))
+
+## A frase de despedida é a do ato em que o freguês ficou, então a cena final depende
+## de tudo que a loja construiu com ele e não de um texto genérico.
+func _farewell_line(regular_id: String) -> String:
+	var regular: Dictionary = Regulars.find(regular_id)
+	var lines: Array = regular.get("farewell", [])
+	if lines.is_empty():
+		return "“%s passou, acenou da porta e não deixou nome.”" % regular.get("short", "O freguês")
+	var act := clampi(_arc_act(regular_id), 1, lines.size())
+	return str(lines[act - 1])
+
+## O texto corrido do epílogo, para o painel do final e para a fila da cena.
+func _epilogue_text() -> String:
+	var lines: Array[String] = []
+	var met := 0
+	for regular in Regulars.DATA:
+		var regular_id := str(regular["id"])
+		if int(regular_bonds.get(regular_id, 0)) <= 0:
+			continue
+		met += 1
+		lines.append("♥ %s (Ato %d) — %s" % [regular["short"], _arc_act(regular_id), _farewell_line(regular_id)])
+	if met == 0:
+		lines.append("· ninguém ficou. A chefe fecha a loja com o balcão vazio e o nome de nenhum freguês na ponta da língua.")
+	var missing := Regulars.DATA.size() - met
+	if missing > 0:
+		lines.append("· %d rostos nunca passaram por aqui, e a despedida deles fica escrita só no caderno de estoque." % missing)
+	return "\n".join(lines)
+
+## A despedida não tem preço nem venda: o freguês entra pelo canto de sempre, olha o
+## salão uma última vez, acena para a chefe e sai pela porta com a frase do ato dele.
+func _stage_farewell_visit(regular_id: String) -> void:
+	var regular: Dictionary = Regulars.find(regular_id)
+	if regular.is_empty():
+		return
+	var bye := _farewell_line(regular_id)
+	current_regular_id = regular_id
+	_animate_customer_arrival({
+		"name": regular["name"],
+		"portrait": int(regular.get("portrait", 0)),
+		"faction": str(regular.get("faction", "aventureiros")),
+		"line": bye,
+	})
+	# Contar como atendido é o que faz o corpo dar a volta pelo salão antes de ir,
+	# em vez de atravessar a tela reto como quem fugiu sem pagar.
+	_customer_served = true
+	_set_customer_status("CLIENTE: %s" % regular["short"])
+	_set_seller_mood("happy")
+	if is_instance_valid(seller_speech_label):
+		seller_speech_label.text = "CHEFE: até logo, %s.\n%s: %s" % [regular["short"], regular["short"], bye]
+	if is_instance_valid(customer_emotion_label):
+		customer_emotion_label.text = " despedida"
+	last_event = "EPILOGO • %s: %s" % [regular["short"], bye]
+	audio.play("click")
 
 ## O par precisa estar em cena para a tela registrar os dois. Se quem já está no
 ## salão é o convidado, a cena começa já; senão ele volta pela porta, e a cena

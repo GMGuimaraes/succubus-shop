@@ -17,6 +17,7 @@ const TIER_NAMES: Array[String] = ["Novo rosto", "Conhecido", "Freguês", "Devot
 # "background" é a ficha curta do painel direito. "arc" são os quatro atos da ficha,
 # no formato "ATO N — TÍTULO: corpo"; o ato é derivado do progresso da loja (visita,
 # nível Conhecido, capítulo pessoal e convite pago), então a ordem dos textos importa.
+# "farewell" é a despedida do epílogo, uma por ato, na mesma ordem do "arc".
 # Mantenha o favorito em um produto de nível baixo: capítulos pedem três compras favoritas.
 const DATA: Array = [
 	{
@@ -49,6 +50,12 @@ const DATA: Array = [
 			"ATO II — A ESPADA EMPRESTADA: Aldric conta que o grupo o chama de 'o reserva', mesmo sem grupo. Pela primeira vez ele riu de si mesmo antes de alguém rir dele.",
 			"ATO III — O JURAMENTO DE BALCÃO: ele jurou proteger a loja como se fosse uma cidade. São um balcão e uma cadeira, e ele levou o juramento a sério.",
 			"ATO IV — O PAPEL NA CARTEIRA: Aldric guarda o recibo da primeira compra dobrado em quatro. É o único papel desta cidade com o nome dele escrito por outra pessoa."
+		],
+		"farewell": [
+			"“Ouvi que a loja ia fechar de vez. Vim ver se a senhora ainda precisava de um escudo.”",
+			"“Se eu passar do nível um um dia, a culpa é do seu balcão. Eu volto. Prometo voltar.”",
+			"“Jurei proteger uma cidade e descobri que bastava guardar uma porta de loja. Guardei. Foi meu melhor nível.”",
+			"“Vou embora com a sua espada emprestada de mentira. Um dia eu devolvo. Um dia.”"
 		]
 	},
 	{
@@ -81,6 +88,12 @@ const DATA: Array = [
 			"ATO II — O CADERNO DE RECUSAS: Lyra anota toda vez que a loja a fez sorrir, para provar depois que não aconteceu. O caderno está na página quarenta.",
 			"ATO III — O FEITIÇO QUE NINGUÉM ENSINA: salvou o grupo inteiro com uma receita comprada aqui. Ninguém acreditou quando ela disse que foi compra, não magia.",
 			"ATO IV — A PORTA ABERTA: ela deixou o ombro encostar no balcão. Para Lyra, isso é um discurso de quatro páginas."
+		],
+		"farewell": [
+			"“Só passei para dizer que a sua loja não é ruim. Foi o que eu disse. Tchau.”",
+			"“Se eu sumir, procura. Não que eu vá sumir. Mas se eu sumir, é aqui que eu estou.”",
+			"“Publiquei o tratado com o seu nome nos agradecimentos. Não reli. Relê você.”",
+			"“Fechei o grimório na página do seu nome. É a única que eu não preciso reler.”"
 		]
 	},
 	{
@@ -113,6 +126,12 @@ const DATA: Array = [
 			"ATO II — O DIÁRIO DE CAMPANHA: escreve cada visita com data, hora e o que vestia. Reserva a última página e não diz para quem.",
 			"ATO III — A TRIBO QUE PAROU: mandou dizer à caravana que encontrou um lugar onde 'o grande faz sentido'. A caravana respondeu pedindo lista de compras.",
 			"ATO IV — O MACHADO DO LADO DE DENTRO: deixou a arma encostada na parede da loja, dentro. Primeira vez em doze anos que entra num lugar desarmado."
+		],
+		"farewell": [
+			"“GRAAAH... digo, obrigado pela poção. Adeus. *funga*”",
+			"“Levo o machado, deixo o lenço. É assim que a tribo se despede de quem gosta.”",
+			"“Terminei o poema. São quatro linhas. Rimei o seu nome com abismo. Ficou bom.”",
+			"“Eu carregaria a loja nas costas mais uma vez. Você disse que não. Carreguei mesmo assim.”"
 		]
 	},
 	{
@@ -145,6 +164,12 @@ const DATA: Array = [
 			"ATO II — O CADERNINHO DE DÍVIDAS: anota quanto deve a cada comerciante da cidade. O seu nome é o único com estrela.",
 			"ATO III — O GOLPE RECUSADO: podia abrir o caixa da loja e não abriu. Contou para a guilda, que abriu uma investigação sobre o caráter dela. Ninguém nunca tinha pedido.",
 			"ATO IV — PORTA DA FRENTE: entrou, pagou e saiu sem levar nada além da companhia. A guilda chama de perda. Ela chama de terça-feira."
+		],
+		"farewell": [
+			"“Não levei nada. Está anotado. Um dia ainda levo, hein. Tchau.”",
+			"“Sua ficha está no meu bolso, com o meu número do lado. É ameaça e convite.”",
+			"“Devolvi tudo que roubei desta loja. Foi a única coisa que eu roubei de você, e eu devolvi.”",
+			"“Roubei um beijo e deixei o ouro em cima. A conta fecha. A dívida não.”"
 		]
 	},
 	{
@@ -177,6 +202,12 @@ const DATA: Array = [
 			"ATO II — O DÍZIMO DELE: guarda moedas para doar 'a quem entende de milagres'. O caderno de doações tem uma única beneficiária.",
 			"ATO III — A RESPOSTA: rezou pedindo um sinal sobre a loja. O sinal veio como um recibo. Ele decidiu que era resposta suficiente.",
 			"ATO IV — A VIGÍLIA FALTADA: faltou à vigília para ficar até o fechamento. No caminho de volta não se confessou. Guardou para si."
+		],
+		"farewell": [
+			"“Que a luz guie os seus preços. Amém, e obrigado pelo pato.”",
+			"“Abençoei a porta. De graça. É a primeira coisa desta cidade que faço sem cobrar.”",
+			"“Rezei pelos deuses e por você. Eles responderam menos que a senhora.”",
+			"“Larguei o sacerdócio e abri banca ao lado. Ficou perto, perto, como eu prometi.”"
 		]
 	},
 	{
@@ -209,6 +240,12 @@ const DATA: Array = [
 			"ATO II — A ABA COMPARTILHADA: abriu uma aba só com os números da sua loja e chamou de fundo de investimento afetivo. O contador pediu demissão.",
 			"ATO III — A DENÚNCIA NÃO ENTREGUE: a guilda pediu provas de preço abusivo na sua loja. Bruna devolveu um relatório elogiando o atendimento.",
 			"ATO IV — O BALANÇO: registrou a loja como patrimônio pessoal, o que é fraude e declaração ao mesmo tempo. Assinou duas vezes."
+		],
+		"farewell": [
+			"“Pesquisa encerrada. Seus preços são desonestos. Assinado: a concorrência.”",
+			"“Fechei o trimestre com o seu nome no rodapé. Ninguém nunca entrou no meu rodapé.”",
+			"“Nossa planilha compartilhada virou patrimônio. Você virou passivo. Dos bons.”",
+			"“Registrei a loja como sociedade, comigo dentro. Não pergunte ao contador.”"
 		]
 	},
 	{
@@ -241,6 +278,12 @@ const DATA: Array = [
 			"ATO II — O NOME NA MÃO: volta no dia seguinte com o nome da loja escrito na palma e diz que foi o remédio. O remédio não escreve nada; ela sabe, e ninguém corrige.",
 			"ATO III — O TESTEMUNHO ESQUECIDO: assina o livro de fregueses e some com a página. A loja inteira finge que foi o esquecimento dela, o que é a gentileza mais cara da cidade.",
 			"ATO IV — O QUE ELA ESCOLHE: bebe o elixir tendo estoque cheio, só para lembrar por vontade própria. É a primeira lembrança da vida dela que não foi um acidente."
+		],
+		"farewell": [
+			"“Desculpe, já nos vimos? ...Desculpe, eu sei que vimos. Anota que eu esqueço, mas volto.”",
+			"“Perdi o cocheiro, o leque e a semana inteira. Do endereço daqui eu não perdi.”",
+			"“Contei à minha mãe que tenho um lugar favorito. Ela perguntou qual. Eu acertei de primeira.”",
+			"“Bebi o elixir para esquecer tudo menos esta noite. Foi a única conta que quis pagar cheia.”"
 		]
 	},
 	{
@@ -273,6 +316,12 @@ const DATA: Array = [
 			"ATO II — O CRACHÁ DE PAPEL: a loja emite um crachá de freguês e ele usa nos três turnos seguintes. O sindicato pergunta onde ele arrumou emprego; ele não sabe responder, mas também não corrige.",
 			"ATO III — A VAGA REPROVADA: é recusado pelo grupo de aventureiros pela quinta vez e compra mesmo assim, \"para o currículo\". Na semana seguinte volta como fornecedor credenciado da própria mentira.",
 			"ATO IV — O SINDICATO: apresenta a lojista como \"minha contato no setor\" para o chefe dele, que anota o nome da loja em lugar nenhum. Pela primeira vez alguém mentiu para cima."
+		],
+		"farewell": [
+			"“Aprendi que aqui não se rouba. Anotei no manual do estagiário, página uma.”",
+			"“Crachá no bolso, meta cumprida. O seu nome está no meu plano de cinco anos.”",
+			"“Passei no grupo. Recusei. Fui embora com a adaga e a minha dignidade.”",
+			"“Quando eu comandar o sindicato, a senhora é a fornecedora oficial. Já avisei o espelho.”"
 		]
 	},
 	{
@@ -305,6 +354,12 @@ const DATA: Array = [
 			"ATO II — TRÊS CONTRATOS: anota o nome da lojista em três contratos e confessa que o terceiro ilegível também é dela. Ela pede cópia. Ele já tinha trazido, em triplicata.",
 			"ATO III — A AUDITORIA: a chefe manda verificar se a loja é fiador ou fachada. Vespertino aprova com um relatório de duas páginas, das quais uma é sobre o sorriso.",
 			"ATO IV — SEM CLÁUSULA DE SAÍDA: registra a loja como endereço fixo no livro de favores, o que no submundo vale mais que certidão. Ninguém cobra; ninguém pode."
+		],
+		"farewell": [
+			"“Não achei dívida nenhuma aqui. Fica a impressão de que a loja é honesta. Raro.”",
+			"“Seu nome saiu em três contratos hoje. Paguei os três. Não pergunte por quê.”",
+			"“Entreguei a auditoria. Deu tudo certo. Menti na carreira pela primeira vez, e foi pela senhora.”",
+			"“Sem cláusula de saída. Assinei. No submundo isso tem um nome, e não é contrato.”"
 		]
 	}
 ]
