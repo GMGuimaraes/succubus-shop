@@ -201,6 +201,11 @@ const STAGE_CROWD_BODIES: Array[String] = [
 	"noble",
 	"goblin",
 ]
+## Altura relativa de cada corpo. A folha de poses normaliza todo mundo pela
+## altura do palco, então sem isto o goblin andaria do tamanho de um humano.
+const STAGE_BODY_HEIGHT := {
+	"goblin": 0.62,
+}
 ## Emoções que o elenco sabe representar quando a arte existir. Os apelidos vêm
 ## dos momentos pedidos: espanto, felicidade, ousadia, desconfiança, briga, beijo.
 const STAGE_EMOTION_POSES: Array[String] = [
@@ -918,10 +923,11 @@ func _stage_pose_set(index: int) -> Array[String]:
 
 ## Veste a figura com as poses e lembra onde a caminhada termina e a emoção começa.
 func _dress_stage_poses(figure: Control, index: int, height: float) -> void:
-	_dress_stage_figure(figure, _stage_pose_set(index), height)
+	var body := _stage_body_name(index)
+	_dress_stage_figure(figure, _stage_pose_set(index), height * float(STAGE_BODY_HEIGHT.get(body, 1.0)))
 	figure.set_meta("walk_frames", _stage_crowd_frames(index).size())
 	figure.set_meta("crowd", index)
-	figure.set_meta("stage_body", _stage_body_name(index))
+	figure.set_meta("stage_body", body)
 
 ## Um corpo por pose, todos alinhados pelo pé central da caixa. Só a pose do meio
 ## do passo fica visível, e trocar de frame não mexe no tamanho nem no pivô.
