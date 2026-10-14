@@ -6,7 +6,7 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 
 ## Estado do projeto
 
-**Protótipo jogável em desenvolvimento.** Já há fabricação e venda de produtos, clientes automáticos, ouro, reputação, melhorias, funcionários, eventos raros, conquistas, progressão por nível, pontos de talento, contratos de loja e reputação por facção. A versão atual também inclui receitas desbloqueadas por nível. Ainda não é um lançamento final; interface, balanceamento e conteúdo precisam de mais testes.
+**Protótipo jogável em desenvolvimento.** Já há fabricação e venda de produtos, cadeia de produção com ingredientes e qualidade, economia reativa, clientes automáticos, expedições, santuário de relíquias, cartas colecionáveis, conquistas, placar de pontuação, integração opcional com a Steam e progressão por nível, pontos de talento, contratos de loja e reputação por facção. A versão atual também inclui receitas desbloqueadas por nível. Ainda não é um lançamento final; interface, balanceamento e conteúdo precisam de mais testes.
 
 ## Como jogar
 
@@ -17,12 +17,12 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 
 ## Recursos atuais
 
-- **Oito produtos no catálogo atual**, com três receitas desbloqueadas nos níveis 3, 5 e 8.
+- **Doze produtos no catálogo atual**, com receitas presas ao nível que a biblioteca adianta por ouro.
 - **Clientes com personalidade**, falas próprias e preferências por produtos.
 - **Economia de loja** com ouro, reputação, estoque, custos de fabricação, propaganda e produção automática.
 - **Eventos raros** com consequências positivas ou negativas.
 - **Progressão de RPG**: vendas, fabricação e eventos rendem experiência; subir de nível concede ouro, reputação e pontos de talento.
-- **Três trilhas de talentos**, cada uma com até cinco níveis: Alquimia reduz custos, Comércio aumenta receita e Carisma acelera a afinidade.
+- **Quatro trilhas de talentos**, cada uma com até cinco níveis: Alquimia reduz custos e melhora a qualidade, Comércio aumenta receita e barateia receitas, Carisma acelera a afinidade e salva visitas, Logística encurta expedições e abre a segunda vaga de batedor.
 - **Contratos rotativos** para atender clientes, faturar, fabricar ou encontrar eventos raros. As recompensas aumentam conforme os dias de loja avançam.
 - **Diabrete estagiário** que produz poções automaticamente.
 - **Reações dos clientes**: cada visita termina com o cliente *encantado* (comprou o item favorito: +1 de reputação), *satisfeito* ou *decepcionado* (loja sem estoque: -1 de reputação). O retrato do cliente reage com animação, a chefe responde com falas próprias e o talento Carisma dá chance de salvar a visita no charme.
@@ -32,8 +32,15 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 - **Reputação por facção**: guildas, nobres, aventureiros, mercadores e o submundo lembram negócios concluídos. Cada venda aumenta o prestígio da facção do cliente; quatro níveis (Desconhecida, Notada, Respeitada, Lenda) dão bônus de preço de 0% a 20%, ouro ao subir de patamar e duas conquistas novas. Saves antigos começam com todas as facções em zero.
 - **Polimento visual da loja**: cartões de mercadorias com bordas violeta mais legíveis, cantos arredondados e sombra sutil para separar melhor os itens do fundo gótico.
 - **Afinidade com a protagonista**, diálogos sugestivos e momentos especiais desbloqueáveis.
-- **Nove conquistas** com recompensas.
-- **Salvamento local** de progresso, nível, XP, talentos, contratos, estoque, melhorias, reputação por facção e opções.
+- **Cadeia de produção com qualidade**: seis ingredientes básicos com mercado próprio mais duas raridades que só saem de expedição. Cada peça fabricada recebe um de cinco níveis de qualidade (Comum, Boa, Refinada, Prima, Mítica) conforme talento, biblioteca e sorte, e a qualidade muda preço, reputação e o visual do cartão no balcão.
+- **Economia dinâmica reativa**: o mercado acompanha o seu movimento. Estoque encalhado derruba preço, demanda alta empurra para cima, e o boletim diário da recepção mostra ofertas e produtos em alta antes de você decidir o que fabricar.
+- **Expedições por raridades**: quatro rotas destravadas por dia de loja, com custo em ouro, duração, risco e botim variável. Raridades viram catalisadores de sorte na forja; contratempo no caminho traz perda de estoque, fúria ou reputação. Logística abre a segunda vaga e encurta a viagem.
+- **Santuário de artefatos**: rituais que dão buffs temporários, aliviam penalidades (dissipam a fúria, recuperam item roubado) e harmonizam relíquias guardadas.
+- **Cenário vivo**: os clientes entram, caminham pelo salão e se aproximam do balcão; a protagonista se inclina, gira e reage conforme o atendimento, com animações e luz ambiente em vez de painéis parados.
+- **Cartas colecionáveis**: dezesseis cards em três coleções (Fregueses, A Chefa, A Casa) com quatro raridades. Pacotes à venda na recepção, brinde a cada conquista nova, cartas repetidas viram ouro e completar coleção rende bônus. O arquivo fica na biblioteca.
+- **Integração opcional com a Steam** (`steam_bridge.gd`): conquistas, itens de card no inventário, placar de melhor negócio e save na nuvem pelo Auto-Cloud. Sem o plugin Steamworks instalado, cada chamada vira no-op e o jogo usa o placar local de `user://hall_of_fame.cfg` — nenhuma funcionalidade depende da loja.
+- **Dezessete conquistas** com recompensas em ouro, reputação, pose especial da protagonista e pacote de cartas.
+- **Salvamento local** de progresso, nível, XP, talentos, contratos, estoque, qualidade, mercado, expedições, coleção de cartas, recorde de pontuação, melhorias, reputação por facção e opções.
 - **Compatibilidade de estoque por nome de produto** para que saves antigos preservem os itens que continuam no catálogo.
 - **Opção de desativar o conteúdo sensual**, sem bloquear a progressão normal.
 
@@ -42,15 +49,12 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 A visão é construir uma experiência de longa duração, com sistemas que se alimentem entre si. Os itens abaixo são ideias para etapas futuras, não funcionalidades já concluídas:
 
 1. **Capítulos narrativos por facção** — pedidos de guilda, intriga da corte e contratos do submundo além da reputação já existente.
-2. **Árvore de talentos maior** — alquimia, negociação, encantamento, logística e relacionamento.
-3. **Cadeias de produção** — ingredientes, receitas raras, qualidade, fornecedores e pesquisa.
-4. **Mais fregueses e capítulos extras** — novos personagens, pedidos especiais e recompensas por relacionamento.
-5. **Expansão comercial** — salas, funcionários, automação, filiais e investimentos.
-6. **Economia dinâmica** — oferta e procura, eventos sazonais, reputação de marca e oportunidades de mercado.
-7. **Exploração e aventura** — expedições para ingredientes e artefatos, com decisões e resultados variáveis.
-8. **Campanha narrativa e finais** — alianças, segredos e escolhas comerciais.
-9. **Prestígio opcional e desafios avançados** — objetivos de fim de jogo sem obrigar o jogador a recomeçar.
-10. **Arte, áudio e animação originais** — retratos, expressões, efeitos e música com recursos gratuitos ou licenças verificadas.
+2. **Árvore de talentos maior** — mais ramos por trilha, pré-requisitos e builds concorrentes.
+3. **Expansão comercial** — salas, funcionários, automação, filiais e investimentos.
+4. **Campanha narrativa e finais** — alianças, segredos e escolhas comerciais.
+5. **Prestígio opcional e desafios avançados** — objetivos de fim de jogo sem obrigar o jogador a recomeçar.
+6. **Arte, áudio e animação originais** — retratos, expressões, efeitos e música com recursos gratuitos ou licenças verificadas.
+7. **Publicação na Steam** — catálogo real de conquistas, itens de card e placar da comunidade no lugar do registro local.
 
 A prioridade é implementar sistemas em etapas pequenas, testáveis e compatíveis com os saves anteriores.
 

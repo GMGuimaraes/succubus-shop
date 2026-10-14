@@ -8,6 +8,8 @@ const Quality = preload("res://quality.gd")
 const Economy = preload("res://economy.gd")
 const Sanctum = preload("res://sanctum.gd")
 const Expedition = preload("res://expedition.gd")
+const Cards = preload("res://cards.gd")
+const SteamBridge = preload("res://steam_bridge.gd")
 
 var gold: int = 80
 var reputation: int = 0
@@ -77,6 +79,12 @@ var rare_found: int = 0
 var catalyst_crafted: int = 0
 ## Catalisador raro ligado: a próxima forja queima uma raridade por mais sorte.
 var catalyst_enabled: bool = false
+## Cartas colecionáveis: { id_da_carta: quantidade }. Primeira cópia vale ponto.
+var card_counts: Dictionary = {}
+var packs_opened: int = 0
+var completed_sets: Array[String] = []
+var best_score: int = 0
+var steam: Node
 var talent_label: Label
 var alchemy_button: Button
 var trade_button: Button
@@ -140,6 +148,13 @@ var expedition_active_label: Label
 var expedition_log_label: Label
 var catalyst_button: Button
 var catalyst_label: Label
+var card_summary_label: Label
+var pack_button: Button
+var card_gallery_labels: Array = []
+var board_label: Label
+var score_button: Button
+var right_title_label: Label
+var last_pack_card: String = ""
 var upgrade_button: Button
 var imp_button: Button
 var private_button: Button
@@ -251,6 +266,11 @@ func _ready() -> void:
 	audio = GameAudio.new()
 	add_child(audio)
 	audio.settings_changed.connect(_apply_music_settings)
+	steam = SteamBridge.new()
+	steam.name = "SteamBridge"
+	add_child(steam)
+	steam.boot(_achievement_ids())
+	steam.connect("leaderboard_ready", _on_leaderboard_ready)
 	_load_game()
 	_sync_quality_stock()
 	_build_ui()
@@ -259,6 +279,7 @@ func _ready() -> void:
 	_apply_music_settings()
 	_refresh_ui()
 	_start_ambient_animations()
+	steam.call("request_leaderboard")
 	var timer := Timer.new()
 	world_timer = timer
 	timer.wait_time = 3.0 / world_speed()
@@ -525,7 +546,9 @@ func _build_ui() -> void:
 	add_child(ambient_particles)
 
 	var margin := MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Âncoras em vez de preset de tamanho: com o preset normal o Godot estica a
+	# caixa até o tamanho mínimo, e a UI inteira passava da janela em vez de rolar.
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.clip_contents = true
 	margin.theme = _build_visual_theme()
 	margin.add_theme_constant_override("margin_left", 16)
@@ -550,13 +573,6 @@ func _build_ui() -> void:
 	title.add_theme_font_size_override("font_size", 28)
 	title.add_theme_color_override("font_color", Color(1.0, 0.67, 0.88))
 	header.add_child(title)
-
-	var subtitle := Label.new()
-	subtitle.text = "  •  Loja mágica, negócios duvidosos"
-	subtitle.add_theme_font_size_override("font_size", 17)
-	subtitle.add_theme_color_override("font_color", Color(0.80, 0.75, 0.88))
-	subtitle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	header.add_child(subtitle)
 
 	market_toggle_button = Button.new()
 	market_toggle_button.text = "☰ Ocultar"
@@ -647,10 +663,9 @@ func _build_ui() -> void:
 	speed_row.add_child(forge_status_label)
 
 	progression_label = Label.new()
-	progression_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	progression_label.add_theme_font_size_override("font_size", 16)
 	progression_label.add_theme_color_override("font_color", Color(0.78, 0.95, 1.0))
-	root.add_child(progression_label)
+	stats.add_child(progression_label)
 
 	talent_label = Label.new()
 	talent_label.add_theme_font_size_override("font_size", 14)
@@ -671,16 +686,6 @@ func _build_ui() -> void:
 	logistics_button = Button.new()
 	logistics_button.pressed.connect(_buy_talent.bind("logistics"))
 	talent_row.add_child(logistics_button)
-
-	var intro := Label.new()
-	intro.text = "A dona da loja está convencida de que qualquer porcaria pode virar um produto premium."
-	intro.add_theme_font_size_override("font_size", 16)
-	intro.add_theme_color_override("font_color", Color(0.91, 0.87, 0.95))
-	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	root.add_child(intro)
-
-	var separator := HSeparator.new()
-	root.add_child(separator)
 
 	_build_stage(root)
 
@@ -893,6 +898,19 @@ func _build_ui() -> void:
 		ingredient_actions.add_child(sell)
 		ingredient_sell_buttons.append(sell)
 
+	reception_box.add_child(_make_section_title("MÁQUINA DE CARTAS", Color(1.0, 0.86, 0.45)))
+	reception_box.add_child(_make_section_hint("Pacote lacrado no balcão. Repetição volta em ouro, coleção completa volta em reputação."))
+	card_summary_label = Label.new()
+	card_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	card_summary_label.add_theme_font_size_override("font_size", 14)
+	card_summary_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.62))
+	reception_box.add_child(card_summary_label)
+	pack_button = Button.new()
+	pack_button.custom_minimum_size = Vector2(240, 44)
+	pack_button.add_theme_font_size_override("font_size", 15)
+	pack_button.pressed.connect(_grant_pack.bind(false))
+	reception_box.add_child(pack_button)
+
 	reception_box.add_child(_make_section_title("BALCÃO DE VENDAS", Color(1.0, 0.78, 0.9)))
 	reception_box.add_child(_make_section_hint("Venda direta: ouro na hora por 70% do preço. Sem cliente não há vínculo, reputação nem charme."))
 
@@ -1051,11 +1069,51 @@ func _build_ui() -> void:
 		recipe_row.add_child(recipe_button)
 		recipe_buttons.append(recipe_button)
 
+	library_box.add_child(_make_section_title("PLACAR DO SUBMUNDO", Color(0.6, 0.95, 0.85)))
+	library_box.add_child(_make_section_hint("A Steam cuida do ranking quando está aberta. Sem ela, o placar local guarda os melhores negócios da vizinhança."))
+	board_label = Label.new()
+	board_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	board_label.add_theme_font_size_override("font_size", 13)
+	board_label.add_theme_color_override("font_color", Color(0.78, 0.9, 0.92))
+	library_box.add_child(board_label)
+	score_button = Button.new()
+	score_button.custom_minimum_size = Vector2(240, 42)
+	score_button.add_theme_font_size_override("font_size", 14)
+	score_button.pressed.connect(_publish_score)
+	library_box.add_child(score_button)
+
+	library_box.add_child(_make_section_title("ARQUIVO DE CARDS", Color(1.0, 0.86, 0.45)))
+	library_box.add_child(_make_section_hint("Toda arte que a loja já viu. Conquista entrega pacote brinde; o resto se compra no balcão."))
+	var gallery := GridContainer.new()
+	gallery.columns = 4
+	gallery.add_theme_constant_override("h_separation", 8)
+	gallery.add_theme_constant_override("v_separation", 8)
+	library_box.add_child(gallery)
+	for card in Cards.DATA:
+		var slot := PanelContainer.new()
+		slot.custom_minimum_size = Vector2(120, 96)
+		var slot_style := StyleBoxFlat.new()
+		slot_style.bg_color = Color(0.05, 0.04, 0.08, 0.92)
+		slot_style.border_color = Cards.color_of(card)
+		slot_style.set_border_width_all(1)
+		slot_style.set_corner_radius_all(8)
+		slot_style.content_margin_left = 6
+		slot_style.content_margin_right = 6
+		slot_style.content_margin_top = 4
+		slot_style.content_margin_bottom = 4
+		slot.add_theme_stylebox_override("panel", slot_style)
+		gallery.add_child(slot)
+		var slot_text := Label.new()
+		slot_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		slot_text.add_theme_font_size_override("font_size", 11)
+		slot_text.clip_contents = true
+		slot.add_child(slot_text)
+		card_gallery_labels.append(slot_text)
+
 	var right_scroll := ScrollContainer.new()
 	right_scroll.custom_minimum_size.x = 360
 	right_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	right_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	right_scroll.clip_contents = true
 	body.add_child(right_scroll)
 
@@ -1080,6 +1138,7 @@ func _build_ui() -> void:
 	right_panel.add_child(right)
 
 	var shop_title := Label.new()
+	right_title_label = shop_title
 	shop_title.text = "RECEPÇÃO • A CHEFE"
 	shop_title.add_theme_font_size_override("font_size", 22)
 	shop_title.add_theme_color_override("font_color", Color(1.0, 0.78, 0.9))
@@ -1233,7 +1292,7 @@ func _build_ui() -> void:
 	right.add_child(recover_theft_button)
 
 	var footer := Label.new()
-	footer.text = "Protótipo 0.6 • Facções, fregueses e contratos • Conteúdo sensual opcional"
+	footer.text = "Protótipo 0.6 • Loja mágica, negócios duvidosos • Facções, fregueses e contratos • Conteúdo sensual opcional"
 	footer.add_theme_font_size_override("font_size", 12)
 	footer.add_theme_color_override("font_color", Color(0.62, 0.57, 0.68))
 	root.add_child(footer)
@@ -1408,6 +1467,17 @@ func _set_sector(sector: String) -> void:
 		sector_hint_label.text = "Compre ingredientes e venda itens no balcão. Os clientes chegam sozinhos para negociar." if is_reception else "Aqui apenas se fabrica: o ferreiro transforma ingredientes e ouro em mercadorias." if is_forge else "Aperfeiçoe talentos e adiante receitas presas ao nível." if is_library else "Nem tudo tem fornecedor. Mande o batedor buscar e torça pelo caminho de volta." if is_expedition else "Relíquias carregadas de magia aguardam uma negociação cuidadosa."
 	if is_instance_valid(market_toggle_button):
 		market_toggle_button.text = "☰ Ocultar" if is_instance_valid(market_panel) and market_panel.visible else "☰ Abrir"
+	if is_instance_valid(right_title_label):
+		var sector_word := "SANTUÁRIO"
+		if is_reception:
+			sector_word = "RECEPÇÃO"
+		elif is_forge:
+			sector_word = "FORJA"
+		elif is_library:
+			sector_word = "BIBLIOTECA"
+		elif is_expedition:
+			sector_word = "EXPEDIÇÕES"
+		right_title_label.text = "%s • A CHEFE" % sector_word
 	if is_instance_valid(reception_button):
 		reception_button.disabled = is_reception
 	if is_instance_valid(forge_button):
@@ -2046,6 +2116,10 @@ func _on_customer_tick() -> void:
 		daily_quest_claimed = false
 		daily_gold_earned = 0
 		daily_crafts = 0
+		# Fechou o dia, fechou o balanço: o placar recebe o resultado da virada.
+		best_score = maxi(best_score, business_score())
+		if steam != null:
+			steam.call("submit_score", business_score(), "Sua loja")
 		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA)]
 	if imp_hired and ticks % 3 == 0:
 		_add_piece(0, 1)
@@ -2801,6 +2875,24 @@ func _refresh_ui() -> void:
 	if is_instance_valid(catalyst_button):
 		catalyst_button.text = "Catalisador: ARMADO" if catalyst_enabled else "Catalisador: desarmado"
 		catalyst_button.disabled = _catalyst_available().is_empty() and not catalyst_enabled
+	if is_instance_valid(card_summary_label):
+		card_summary_label.text = Cards.summary(card_counts)
+	if is_instance_valid(pack_button):
+		var pack_cost := Cards.pack_price(packs_opened)
+		pack_button.text = "🂠 Abrir pacote (%d ouro)" % pack_cost
+		pack_button.disabled = gold < pack_cost
+	for c in range(Cards.DATA.size()):
+		var card: Dictionary = Cards.DATA[c]
+		var copies := int(card_counts.get(str(card["id"]), 0))
+		if c < card_gallery_labels.size():
+			var slot: Label = card_gallery_labels[c]
+			slot.text = "%s\n%s • x%d" % [str(card["name"]), str(Cards.rarity_of(card)["name"]), copies] if copies > 0 else "?\n%s" % str(Cards.rarity_of(card)["name"])
+			slot.add_theme_color_override("font_color", Cards.color_of(card) if copies > 0 else Color(0.42, 0.4, 0.48))
+	if is_instance_valid(board_label):
+		board_label.text = "Sua pontuação: %d • recorde %d\n%s" % [business_score(), best_score, _board_text()]
+	if is_instance_valid(score_button):
+		var rank := 1 if steam == null else int(steam.call("rank_of", business_score()))
+		score_button.text = "Publicar resultado • você está em %dº" % rank
 	var ad_cost := 75 + ad_level * 60
 	upgrade_button.text = "Propaganda infernal • %d ouro (nível %d)" % [ad_cost, ad_level]
 	upgrade_button.disabled = gold < ad_cost
@@ -2903,6 +2995,10 @@ func _save_game() -> void:
 	config.set_value("game", "expeditions_done", expeditions_done)
 	config.set_value("game", "rare_found", rare_found)
 	config.set_value("game", "catalyst_crafted", catalyst_crafted)
+	config.set_value("game", "card_counts", card_counts)
+	config.set_value("game", "packs_opened", packs_opened)
+	config.set_value("game", "completed_sets", completed_sets)
+	config.set_value("game", "best_score", best_score)
 	config.set_value("game", "total_ingredients_bought", total_ingredients_bought)
 	config.set_value("game", "premium_crafted", premium_crafted)
 	config.set_value("game", "happy_customers", happy_customers)
@@ -3003,6 +3099,20 @@ func _load_game() -> void:
 	expeditions_done = int(config.get_value("game", "expeditions_done", expeditions_done))
 	rare_found = int(config.get_value("game", "rare_found", rare_found))
 	catalyst_crafted = int(config.get_value("game", "catalyst_crafted", catalyst_crafted))
+	var saved_cards = config.get_value("game", "card_counts", {})
+	card_counts = {}
+	if saved_cards is Dictionary:
+		for saved_card in (saved_cards as Dictionary).keys():
+			if not Cards.find(str(saved_card)).is_empty():
+				card_counts[str(saved_card)] = maxi(1, int((saved_cards as Dictionary)[saved_card]))
+	packs_opened = int(config.get_value("game", "packs_opened", packs_opened))
+	best_score = int(config.get_value("game", "best_score", best_score))
+	completed_sets.clear()
+	var saved_sets = config.get_value("game", "completed_sets", [])
+	if saved_sets is Array:
+		for saved_set in saved_sets:
+			if Cards.SET_NAMES.has(str(saved_set)) and not completed_sets.has(str(saved_set)):
+				completed_sets.append(str(saved_set))
 	total_ingredients_bought = int(config.get_value("game", "total_ingredients_bought", total_ingredients_bought))
 	premium_crafted = int(config.get_value("game", "premium_crafted", premium_crafted))
 	happy_customers = int(config.get_value("game", "happy_customers", happy_customers))
@@ -3197,8 +3307,10 @@ func _claim_daily_quest() -> void:
 	_save_game()
 	_refresh_ui()
 
-func _check_achievements() -> void:
-	var definitions: Array[Dictionary] = [
+## Um único lugar define as conquistas: a checagem do jogo e o catálogo que a
+## Steam precisa conhecer na inicialização.
+func _achievement_definitions() -> Array[Dictionary]:
+	return [
 		{"id": "first_sale", "name": "Primeira venda", "condition": customers_served >= 1, "gold": 10, "rep": 1},
 		{"id": "regulars_10", "name": "Já pode pedir pelo nome (10 clientes)", "condition": customers_served >= 10, "gold": 25, "rep": 2},
 		{"id": "regulars_25", "name": "A clientela conhece a casa (25)", "condition": customers_served >= 25, "gold": 40, "rep": 3},
@@ -3223,17 +3335,107 @@ func _check_achievements() -> void:
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
 		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"}
 	]
-	for achievement in definitions:
+
+func _check_achievements() -> void:
+	for achievement in _achievement_definitions():
 		var achievement_id: String = str(achievement["id"])
 		if bool(achievement["condition"]) and not unlocked_achievements.has(achievement_id):
 			unlocked_achievements.append(achievement_id)
 			gold += int(achievement["gold"])
 			reputation += int(achievement["rep"])
-			last_event = "CONQUISTA DESBLOQUEADA: %s! Recompensa: %d ouro e %d reputação." % [
+			if steam != null:
+				steam.call("unlock", achievement_id)
+			_grant_pack(true)
+			last_event = "CONQUISTA DESBLOQUEADA: %s! Recompensa: %d ouro, %d reputação e um pacote de cartas." % [
 				achievement["name"], achievement["gold"], achievement["rep"]
 			]
 			if achievement.has("pose"):
 				_play_achievement_pose(str(achievement["pose"]))
+
+func _achievement_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for achievement in _achievement_definitions():
+		ids.append(str(achievement["id"]))
+	return ids
+
+## Abre um pacote de cartas. Brinde de conquista chega de graça; no balcão tem preço.
+func _grant_pack(free: bool) -> void:
+	var price := Cards.pack_price(packs_opened)
+	if not free:
+		if gold < price:
+			last_event = "O pacote custa %d ouro. A loja não aprova fiado nem para nostalgia." % price
+			_refresh_ui()
+			return
+		gold -= price
+	var opened: Dictionary = Cards.open_pack(card_counts, alchemy_rank + Sanctum.luck_bonus(active_buffs))
+	packs_opened += 1
+	var card: Dictionary = opened["card"]
+	var card_id := str(card["id"])
+	last_pack_card = card_id
+	var text := ""
+	if bool(opened["duplicate"]):
+		var refund := Cards.refund_of(card)
+		gold += refund
+		text = "Repetida: %s. A casa devolve %d ouro pelo par." % [card["name"], refund]
+		audio.play("coin")
+	else:
+		text = "Carta nova: %s (%s)." % [card["name"], str(Cards.rarity_of(card)["name"])]
+		if steam != null:
+			steam.call("grant_card", card_id)
+		audio.play("rare")
+	for finished in Cards.newly_completed(card_counts, completed_sets):
+		completed_sets.append(str(finished))
+		reputation += 4
+		text += " Coleção %s completa: +4 de reputação." % str(Cards.SET_NAMES[str(finished)])
+	_show_feedback("🂠 Pacote aberto.", Color(1.0, 0.86, 0.45))
+	last_event = text
+	_play_card_flip(card_id)
+	_refresh_ui()
+
+## A carta sorteada dá um pulo na parede da coleção.
+func _play_card_flip(card_id: String) -> void:
+	for i in range(Cards.DATA.size()):
+		if str(Cards.DATA[i]["id"]) != card_id or i >= card_gallery_labels.size():
+			continue
+		var label: Label = card_gallery_labels[i]
+		if not is_instance_valid(label):
+			return
+		label.pivot_offset = label.size / 2.0
+		var flip := create_tween()
+		flip.tween_property(label, "scale", Vector2(1.16, 1.16), 0.16).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		flip.tween_property(label, "scale", Vector2.ONE, 0.42).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		return
+
+## Pontuação do império: caixa, fama, clientela, coleção e estrada.
+func business_score() -> int:
+	return gold + reputation * 20 + customers_served * 6 + Cards.owned_count(card_counts) * 40 \
+		+ player_level * 25 + premium_crafted * 15 + expeditions_done * 20 + rituals_performed * 10
+
+func _publish_score() -> void:
+	var score := business_score()
+	best_score = maxi(best_score, score)
+	if steam != null:
+		steam.call("submit_score", score, "Sua loja")
+		steam.call("request_leaderboard")
+	last_event = "Resultado publicado no placar: %d pontos." % score
+	audio.play("coin")
+	_refresh_ui()
+
+func _on_leaderboard_ready(_rows: Array) -> void:
+	_refresh_ui()
+
+func _board_text() -> String:
+	if steam == null:
+		return "Placar ainda não acordou."
+	var rows: Array = steam.call("board")
+	var lines: Array[String] = ["Origem: %s • Save na nuvem: %s" % [
+		String(steam.call("board_source")),
+		"ativo" if bool(steam.get("cloud_ready")) else "local"]]
+	for i in range(mini(rows.size(), 8)):
+		var row: Dictionary = rows[i]
+		var marker := "►" if str(row["name"]) == "Sua loja" else " "
+		lines.append("%s %dº  %-24s %d pts" % [marker, i + 1, str(row["name"]), int(row["score"])])
+	return "\n".join(lines)
 
 func _play_achievement_pose(pose: String) -> void:
 	if not adult_content_enabled or not is_instance_valid(seller_portrait):
