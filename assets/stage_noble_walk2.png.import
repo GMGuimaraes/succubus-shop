@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c527g2ssv811e"
-path="res://.godot/imported/stage_noble_walk.png-3f322e16e113dff0e2ccaf191a99dc0a.ctex"
+uid="uid://bctl57dyyfccr"
+path="res://.godot/imported/stage_noble_walk2.png-02d56b4527dca1069141009382777452.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/stage_noble_walk.png"
-dest_files=["res://.godot/imported/stage_noble_walk.png-3f322e16e113dff0e2ccaf191a99dc0a.ctex"]
+source_file="res://assets/stage_noble_walk2.png"
+dest_files=["res://.godot/imported/stage_noble_walk2.png-02d56b4527dca1069141009382777452.ctex"]
 
 [params]
 

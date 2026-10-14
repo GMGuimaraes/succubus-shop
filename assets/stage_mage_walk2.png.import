@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dpmgce04hu123"
-path="res://.godot/imported/stage_adventurer_walk.png-bff86bedd2e125dfd3f7daf9589284c3.ctex"
+uid="uid://b2vvtruhg88w3"
+path="res://.godot/imported/stage_mage_walk2.png-ebc053c002c4330d6b12a0cb72c4c274.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/stage_adventurer_walk.png"
-dest_files=["res://.godot/imported/stage_adventurer_walk.png-bff86bedd2e125dfd3f7daf9589284c3.ctex"]
+source_file="res://assets/stage_mage_walk2.png"
+dest_files=["res://.godot/imported/stage_mage_walk2.png-ebc053c002c4330d6b12a0cb72c4c274.ctex"]
 
 [params]
 

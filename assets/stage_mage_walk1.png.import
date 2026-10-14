@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://drkc1jyxva3cp"
-path="res://.godot/imported/stage_goblin_walk.png-ae40d244b46434a3cb7b9a131203d6dd.ctex"
+uid="uid://cn74vjrojucr5"
+path="res://.godot/imported/stage_mage_walk1.png-d342363cc05441e9e19c33597793b415.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/stage_goblin_walk.png"
-dest_files=["res://.godot/imported/stage_goblin_walk.png-ae40d244b46434a3cb7b9a131203d6dd.ctex"]
+source_file="res://assets/stage_mage_walk1.png"
+dest_files=["res://.godot/imported/stage_mage_walk1.png-d342363cc05441e9e19c33597793b415.ctex"]
 
 [params]
 
