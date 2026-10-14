@@ -9,6 +9,7 @@ const Economy = preload("res://economy.gd")
 const Sanctum = preload("res://sanctum.gd")
 const Expedition = preload("res://expedition.gd")
 const Cards = preload("res://cards.gd")
+const Campaign = preload("res://campaign.gd")
 const SteamBridge = preload("res://steam_bridge.gd")
 
 var gold: int = 80
@@ -84,6 +85,9 @@ var card_counts: Dictionary = {}
 var packs_opened: int = 0
 var completed_sets: Array[String] = []
 var best_score: int = 0
+var campaign_step: int = 0
+var game_completed: bool = false
+var total_crafted: int = 0
 var steam: Node
 var talent_label: Label
 var alchemy_button: Button
@@ -154,6 +158,9 @@ var card_gallery_labels: Array = []
 var board_label: Label
 var score_button: Button
 var right_title_label: Label
+var chapter_label: Label
+var chapter_button: Button
+var ending_layer: Control
 var last_pack_card: String = ""
 var upgrade_button: Button
 var imp_button: Button
@@ -829,6 +836,19 @@ func _build_ui() -> void:
 		craft.pressed.connect(_craft_product.bind(i))
 		row.add_child(craft)
 		craft_buttons.append(craft)
+
+	reception_box.add_child(_make_section_title("OBJETIVOS DO IMPÉRIO", Color(0.82, 1.0, 0.86)))
+	reception_box.add_child(_make_section_hint("A campanha da loja em capítulos. Cada capítulo concluído paga ouro, reputação, experiência e às vezes um pacote lacrado."))
+	chapter_label = Label.new()
+	chapter_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	chapter_label.add_theme_font_size_override("font_size", 13)
+	chapter_label.add_theme_color_override("font_color", Color(0.85, 0.96, 0.88))
+	reception_box.add_child(chapter_label)
+	chapter_button = Button.new()
+	chapter_button.custom_minimum_size = Vector2(240, 42)
+	chapter_button.add_theme_font_size_override("font_size", 14)
+	chapter_button.pressed.connect(_claim_chapter)
+	reception_box.add_child(chapter_button)
 
 	reception_box.add_child(_make_section_title("BOLETIM DO MERCADO", Color(1.0, 0.86, 0.45)))
 	reception_box.add_child(_make_section_hint("A loja reage ao que você compra e vende: estoque encalhado derruba o preço, demanda em alta empurra para cima."))
@@ -1628,6 +1648,7 @@ func _advance_craft_jobs(game_seconds: float) -> void:
 		var index := int(job.get("index", 0))
 		var item: Dictionary = products[index]
 		daily_crafts += 1
+		total_crafted += 1
 		_add_xp(5)
 		_progress_daily_quest("craft", 1)
 		# Alquimia, biblioteca e bênçãos do santuário empurram a rolagem de qualidade.
@@ -2893,6 +2914,17 @@ func _refresh_ui() -> void:
 	if is_instance_valid(score_button):
 		var rank := 1 if steam == null else int(steam.call("rank_of", business_score()))
 		score_button.text = "Publicar resultado • você está em %dº" % rank
+	if is_instance_valid(chapter_label):
+		chapter_label.text = _chapter_text()
+	if is_instance_valid(chapter_button):
+		var chapter := Campaign.chapter(campaign_step)
+		if chapter.is_empty():
+			chapter_button.text = "Campanha concluída • jogo livre"
+			chapter_button.disabled = true
+		else:
+			var pending := Campaign.missing(_campaign_stats(), chapter).size()
+			chapter_button.text = ("Fechar capítulo • faltam %d" % pending) if pending > 0 else "Fechar capítulo • receber recompensa"
+			chapter_button.disabled = false
 	var ad_cost := 75 + ad_level * 60
 	upgrade_button.text = "Propaganda infernal • %d ouro (nível %d)" % [ad_cost, ad_level]
 	upgrade_button.disabled = gold < ad_cost
@@ -2999,6 +3031,9 @@ func _save_game() -> void:
 	config.set_value("game", "packs_opened", packs_opened)
 	config.set_value("game", "completed_sets", completed_sets)
 	config.set_value("game", "best_score", best_score)
+	config.set_value("game", "campaign_step", campaign_step)
+	config.set_value("game", "game_completed", game_completed)
+	config.set_value("game", "total_crafted", total_crafted)
 	config.set_value("game", "total_ingredients_bought", total_ingredients_bought)
 	config.set_value("game", "premium_crafted", premium_crafted)
 	config.set_value("game", "happy_customers", happy_customers)
@@ -3107,6 +3142,9 @@ func _load_game() -> void:
 				card_counts[str(saved_card)] = maxi(1, int((saved_cards as Dictionary)[saved_card]))
 	packs_opened = int(config.get_value("game", "packs_opened", packs_opened))
 	best_score = int(config.get_value("game", "best_score", best_score))
+	campaign_step = clampi(int(config.get_value("game", "campaign_step", campaign_step)), 0, Campaign.size())
+	game_completed = bool(config.get_value("game", "game_completed", game_completed)) or campaign_step >= Campaign.size()
+	total_crafted = int(config.get_value("game", "total_crafted", total_crafted))
 	completed_sets.clear()
 	var saved_sets = config.get_value("game", "completed_sets", [])
 	if saved_sets is Array:
@@ -3333,7 +3371,10 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "library_master", "name": "Bibliotecária do Submundo (Biblioteca Nv.3)", "condition": library_upgrade_level >= 3, "gold": 80, "rep": 4, "pose": "book"},
 		{"id": "sanctum_keeper", "name": "Guardiã das Relíquias (Santuário Nv.3)", "condition": sanctum_upgrade_level >= 3, "gold": 90, "rep": 5, "pose": "relic"},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
-		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"}
+		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"},
+		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
+		{"id": "half_way", "name": "Meio caminho (4 capítulos)", "condition": campaign_step >= 4, "gold": 160, "rep": 7, "pose": "book"},
+		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"}
 	]
 
 func _check_achievements() -> void:
@@ -3409,7 +3450,8 @@ func _play_card_flip(card_id: String) -> void:
 ## Pontuação do império: caixa, fama, clientela, coleção e estrada.
 func business_score() -> int:
 	return gold + reputation * 20 + customers_served * 6 + Cards.owned_count(card_counts) * 40 \
-		+ player_level * 25 + premium_crafted * 15 + expeditions_done * 20 + rituals_performed * 10
+		+ player_level * 25 + premium_crafted * 15 + expeditions_done * 20 + rituals_performed * 10 \
+		+ campaign_step * 60 + (1200 if game_completed else 0)
 
 func _publish_score() -> void:
 	var score := business_score()
@@ -3423,6 +3465,133 @@ func _publish_score() -> void:
 
 func _on_leaderboard_ready(_rows: Array) -> void:
 	_refresh_ui()
+
+## Retrato numérico da loja: cada chave é um pedido possível de capítulo.
+func _campaign_stats() -> Dictionary:
+	return {
+		"customers_served": customers_served,
+		"ingredients_bought": total_ingredients_bought,
+		"crafted": total_crafted,
+		"gold": gold,
+		"happy_customers": happy_customers,
+		"regular_stories": regular_story_completed.size(),
+		"expeditions": expeditions_done,
+		"rare_found": rare_found,
+		"premium_crafted": premium_crafted,
+		"library_level": library_upgrade_level,
+		"sanctum_level": sanctum_upgrade_level,
+		"rituals": rituals_performed,
+		"cards": Cards.owned_count(card_counts),
+		"sets": completed_sets.size(),
+		"packs": packs_opened,
+		"level": player_level,
+		"reputation": reputation,
+		"faction_tier": _max_faction_tier(),
+		"best_quality": maxi(best_quality_crafted, 0)
+	}
+
+func _chapter_text() -> String:
+	var chapter := Campaign.chapter(campaign_step)
+	if chapter.is_empty():
+		return "Império fundado. O balcão continua aberto: agora é por conta própria, para subir pontuação e fechar o álbum."
+	var lines: Array[String] = [
+		"Capítulo %d de %d • %s" % [campaign_step + 1, Campaign.size(), str(chapter["name"])],
+		str(chapter["desc"])
+	]
+	lines.append_array(Campaign.progress(_campaign_stats(), chapter))
+	var bonus := " e pacote de cartas" if int(chapter.get("pack", 0)) > 0 else ""
+	lines.append("Recompensa: %d ouro, %d reputação, %d XP%s." % [int(chapter["gold"]), int(chapter["rep"]), int(chapter["xp"]), bonus])
+	return "\n".join(lines)
+
+func _claim_chapter() -> void:
+	var chapter := Campaign.chapter(campaign_step)
+	if chapter.is_empty():
+		return
+	var stats := _campaign_stats()
+	if not Campaign.complete(stats, chapter):
+		last_event = "O capítulo ainda não fecha: %s." % ", ".join(Campaign.missing(stats, chapter))
+		audio.play("sad")
+		_refresh_ui()
+		return
+	gold += int(chapter["gold"])
+	reputation += int(chapter["rep"])
+	for i in range(int(chapter.get("pack", 0))):
+		_grant_pack(true)
+	_add_xp(int(chapter["xp"]))
+	var is_final := bool(chapter.get("final", false))
+	campaign_step += 1
+	last_event = "CAPÍTULO FECHADO: %s. A chefe carimba o livro-razão e promete aumentar os preços." % str(chapter["name"])
+	audio.play("levelup")
+	_show_feedback("✦ Capítulo concluído!", Color(0.82, 1.0, 0.86))
+	if is_final:
+		game_completed = true
+		_show_ending()
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+func _show_ending() -> void:
+	if is_instance_valid(ending_layer):
+		ending_layer.visible = true
+		return
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.01, 0.04, 0.9)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(dim)
+	ending_layer = dim
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.add_child(center)
+
+	var panel := PanelContainer.new()
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.07, 0.03, 0.1, 0.98)
+	panel_style.border_color = Color(1.0, 0.78, 0.35, 0.95)
+	panel_style.set_border_width_all(2)
+	panel_style.set_corner_radius_all(14)
+	panel_style.content_margin_left = 26
+	panel_style.content_margin_right = 26
+	panel_style.content_margin_top = 22
+	panel_style.content_margin_bottom = 22
+	panel.add_theme_stylebox_override("panel", panel_style)
+	center.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(560, 0)
+	box.add_theme_constant_override("separation", 12)
+	panel.add_child(box)
+
+	var title := Label.new()
+	title.text = "IMPÉRIO DO BALCÃO"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 30)
+	title.add_theme_color_override("font_color", Color(1.0, 0.83, 0.45))
+	box.add_child(title)
+
+	var body_text := Label.new()
+	body_text.text = "Todos os capítulos fechados. A loja de esquina virou rede, o submundo inteiro pede pelo nome, e a " \
+		+ "chefe finalmente usa um vestido que custou mais que o estoque inteiro.\n\n" \
+		+ "Dia %d • %d de ouro em caixa • reputação %d • nível %d\n" % [shop_day, gold, reputation, player_level] \
+		+ "%d clientes atendidos • %d peças fabricadas • %d expedições\n" % [customers_served, total_crafted, expeditions_done] \
+		+ "%d de %d cards no álbum • pontuação %d\n\n" % [Cards.owned_count(card_counts), Cards.size(), business_score()] \
+		+ "O balcão continua aberto: dá para fechar o álbum, subir no placar e esticar o império até onde a sorte deixar."
+	body_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body_text.add_theme_font_size_override("font_size", 16)
+	body_text.add_theme_color_override("font_color", Color(0.92, 0.88, 0.96))
+	box.add_child(body_text)
+
+	var close_button := Button.new()
+	close_button.text = "Voltar a administrar"
+	close_button.custom_minimum_size = Vector2(240, 46)
+	close_button.pressed.connect(_close_ending)
+	box.add_child(close_button)
+
+func _close_ending() -> void:
+	if is_instance_valid(ending_layer):
+		ending_layer.visible = false
+	audio.play("click")
 
 func _board_text() -> String:
 	if steam == null:
@@ -3466,35 +3635,11 @@ func _play_achievement_pose(pose: String) -> void:
 	_show_feedback("✦ Pose de conquista desbloqueada!", Color(1.0, 0.70, 0.88))
 
 func _get_achievement_summary() -> String:
-	var names := {
-		"first_sale": "Primeira venda",
-		"regulars_10": "Já pode pedir pelo nome",
-		"regulars_25": "A clientela conhece a casa",
-		"regulars_50": "Lenda comercial do submundo",
-		"chaos_3": "Caos com recibo",
-		"marketing_3": "Propaganda astral",
-		"delighted_10": "Coração conquistado",
-		"faction_noted": "Diplomacia do balcão",
-		"faction_respected": "Embaixadora infernal",
-			"ingredient_buyer": "Fornecedor VIP",
-			"premium_artisan": "Mão de Midas",
-			"myth_piece": "Peça Mítica",
-			"market_barometer": "Termômetro do Balcão",
-			"ritual_apprentice": "Aprendiz de Ritos",
-			"ritual_devotee": "Fiel do Santuário",
-			"first_expedition": "Pé na Estrada",
-			"route_regular": "Corredor do Abismo",
-			"rare_hoarder": "Vitrine de Raridades",
-			"catalyst_touch": "Toque de Catalisador",
-			"library_master": "Bibliotecária do Submundo",
-			"sanctum_keeper": "Guardiã das Relíquias",
-			"queue_charmer": "Ninguém sai da fila",
-			"speed_demon": "Cinco vezes mais charmosa"
-	}
-	var lines: Array[String] = ["CONQUISTAS: %d/%d" % [unlocked_achievements.size(), names.size()]]
-	for achievement_id in names.keys():
-		var marker := "✓" if unlocked_achievements.has(achievement_id) else "○"
-		lines.append("%s %s" % [marker, names[achievement_id]])
+	var definitions := _achievement_definitions()
+	var lines: Array[String] = ["CONQUISTAS: %d/%d" % [unlocked_achievements.size(), definitions.size()]]
+	for achievement in definitions:
+		var marker := "✓" if unlocked_achievements.has(str(achievement["id"])) else "○"
+		lines.append("%s %s" % [marker, str(achievement["name"]).split(" (")[0]])
 	return "\n".join(lines)
 
 func _show_private_moment() -> void:

@@ -6,7 +6,7 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 
 ## Estado do projeto
 
-**Protótipo jogável em desenvolvimento.** Já há fabricação e venda de produtos, cadeia de produção com ingredientes e qualidade, economia reativa, clientes automáticos, expedições, santuário de relíquias, cartas colecionáveis, conquistas, placar de pontuação, integração opcional com a Steam e progressão por nível, pontos de talento, contratos de loja e reputação por facção. A versão atual também inclui receitas desbloqueadas por nível. Ainda não é um lançamento final; interface, balanceamento e conteúdo precisam de mais testes.
+**Protótipo jogável em desenvolvimento.** Já há fabricação e venda de produtos, cadeia de produção com ingredientes e qualidade, economia reativa, clientes automáticos, expedições, santuário de relíquias, cartas colecionáveis, campanha em sete capítulos com tela final, conquistas, placar de pontuação, integração opcional com a Steam e progressão por nível, pontos de talento, contratos de loja e reputação por facção. Ainda não é um lançamento final; interface, balanceamento e conteúdo precisam de mais testes.
 
 ## Como jogar
 
@@ -38,9 +38,10 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 - **Santuário de artefatos**: rituais que dão buffs temporários, aliviam penalidades (dissipam a fúria, recuperam item roubado) e harmonizam relíquias guardadas.
 - **Cenário vivo**: os clientes entram, caminham pelo salão e se aproximam do balcão; a protagonista se inclina, gira e reage conforme o atendimento, com animações e luz ambiente em vez de painéis parados.
 - **Cartas colecionáveis**: dezesseis cards em três coleções (Fregueses, A Chefa, A Casa) com quatro raridades. Pacotes à venda na recepção, brinde a cada conquista nova, cartas repetidas viram ouro e completar coleção rende bônus. O arquivo fica na biblioteca.
+- **Campanha em sete capítulos** (`campaign.gd`): a recepção mostra o objetivo atual com a lista do que falta, e cada capítulo concluído paga ouro, reputação, experiência e às vezes pacote de cartas. O último capítulo abre a tela final do império, que soma 1200 pontos na pontuação e libera a conquista correspondente; depois disso o balcão continua aberto em modo livre.
 - **Integração opcional com a Steam** (`steam_bridge.gd`): conquistas, itens de card no inventário, placar de melhor negócio e save na nuvem pelo Auto-Cloud. Sem o plugin Steamworks instalado, cada chamada vira no-op e o jogo usa o placar local de `user://hall_of_fame.cfg` — nenhuma funcionalidade depende da loja.
-- **Dezessete conquistas** com recompensas em ouro, reputação, pose especial da protagonista e pacote de cartas.
-- **Salvamento local** de progresso, nível, XP, talentos, contratos, estoque, qualidade, mercado, expedições, coleção de cartas, recorde de pontuação, melhorias, reputação por facção e opções.
+- **Vinte conquistas** com recompensas em ouro, reputação, pose especial da protagonista e pacote de cartas.
+- **Salvamento local** de progresso, nível, XP, talentos, contratos, estoque, qualidade, mercado, expedições, coleção de cartas, capítulo da campanha, recorde de pontuação, melhorias, reputação por facção e opções.
 - **Compatibilidade de estoque por nome de produto** para que saves antigos preservem os itens que continuam no catálogo.
 - **Opção de desativar o conteúdo sensual**, sem bloquear a progressão normal.
 
@@ -51,7 +52,7 @@ A visão é construir uma experiência de longa duração, com sistemas que se a
 1. **Capítulos narrativos por facção** — pedidos de guilda, intriga da corte e contratos do submundo além da reputação já existente.
 2. **Árvore de talentos maior** — mais ramos por trilha, pré-requisitos e builds concorrentes.
 3. **Expansão comercial** — salas, funcionários, automação, filiais e investimentos.
-4. **Campanha narrativa e finais** — alianças, segredos e escolhas comerciais.
+4. **Finais ramificados** — a campanha já fecha em um final; faltam desfechos alternativos por facção, aliança e ruína.
 5. **Prestígio opcional e desafios avançados** — objetivos de fim de jogo sem obrigar o jogador a recomeçar.
 6. **Arte, áudio e animação originais** — retratos, expressões, efeitos e música com recursos gratuitos ou licenças verificadas.
 7. **Publicação na Steam** — catálogo real de conquistas, itens de card e placar da comunidade no lugar do registro local.
