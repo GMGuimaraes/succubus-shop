@@ -36,6 +36,8 @@ var alchemy_rank: int = 0
 var trade_rank: int = 0
 var charm_rank: int = 0
 var logistics_rank: int = 0
+## Receitas pagas na biblioteca, independentemente do nível da personagem.
+var known_recipes: Array[String] = []
 var world_speed_options: Array[float] = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
 var world_speed_index: int = 1
 var world_timer: Timer
@@ -65,18 +67,18 @@ var last_event: String = "Bem-vindo! Vamos transformar esta espelunca em um imp�
 const PRODUCT_ICONS := ["🧪", "🦆", "💧", "📦", "✨", "🐟", "🌀", "💎", "📜", "☕", "🗡️", "🔨"]
 
 var products: Array = [
-	{"name": "Poção de Dano Emocional", "cost": 8, "price": 15, "stock": 1, "ingredients": {"essencia": 1}, "desc": "Lembra você daquela mensagem que mandou em 2018."},
-	{"name": "Pato Amaldiçoado Premium", "cost": 10, "price": 24, "stock": 1, "ingredients": {"pena": 1}, "desc": "Ele não faz nada. Mas julga suas decisões."},
-	{"name": "Lágrimas de Jogador Derrotado", "cost": 12, "price": 30, "stock": 1, "ingredients": {"sal": 1}, "desc": "Ingrediente raro. Salgado. Muito salgado."},
-	{"name": "Caixa Misteriosa Vazia", "cost": 5, "price": 12, "stock": 1, "ingredients": {"vazio": 1}, "desc": "A surpresa é perceber que você pagou por uma caixa."},
-	{"name": "Poção de Confiança Instantânea", "cost": 9, "price": 22, "stock": 1, "ingredients": {"essencia": 1, "tinta": 1}, "desc": "Funciona até alguém pedir para você explicar."},
-	{"name": "Elixir de Memória de Peixe", "cost": 18, "price": 48, "stock": 0, "required_level": 3, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Você esquece por que comprou. E compra de novo."},
-	{"name": "Incenso de Teletransporte Barato", "cost": 26, "price": 68, "stock": 0, "required_level": 5, "ingredients": {"po_lunar": 1, "tinta": 1}, "desc": "Leva você a três metros dali. Às vezes quatro."},
-	{"name": "Cristal de Crédito Cósmico", "cost": 42, "price": 115, "stock": 0, "required_level": 8, "ingredients": {"vazio": 1, "tinta": 2}, "desc": "Converte promessas vagas em dívidas muito concretas."},
-	{"name": "Pergaminho de Procrastinação Certificada", "cost": 55, "price": 150, "stock": 0, "required_level": 10, "ingredients": {"tinta": 2, "essencia": 1}, "desc": "Adia tarefas importantes com selo ISO de preguiça."},
-		{"name": "Frasco de Motivação de Segunda-feira", "cost": 70, "price": 195, "stock": 0, "required_level": 12, "ingredients": {"po_lunar": 2, "sal": 1}, "desc": "Efeito dura até o primeiro e-mail."},
-		{"name": "Adaga de Charme Duvidoso", "cost": 30, "price": 95, "stock": 0, "required_level": 2, "ingredients": {"pena": 1, "tinta": 1}, "desc": "Brilha quando alguém promete pagar amanhã."},
-		{"name": "Martelo de Faísca Dramática", "cost": 45, "price": 140, "stock": 0, "required_level": 4, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Cada golpe produz uma faísca e uma opinião não solicitada."
+	{"id": "dano_emocional", "name": "Poção de Dano Emocional", "cost": 8, "price": 15, "stock": 1, "ingredients": {"essencia": 1}, "desc": "Lembra você daquela mensagem que mandou em 2018."},
+	{"id": "pato_amaldicoado", "name": "Pato Amaldiçoado Premium", "cost": 10, "price": 24, "stock": 1, "ingredients": {"pena": 1}, "desc": "Ele não faz nada. Mas julga suas decisões."},
+	{"id": "lagrimas_jogador", "name": "Lágrimas de Jogador Derrotado", "cost": 12, "price": 30, "stock": 1, "ingredients": {"sal": 1}, "desc": "Ingrediente raro. Salgado. Muito salgado."},
+	{"id": "caixa_misteriosa", "name": "Caixa Misteriosa Vazia", "cost": 5, "price": 12, "stock": 1, "ingredients": {"vazio": 1}, "desc": "A surpresa é perceber que você pagou por uma caixa."},
+	{"id": "confianca_instantanea", "name": "Poção de Confiança Instantânea", "cost": 9, "price": 22, "stock": 1, "ingredients": {"essencia": 1, "tinta": 1}, "desc": "Funciona até alguém pedir para você explicar."},
+	{"id": "elixir_memoria", "name": "Elixir de Memória de Peixe", "cost": 18, "price": 48, "stock": 0, "required_level": 3, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Você esquece por que comprou. E compra de novo."},
+	{"id": "incenso_teleporte", "name": "Incenso de Teletransporte Barato", "cost": 26, "price": 68, "stock": 0, "required_level": 5, "ingredients": {"po_lunar": 1, "tinta": 1}, "desc": "Leva você a três metros dali. Às vezes quatro."},
+	{"id": "cristal_credito", "name": "Cristal de Crédito Cósmico", "cost": 42, "price": 115, "stock": 0, "required_level": 8, "ingredients": {"vazio": 1, "tinta": 2}, "desc": "Converte promessas vagas em dívidas muito concretas."},
+	{"id": "pergaminho_procrastinacao", "name": "Pergaminho de Procrastinação Certificada", "cost": 55, "price": 150, "stock": 0, "required_level": 10, "ingredients": {"tinta": 2, "essencia": 1}, "desc": "Adia tarefas importantes com selo ISO de preguiça."},
+	{"id": "frasco_motivacao", "name": "Frasco de Motivação de Segunda-feira", "cost": 70, "price": 195, "stock": 0, "required_level": 12, "ingredients": {"po_lunar": 2, "sal": 1}, "desc": "Efeito dura até o primeiro e-mail."},
+	{"id": "adaga_charme", "name": "Adaga de Charme Duvidoso", "cost": 30, "price": 95, "stock": 0, "required_level": 2, "ingredients": {"pena": 1, "tinta": 1}, "desc": "Brilha quando alguém promete pagar amanhã."},
+	{"id": "martelo_faisca", "name": "Martelo de Faísca Dramática", "cost": 45, "price": 140, "stock": 0, "required_level": 4, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Cada golpe produz uma faísca e uma opinião não solicitada."
 		}
 	]
 
@@ -92,10 +94,19 @@ var achievement_label: Label
 var progression_label: Label
 var quest_label: Label
 var quest_button: Button
-var products_box: VBoxContainer
+var forge_box: VBoxContainer
+var reception_box: VBoxContainer
+var library_box: VBoxContainer
+var sanctum_box: VBoxContainer
+var scene_action_box: VBoxContainer
 var craft_buttons: Array = []
 var product_labels: Array = []
 var product_margin_labels: Array = []
+var counter_labels: Array = []
+var counter_buttons: Array = []
+var ingredient_sell_buttons: Array = []
+var recipe_labels: Array = []
+var recipe_buttons: Array = []
 var upgrade_button: Button
 var imp_button: Button
 var private_button: Button
@@ -136,7 +147,21 @@ var toast_tween: Tween
 var market_panel: VBoxContainer
 var market_toggle_button: Button
 var sensual_tween: Tween
-var customer_portrait_paths: Array[String] = ["res://assets/customer_adventurer.png", "res://assets/customer_mage.png", "res://assets/customer_goth.png"]
+## Índice usado em "portrait" nos perfis e em regulars.gd. Ordem fixa:
+## 0 aventureiro, 1 maga/mago, 2 gótico, 3 bárbaro, 4 ladina, 5 clérigo,
+## 6 mercadora, 7 nobre, 8 goblin, 9 cobrador do submundo.
+var customer_portrait_paths: Array[String] = [
+	"res://assets/customer_adventurer.png",
+	"res://assets/customer_mage.png",
+	"res://assets/customer_goth.png",
+	"res://assets/customer_barbarian.png",
+	"res://assets/customer_rogue.png",
+	"res://assets/customer_cleric.png",
+	"res://assets/customer_merchant.png",
+	"res://assets/customer_noble.png",
+	"res://assets/customer_goblin.png",
+	"res://assets/customer_collector.png"
+]
 var seller_portrait_paths: Dictionary = {"happy": "res://assets/seller_happy.png", "neutral": "res://assets/seller_neutral.png", "surprised": "res://assets/seller_surprised.png", "demonic": "res://assets/seller_demonic.png"}
 
 const SELLER_DELIGHTED_LINES := [
@@ -179,6 +204,7 @@ func _ready() -> void:
 	audio.settings_changed.connect(_apply_music_settings)
 	_load_game()
 	_build_ui()
+	_apply_sector_visibility()
 	_setup_background_music()
 	_apply_music_settings()
 	_refresh_ui()
@@ -280,7 +306,7 @@ func _build_ui() -> void:
 	header.add_child(subtitle)
 
 	market_toggle_button = Button.new()
-	market_toggle_button.text = "☰ Abrir mercado"
+	market_toggle_button.text = "☰ Ocultar painel"
 	market_toggle_button.custom_minimum_size = Vector2(160, 42)
 	market_toggle_button.pressed.connect(_toggle_market_panel)
 	header.add_child(market_toggle_button)
@@ -370,12 +396,10 @@ func _build_ui() -> void:
 	talent_label = Label.new()
 	talent_label.add_theme_font_size_override("font_size", 14)
 	talent_label.add_theme_color_override("font_color", Color(0.88, 0.83, 1.0))
-	root.add_child(talent_label)
 
 	var talent_row := FlowContainer.new()
 	talent_row.add_theme_constant_override("h_separation", 8)
 	talent_row.add_theme_constant_override("v_separation", 6)
-	root.add_child(talent_row)
 	alchemy_button = Button.new()
 	alchemy_button.pressed.connect(_buy_talent.bind("alchemy"))
 	talent_row.add_child(alchemy_button)
@@ -411,45 +435,63 @@ func _build_ui() -> void:
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.size_flags_stretch_ratio = 1.6
 	left.add_theme_constant_override("separation", 8)
-	left.visible = false
 	body.add_child(left)
 
 	var product_title := Label.new()
 	sector_title_label = product_title
-	product_title.text = "MERCADORIAS"
+	product_title.text = "RECEPÇÃO • MERCADO E BALCÃO"
 	product_title.add_theme_font_size_override("font_size", 22)
 	product_title.add_theme_color_override("font_color", Color(1.0, 0.78, 0.9))
 	left.add_child(product_title)
 
 	var hint := Label.new()
 	sector_hint_label = hint
-	hint.text = "Fabrique itens para abastecer a loja. Os clientes chegam automaticamente."
+	hint.text = "Compre ingredientes e venda itens no balcão. Os clientes chegam sozinhos para negociar."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_color_override("font_color", Color(0.75, 0.71, 0.81))
 	left.add_child(hint)
 
-	var product_scroll := ScrollContainer.new()
-	product_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	product_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	left.add_child(product_scroll)
+	var sector_scroll := ScrollContainer.new()
+	sector_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sector_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left.add_child(sector_scroll)
+
+	# Cada setor mostra só a própria caixa: a recepção compra e vende, a forja
+	# fabrica, a biblioteca ensina talentos e receitas, o santuário harmoniza relíquias.
+	var sector_stack := VBoxContainer.new()
+	sector_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sector_stack.add_theme_constant_override("separation", 10)
+	sector_scroll.add_child(sector_stack)
+
+	reception_box = _make_sector_box()
+	sector_stack.add_child(reception_box)
+	forge_box = _make_sector_box()
+	sector_stack.add_child(forge_box)
+	library_box = _make_sector_box()
+	sector_stack.add_child(library_box)
+	sanctum_box = _make_sector_box()
+	sector_stack.add_child(sanctum_box)
+	scene_action_box = _make_sector_box()
+	sector_stack.add_child(scene_action_box)
+
+	library_box.add_child(_make_section_title("TALENTOS", Color(0.88, 0.75, 1.0)))
+	library_box.add_child(talent_label)
+	library_box.add_child(talent_row)
 
 	library_upgrade_button = Button.new()
 	library_upgrade_button.custom_minimum_size = Vector2(220, 36)
 	library_upgrade_button.pressed.connect(_buy_sector_upgrade.bind("library"))
-	left.add_child(library_upgrade_button)
+	library_box.add_child(library_upgrade_button)
+
 	sanctum_upgrade_button = Button.new()
 	sanctum_upgrade_button.custom_minimum_size = Vector2(220, 36)
 	sanctum_upgrade_button.pressed.connect(_buy_sector_upgrade.bind("sanctum"))
-	left.add_child(sanctum_upgrade_button)
+	sanctum_box.add_child(sanctum_upgrade_button)
+
 	sector_action_button = Button.new()
 	sector_action_button.custom_minimum_size = Vector2(220, 40)
 	sector_action_button.pressed.connect(_activate_sector_feature)
-	left.add_child(sector_action_button)
-
-	products_box = VBoxContainer.new()
-	products_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	products_box.add_theme_constant_override("separation", 8)
-	product_scroll.add_child(products_box)
+	scene_action_box.add_child(sector_action_button)
 
 	for i in range(products.size()):
 		var card := PanelContainer.new()
@@ -466,7 +508,7 @@ func _build_ui() -> void:
 		style.content_margin_top = 10
 		style.content_margin_bottom = 10
 		card.add_theme_stylebox_override("panel", style)
-		products_box.add_child(card)
+		forge_box.add_child(card)
 
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 12)
@@ -520,18 +562,8 @@ func _build_ui() -> void:
 		row.add_child(craft)
 		craft_buttons.append(craft)
 
-	var market_title := Label.new()
-	market_title.text = "MERCADO DE INGREDIENTES"
-	market_title.add_theme_font_size_override("font_size", 20)
-	market_title.add_theme_color_override("font_color", Color(0.78, 0.95, 1.0))
-	products_box.add_child(market_title)
-
-	var market_hint := Label.new()
-	market_hint.text = "Os preços mudam a cada dia. Compre barato, fabrique caro."
-	market_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	market_hint.add_theme_font_size_override("font_size", 13)
-	market_hint.add_theme_color_override("font_color", Color(0.75, 0.71, 0.81))
-	products_box.add_child(market_hint)
+	reception_box.add_child(_make_section_title("MERCADO DE INGREDIENTES", Color(0.78, 0.95, 1.0)))
+	reception_box.add_child(_make_section_hint("Os preços mudam a cada dia. Compre barato, fabrique caro, e revenda o que sobrar."))
 
 	for ingredient in Ingredients.DATA:
 		var ingredient_id := str(ingredient["id"])
@@ -549,7 +581,7 @@ func _build_ui() -> void:
 		market_style.content_margin_top = 8
 		market_style.content_margin_bottom = 8
 		market_card.add_theme_stylebox_override("panel", market_style)
-		products_box.add_child(market_card)
+		reception_box.add_child(market_card)
 
 		var market_row := HBoxContainer.new()
 		market_row.add_theme_constant_override("separation", 12)
@@ -572,12 +604,76 @@ func _build_ui() -> void:
 		ingredient_desc.add_theme_color_override("font_color", Color(0.70, 0.76, 0.82))
 		market_info.add_child(ingredient_desc)
 
+		var ingredient_actions := VBoxContainer.new()
+		ingredient_actions.add_theme_constant_override("separation", 4)
+		market_row.add_child(ingredient_actions)
+
 		var buy := Button.new()
 		buy.custom_minimum_size = Vector2(150, 40)
 		buy.add_theme_font_size_override("font_size", 14)
 		buy.pressed.connect(_buy_ingredient.bind(ingredient_id))
-		market_row.add_child(buy)
+		ingredient_actions.add_child(buy)
 		ingredient_buttons.append(buy)
+
+		var sell := Button.new()
+		sell.custom_minimum_size = Vector2(150, 40)
+		sell.add_theme_font_size_override("font_size", 14)
+		sell.pressed.connect(_sell_ingredient.bind(ingredient_id))
+		ingredient_actions.add_child(sell)
+		ingredient_sell_buttons.append(sell)
+
+	reception_box.add_child(_make_section_title("BALCÃO DE VENDAS", Color(1.0, 0.78, 0.9)))
+	reception_box.add_child(_make_section_hint("Venda direta: ouro na hora por 70% do preço. Sem cliente não há vínculo, reputação nem charme."))
+
+	for i in range(products.size()):
+		var counter_card := _make_sector_card(Color(0.10, 0.045, 0.14, 0.94), Color(0.66, 0.30, 0.56, 0.95))
+		reception_box.add_child(counter_card)
+		var counter_row := HBoxContainer.new()
+		counter_row.add_theme_constant_override("separation", 12)
+		counter_card.add_child(counter_row)
+		var counter_info := VBoxContainer.new()
+		counter_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		counter_row.add_child(counter_info)
+		var counter_label := Label.new()
+		counter_label.add_theme_font_size_override("font_size", 15)
+		counter_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.95))
+		counter_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		counter_info.add_child(counter_label)
+		counter_labels.append(counter_label)
+		var counter_button := Button.new()
+		counter_button.custom_minimum_size = Vector2(150, 40)
+		counter_button.add_theme_font_size_override("font_size", 14)
+		counter_button.pressed.connect(_sell_from_counter.bind(i))
+		counter_row.add_child(counter_button)
+		counter_buttons.append(counter_button)
+
+	sanctum_box.add_child(_make_section_title("RELÍQUIAS", Color(0.86, 0.60, 1.0)))
+	sanctum_box.add_child(_make_section_hint("Quanto mais alto o santuário, mais as relíquias acalmam o humor da chefe."))
+
+	library_box.add_child(_make_section_title("RECEITAS OCULTAS", Color(0.70, 0.90, 1.0)))
+	library_box.add_child(_make_section_hint("Ouro adianta receitas presas ao nível. A biblioteca reduz o custo de cada leitura."))
+
+	for i in range(products.size()):
+		var recipe_card := _make_sector_card(Color(0.04, 0.075, 0.12, 0.94), Color(0.30, 0.52, 0.68, 0.95))
+		library_box.add_child(recipe_card)
+		var recipe_row := HBoxContainer.new()
+		recipe_row.add_theme_constant_override("separation", 12)
+		recipe_card.add_child(recipe_row)
+		var recipe_info := VBoxContainer.new()
+		recipe_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		recipe_row.add_child(recipe_info)
+		var recipe_label := Label.new()
+		recipe_label.add_theme_font_size_override("font_size", 15)
+		recipe_label.add_theme_color_override("font_color", Color(0.85, 0.97, 1.0))
+		recipe_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		recipe_info.add_child(recipe_label)
+		recipe_labels.append(recipe_label)
+		var recipe_button := Button.new()
+		recipe_button.custom_minimum_size = Vector2(150, 40)
+		recipe_button.add_theme_font_size_override("font_size", 14)
+		recipe_button.pressed.connect(_learn_recipe.bind(i))
+		recipe_row.add_child(recipe_button)
+		recipe_buttons.append(recipe_button)
 
 	var right_scroll := ScrollContainer.new()
 	right_scroll.custom_minimum_size.x = 360
@@ -799,6 +895,43 @@ func _build_visual_theme() -> Theme:
 	visual_theme.set_color("font_outline_color", "Label", Color(0.025, 0.015, 0.05, 0.8))
 	return visual_theme
 
+func _make_sector_box() -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 8)
+	return box
+
+func _make_section_title(title_text: String, title_color: Color) -> Label:
+	var label := Label.new()
+	label.text = title_text
+	label.add_theme_font_size_override("font_size", 20)
+	label.add_theme_color_override("font_color", title_color)
+	return label
+
+func _make_section_hint(hint_text: String) -> Label:
+	var label := Label.new()
+	label.text = hint_text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", Color(0.75, 0.71, 0.81))
+	return label
+
+func _make_sector_card(card_bg: Color, card_border: Color) -> PanelContainer:
+	var card := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = card_bg
+	style.border_color = card_border
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(10)
+	style.shadow_size = 4
+	style.shadow_offset = Vector2(0, 2)
+	style.content_margin_left = 14
+	style.content_margin_right = 14
+	style.content_margin_top = 8
+	style.content_margin_bottom = 8
+	card.add_theme_stylebox_override("panel", style)
+	return card
+
 func _make_stat_label(text_value: String) -> Label:
 	var label := Label.new()
 	label.text = text_value
@@ -818,7 +951,7 @@ func _toggle_market_panel() -> void:
 		return
 	market_panel.visible = not market_panel.visible
 	if is_instance_valid(market_toggle_button):
-		market_toggle_button.text = "☰ Ocultar mercado" if market_panel.visible else "☰ Abrir mercado"
+		market_toggle_button.text = "☰ Ocultar painel" if market_panel.visible else "☰ Abrir painel"
 	audio.play("click")
 	_show_feedback("Mercado expandido." if market_panel.visible else "Recepção em foco.", Color(0.78, 0.95, 1.0))
 
@@ -889,14 +1022,13 @@ func _set_sector(sector: String) -> void:
 		background_layer.texture = load(scene_path)
 	if is_instance_valid(ambient_particles):
 		ambient_particles.color = Color(1.0, 0.43, 0.16, 0.46) if is_forge else Color(0.36, 0.72, 1.0, 0.38) if is_library else Color(0.73, 0.30, 1.0, 0.42) if is_sanctum else Color(0.85, 0.35, 1.0, 0.34)
-	if is_instance_valid(market_panel):
-		market_panel.visible = not is_reception
+	_apply_sector_visibility()
 	if is_instance_valid(sector_title_label):
-		sector_title_label.text = "FORJA & OFICINA" if is_forge else "BIBLIOTECA ARCANA" if is_library else "SANTUÁRIO DE ARTEFATOS" if is_sanctum else "MERCADORIAS"
+		sector_title_label.text = "RECEPÇÃO • MERCADO E BALCÃO" if is_reception else "FORJA & OFICINA" if is_forge else "BIBLIOTECA ARCANA" if is_library else "SANTUÁRIO DE ARTEFATOS"
 	if is_instance_valid(sector_hint_label):
-		sector_hint_label.text = "O ferreiro transforma ingredientes e ouro em equipamentos. A fila avança com o tempo do mundo." if is_forge else "Consulte grimórios e descubra receitas ocultas." if is_library else "Relíquias carregadas de magia aguardam uma negociação cuidadosa." if is_sanctum else "Fabrique itens para abastecer a loja. Os clientes chegam automaticamente."
+		sector_hint_label.text = "Compre ingredientes e venda itens no balcão. Os clientes chegam sozinhos para negociar." if is_reception else "Aqui apenas se fabrica: o ferreiro transforma ingredientes e ouro em mercadorias." if is_forge else "Aperfeiçoe talentos e adiante receitas presas ao nível." if is_library else "Relíquias carregadas de magia aguardam uma negociação cuidadosa."
 	if is_instance_valid(market_toggle_button):
-		market_toggle_button.text = "☰ Ocultar painel" if not is_reception else "☰ Abrir mercado"
+		market_toggle_button.text = "☰ Ocultar painel" if is_instance_valid(market_panel) and market_panel.visible else "☰ Abrir painel"
 	if is_instance_valid(reception_button):
 		reception_button.disabled = is_reception
 	if is_instance_valid(forge_button):
@@ -907,6 +1039,20 @@ func _set_sector(sector: String) -> void:
 		sanctum_button.disabled = is_sanctum
 	var sector_message := "A forja está em atividade." if is_forge else "Os grimórios sussurram novas receitas." if is_library else "O santuário pulsa com artefatos inquietos." if is_sanctum else "A recepção voltou ao foco."
 	_show_feedback(sector_message, Color(1.0, 0.82, 0.48) if is_forge else Color(0.70, 0.90, 1.0) if is_library else Color(0.86, 0.60, 1.0) if is_sanctum else Color(1.0, 0.78, 0.9))
+
+func _apply_sector_visibility() -> void:
+	# Uma caixa por setor: fabricar só na forja, comprar e vender só na recepção,
+	# talentos e receitas só na biblioteca.
+	if is_instance_valid(reception_box):
+		reception_box.visible = current_sector == "reception"
+	if is_instance_valid(forge_box):
+		forge_box.visible = current_sector == "forge"
+	if is_instance_valid(library_box):
+		library_box.visible = current_sector == "library"
+	if is_instance_valid(sanctum_box):
+		sanctum_box.visible = current_sector == "sanctum"
+	if is_instance_valid(scene_action_box):
+		scene_action_box.visible = current_sector == "library" or current_sector == "sanctum"
 
 func _play_sensual_reception_moment() -> void:
 	if not adult_content_enabled or not is_instance_valid(seller_portrait):
@@ -983,7 +1129,7 @@ func _show_feedback(message: String, color: Color = Color(1.0, 0.78, 0.9)) -> vo
 func _craft_product(index: int) -> void:
 	var item: Dictionary = products[index]
 	if not _is_product_unlocked(item):
-		last_event = "Essa receita ainda está bloqueada. Continue subindo de nível para pesquisá-la."
+		last_event = "Essa receita ainda está bloqueada. Suba de nível ou pague a leitura na biblioteca."
 		_refresh_ui()
 		return
 	var cost: int = maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
@@ -1087,6 +1233,72 @@ func _buy_ingredient(ingredient_id: String) -> void:
 	_save_game()
 	_refresh_ui()
 
+## Revender ingrediente recupera só 60% do preço do dia: o mercado aceita tudo,
+## mas paga como devolução.
+func _sell_ingredient(ingredient_id: String) -> void:
+	if int(ingredient_stock.get(ingredient_id, 0)) <= 0:
+		last_event = "Nada para revender: %s acabou do estoque." % str(Ingredients.find(ingredient_id).get("name", ingredient_id))
+		_refresh_ui()
+		return
+	var payout := maxi(1, int(round(float(_ingredient_price(ingredient_id)) * 0.6)))
+	ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) - 1
+	gold += payout
+	daily_gold_earned += payout
+	_progress_daily_quest("gold", payout)
+	last_event = "Revendido: %s por %d ouro. O fornecedor fingiu que não viu." % [str(Ingredients.find(ingredient_id).get("name", ingredient_id)), payout]
+	audio.play("coin")
+	_show_feedback("Material devolvido ao mercado.", Color(0.78, 0.95, 1.0))
+	_save_game()
+	_refresh_ui()
+
+## Venda no balcão: ouro certo e imediato por 70% do preço, sem reputação, vínculo
+## nem bônus de facção. Serve para girar estoque enquanto a fila não vem.
+func _sell_from_counter(index: int) -> void:
+	var item: Dictionary = products[index]
+	if int(item["stock"]) <= 0:
+		last_event = "Prateleira vazia: %s só existe na sua imaginação." % item["name"]
+		_refresh_ui()
+		return
+	item["stock"] = int(item["stock"]) - 1
+	var payout := maxi(1, int(round(float(item["price"]) * 0.7)))
+	gold += payout
+	daily_gold_earned += payout
+	_progress_daily_quest("gold", payout)
+	last_event = "Venda no balcão: %s por %d ouro. Levou sem agradecer, mas pagou." % [item["name"], payout]
+	audio.play("coin")
+	_show_feedback("+%d ouro no balcão." % payout, Color(1.0, 0.86, 0.45))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Ouro adianta uma receita presa ao nível; cada nível da biblioteca corta 10%
+## do preço da leitura.
+func _recipe_cost(index: int) -> int:
+	var required := int(products[index].get("required_level", 1))
+	return maxi(20, int(round(float(70 + required * 55) * (1.0 - 0.10 * library_upgrade_level))))
+
+func _learn_recipe(index: int) -> void:
+	var item: Dictionary = products[index]
+	var recipe_id := str(item["id"])
+	if known_recipes.has(recipe_id) or _is_product_unlocked(item):
+		last_event = "Essa receita já está decorada. O grimório exige novidades."
+		_refresh_ui()
+		return
+	var cost := _recipe_cost(index)
+	if gold < cost:
+		last_event = "A leitura custa %d ouro. Sem ouro, a tampa fecha sozinha." % cost
+		_refresh_ui()
+		return
+	gold -= cost
+	known_recipes.append(recipe_id)
+	_add_xp(6)
+	last_event = "Receita aprendida: %s! O pergaminho virou faísca roxa e a prateleira anotou." % item["name"]
+	audio.play("rare")
+	_show_feedback("✦ Nova receita dominada!", Color(0.70, 0.90, 1.0))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
 ## Produto em alta no dia: vende por 30% a mais. Determinístico por dia.
 func _demand_index() -> int:
 	return posmod(abs(hash("demanda:%d" % shop_day)), products.size())
@@ -1118,6 +1330,32 @@ func _hire_imp() -> void:
 	last_event = "Contratado! O diabrete produz uma Poção de Dano Emocional a cada 9 segundos."
 	_save_game()
 	_refresh_ui()
+
+## Ids são estáveis; a ordem de `products` pode mudar entre versões sem quebrar
+## o favorito de um freguês. Retorna -1 quando o produto não existe no catálogo.
+func _product_index(product_id: String) -> int:
+	for i in range(products.size()):
+		if str(products[i].get("id", "")) == product_id:
+			return i
+	return -1
+
+## Escolhe o freguês do próximo turno. O peso cai conforme o vínculo sobe, então
+## quem ainda não foi visitado domina a fila: ampliar o elenco não dilui a
+## frequência de cada personagem nem atrasa os capítulos.
+func _pick_regular() -> Dictionary:
+	var weights: Array[float] = []
+	var total_weight := 0.0
+	for candidate in Regulars.DATA:
+		var candidate_bond := int(regular_bonds.get(str(candidate["id"]), 0))
+		var weight := 1.0 / float(candidate_bond + 2)
+		weights.append(weight)
+		total_weight += weight
+	var roll := randf() * total_weight
+	for i in range(weights.size()):
+		roll -= weights[i]
+		if roll <= 0.0:
+			return Regulars.DATA[i]
+	return Regulars.DATA[0]
 
 func _on_customer_tick() -> void:
 	ticks += 1
@@ -1160,25 +1398,25 @@ func _on_customer_tick() -> void:
 		_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank)
 	else:
 		var profiles: Array[Dictionary] = [
-			{"name": "Speedrunner", "favorite": 3, "line": "“Compra feita. Onde fica o botão de pular diálogo?”", "faction": "aventureiros", "portrait": 0, "budget": 75, "patience": 1},
-			{"name": "Especialista em Tudo", "favorite": 0, "line": "“Vi um tutorial de 12 segundos e agora sou consultor.”", "faction": "guildas", "portrait": 1, "budget": 48, "patience": 2},
-				{"name": "Gótico Econômico", "favorite": 2, "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”", "faction": "submundo", "portrait": 2, "budget": 90, "patience": 3},
-				{"name": "Mago do Quero Mana", "favorite": 9, "line": "“Quero manaaa! Isso aqui é uma porcaria... me vê duas poções mesmo assim.”", "faction": "guildas", "portrait": 1, "budget": 120, "patience": 2},
-				{"name": "Fiscal do Pix Astral", "favorite": 6, "line": "“Aceita Pix astral? Se não aceitar, vou pagar em promessa e reclamar no fórum.”", "faction": "mercadores", "portrait": 0, "budget": 115, "patience": 2},
-				{"name": "Só Mais Uma Run", "favorite": 3, "line": "“É rapidinho, só mais uma compra. Dessa vez eu paro antes do amanhecer.”", "faction": "aventureiros", "portrait": 2, "budget": 100, "patience": 1},
-				{"name": "Ladino do Ctrl+C", "favorite": 0, "line": "“Vi isso em outro lugar. Vou levar o seu, porque parece mais fácil.”", "faction": "submundo", "portrait": 2, "budget": 70, "patience": 2, "thief": true},
-				{"name": "Cliente do É Sobre Isso", "favorite": 4, "line": "“É sobre isso e está tudo bem. Mas se tiver desconto, fica ainda mais sobre isso.”", "faction": "nobres", "portrait": 1, "budget": 150, "patience": 3},
-				{"name": "Colecionador de Patos", "favorite": 1, "line": "“Este pato combina com os outros 47 que não me julgam.”", "faction": "mercadores", "portrait": 0, "budget": 42, "patience": 2},
-				{"name": "Coach Interdimensional", "favorite": 4, "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”", "faction": "guildas", "portrait": 1, "budget": 125, "patience": 3},
-				{"name": "Cliente Misterioso", "favorite": -1, "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”", "faction": "nobres", "portrait": 2, "budget": 60, "patience": 1},
-				{"name": "Bardo do Duplo Sentido", "favorite": 4, "line": "“Se essa poção for tão quente quanto seu sorriso, eu compro duas.”", "faction": "aventureiros", "portrait": 1, "budget": 110, "patience": 2},
-				{"name": "Paladina do Caos", "favorite": 10, "line": "“Prometi ser virtuosa hoje. Mas posso abrir uma exceção para você.”", "faction": "nobres", "portrait": 0, "budget": 145, "patience": 2},
-				{"name": "Ladrão de Relíquias Sensíveis", "favorite": 8, "line": "“Não estou roubando seu coração. Só testando se ele cabe no meu inventário.”", "faction": "submundo", "portrait": 2, "budget": 135, "patience": 1},
-				{"name": "Bruxa em Lua de Mel", "favorite": 6, "line": "“Meu familiar disse que você é perigosa. Por isso mesmo fiquei.”", "faction": "guildas", "portrait": 1, "budget": 180, "patience": 3}
+			{"name": "Speedrunner", "favorite": "caixa_misteriosa", "line": "“Compra feita. Onde fica o botão de pular diálogo?”", "faction": "aventureiros", "portrait": 0, "budget": 75, "patience": 1},
+			{"name": "Especialista em Tudo", "favorite": "dano_emocional", "line": "“Vi um tutorial de 12 segundos e agora sou consultor.”", "faction": "guildas", "portrait": 1, "budget": 48, "patience": 2},
+				{"name": "Gótico Econômico", "favorite": "lagrimas_jogador", "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”", "faction": "submundo", "portrait": 2, "budget": 90, "patience": 3},
+				{"name": "Mago do Quero Mana", "favorite": "frasco_motivacao", "line": "“Quero manaaa! Isso aqui é uma porcaria... me vê duas poções mesmo assim.”", "faction": "guildas", "portrait": 1, "budget": 120, "patience": 2},
+				{"name": "Fiscal do Pix Astral", "favorite": "incenso_teleporte", "line": "“Aceita Pix astral? Se não aceitar, vou pagar em promessa e reclamar no fórum.”", "faction": "mercadores", "portrait": 6, "budget": 115, "patience": 2},
+				{"name": "Só Mais Uma Run", "favorite": "caixa_misteriosa", "line": "“É rapidinho, só mais uma compra. Dessa vez eu paro antes do amanhecer.”", "faction": "aventureiros", "portrait": 3, "budget": 100, "patience": 1},
+				{"name": "Ladino do Ctrl+C", "favorite": "dano_emocional", "line": "“Vi isso em outro lugar. Vou levar o seu, porque parece mais fácil.”", "faction": "submundo", "portrait": 4, "budget": 70, "patience": 2, "thief": true},
+				{"name": "Cliente do É Sobre Isso", "favorite": "confianca_instantanea", "line": "“É sobre isso e está tudo bem. Mas se tiver desconto, fica ainda mais sobre isso.”", "faction": "nobres", "portrait": 0, "budget": 150, "patience": 3},
+				{"name": "Colecionador de Patos", "favorite": "pato_amaldicoado", "line": "“Este pato combina com os outros 47 que não me julgam.”", "faction": "mercadores", "portrait": 8, "budget": 42, "patience": 2},
+				{"name": "Coach Interdimensional", "favorite": "confianca_instantanea", "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”", "faction": "guildas", "portrait": 5, "budget": 125, "patience": 3},
+				{"name": "Cliente Misterioso", "favorite": "", "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”", "faction": "nobres", "portrait": 9, "budget": 60, "patience": 1},
+				{"name": "Bardo do Duplo Sentido", "favorite": "confianca_instantanea", "line": "“Se essa poção for tão quente quanto seu sorriso, eu compro duas.”", "faction": "aventureiros", "portrait": 0, "budget": 110, "patience": 2},
+				{"name": "Paladina do Caos", "favorite": "adaga_charme", "line": "“Prometi ser virtuosa hoje. Mas posso abrir uma exceção para você.”", "faction": "nobres", "portrait": 0, "budget": 145, "patience": 2},
+				{"name": "Ladrão de Relíquias Sensíveis", "favorite": "pergaminho_procrastinacao", "line": "“Não estou roubando seu coração. Só testando se ele cabe no meu inventário.”", "faction": "submundo", "portrait": 4, "budget": 135, "patience": 1},
+				{"name": "Bruxa em Lua de Mel", "favorite": "incenso_teleporte", "line": "“Meu familiar disse que você é perigosa. Por isso mesmo fiquei.”", "faction": "guildas", "portrait": 1, "budget": 180, "patience": 3}
 			]
 		var profile: Dictionary = profiles[randi() % profiles.size()]
 		if randi() % 100 < 35:
-			var regular: Dictionary = Regulars.DATA[randi() % Regulars.DATA.size()]
+			var regular: Dictionary = _pick_regular()
 			var regular_id := str(regular["id"])
 			var bond := int(regular_bonds.get(regular_id, 0))
 			var tier := Regulars.tier_for(bond)
@@ -1189,7 +1427,7 @@ func _on_customer_tick() -> void:
 				regular_line = str(regular["request"])
 			profile = {
 				"name": regular["name"],
-				"favorite": int(regular["favorite"]),
+				"favorite": str(regular["favorite"]),
 				"line": regular_line,
 				"regular_id": regular_id,
 				"portrait": int(regular["portrait"]),
@@ -1198,7 +1436,7 @@ func _on_customer_tick() -> void:
 				"faction": str(regular.get("faction", "aventureiros"))
 			}
 		_animate_customer_arrival(profile)
-		var preferred_index: int = int(profile["favorite"])
+		var preferred_index: int = _product_index(str(profile["favorite"]))
 		current_customer_budget = int(profile.get("budget", 50)) + trade_rank * 8
 		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank) / world_speed())))
 		var seduction_used := false
@@ -1448,15 +1686,8 @@ func _animate_customer_arrival(profile: Dictionary) -> void:
 		return
 	var portrait_index := int(profile.get("portrait", -1))
 	if portrait_index < 0 or portrait_index >= customer_portrait_paths.size():
-		portrait_index = 0
-		var profile_name := str(profile.get("name", ""))
-		match profile_name:
-			"Especialista em Tudo", "Coach Interdimensional", "Lyra Cinzalume":
-				portrait_index = 1
-			"Gótico Econômico", "Cliente Misterioso", "Korvax, o Bárbaro Sensível", "Mina Duas-Adagas":
-				portrait_index = 2
-			_:
-				portrait_index = 0
+		# Perfil sem retrato definido ainda ganha um rosto estável e próprio.
+		portrait_index = abs(hash(str(profile.get("name", "")))) % customer_portrait_paths.size()
 	if customer_tween != null and customer_tween.is_valid():
 		customer_tween.kill()
 	customer_portrait.modulate = Color.WHITE
@@ -1690,9 +1921,13 @@ func _refresh_ui() -> void:
 	event_label.text = last_event
 	if is_instance_valid(regulars_label):
 		var regular_lines: Array[String] = ["FREGUESES RECORRENTES"]
+		var unseen := 0
 		for regular in Regulars.DATA:
 			var regular_id := str(regular["id"])
 			var bond := int(regular_bonds.get(regular_id, 0))
+			if bond <= 0:
+				unseen += 1
+				continue
 			var tier := Regulars.tier_for(bond)
 			var orders_done := int(regular_orders_completed.get(regular_id, 0))
 			regular_lines.append("%s — %s (%d visitas, %d pedidos)" % [regular["short"], Regulars.TIER_NAMES[tier], bond, orders_done])
@@ -1700,6 +1935,8 @@ func _refresh_ui() -> void:
 				regular_lines.append("  ✦ História concluída")
 			elif bond >= 3:
 				regular_lines.append("  ◇ Missão pessoal: %d/3 compras favoritas" % int(regular_story_progress.get(regular_id, 0)))
+		if unseen > 0:
+			regular_lines.append("  · %d ainda não pisaram aqui" % unseen)
 		regulars_label.text = "\n".join(regular_lines)
 	if is_instance_valid(faction_label):
 		var faction_lines: Array[String] = ["REPUTAÇÃO POR FACÇÃO"]
@@ -1738,6 +1975,9 @@ func _refresh_ui() -> void:
 		ingredient_labels[i].text = "%s | Estoque: %d | Preço: %d ouro" % [ingredient["name"], held, price]
 		ingredient_buttons[i].text = "Comprar (%d)" % price
 		ingredient_buttons[i].disabled = gold < price
+		var resale := maxi(1, int(round(float(price) * 0.6)))
+		ingredient_sell_buttons[i].text = "Revender (%d)" % resale
+		ingredient_sell_buttons[i].disabled = held <= 0
 	if is_instance_valid(quest_label):
 		var quest := _get_daily_quest()
 		var target: int = int(quest["target"])
@@ -1762,7 +2002,7 @@ func _refresh_ui() -> void:
 			product_margin_labels[i].add_theme_color_override("font_color", Color(0.65, 1.0, 0.72) if margin >= 0 else Color(1.0, 0.55, 0.55))
 		else:
 			product_labels[i].text = "🔒 %s  •  Desbloqueia no nível %d" % [item["name"], required_level]
-			product_margin_labels[i].text = "Receita bloqueada — continue evoluindo"
+			product_margin_labels[i].text = "Receita bloqueada — evolua ou pague a leitura na biblioteca"
 			product_margin_labels[i].add_theme_color_override("font_color", Color(0.67, 0.62, 0.73))
 		var craft_cost := maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
 		var missing_ingredients: Array[String] = []
@@ -1774,6 +2014,29 @@ func _refresh_ui() -> void:
 				already_queued = true
 		craft_buttons[i].text = "Na fila" if already_queued else "Fabricar (%d)" % craft_cost if unlocked and missing_ingredients.is_empty() else "Faltam ingredientes" if unlocked else "Receita bloqueada"
 		craft_buttons[i].disabled = already_queued or craft_jobs.size() >= 3 or not unlocked or gold < craft_cost or not missing_ingredients.is_empty()
+		var counter_stock := int(item["stock"])
+		var counter_payout := maxi(1, int(round(float(item["price"]) * 0.7)))
+		counter_labels[i].text = "%s | Estoque: %d | Balcão paga %d ouro" % [item["name"], counter_stock, counter_payout]
+		counter_buttons[i].text = "Vender (%d)" % counter_payout
+		counter_buttons[i].disabled = counter_stock <= 0
+		var recipe_id := str(item["id"])
+		var recipe_cost := _recipe_cost(i)
+		if required_level <= 1:
+			recipe_labels[i].text = "%s • receita básica, sempre sua" % item["name"]
+			recipe_buttons[i].text = "Dominada ✓"
+			recipe_buttons[i].disabled = true
+		elif player_level >= required_level:
+			recipe_labels[i].text = "%s • nível %d alcançado" % [item["name"], required_level]
+			recipe_buttons[i].text = "Dominada ✓"
+			recipe_buttons[i].disabled = true
+		elif known_recipes.has(recipe_id):
+			recipe_labels[i].text = "%s • nível %d adiantado no grimório" % [item["name"], required_level]
+			recipe_buttons[i].text = "Dominada ✓"
+			recipe_buttons[i].disabled = true
+		else:
+			recipe_labels[i].text = "🔒 %s • exige nível %d" % [item["name"], required_level]
+			recipe_buttons[i].text = "Aprender (%d)" % recipe_cost
+			recipe_buttons[i].disabled = gold < recipe_cost
 	var ad_cost := 75 + ad_level * 60
 	upgrade_button.text = "Propaganda infernal • %d ouro (nível %d)" % [ad_cost, ad_level]
 	upgrade_button.disabled = gold < ad_cost
@@ -1834,6 +2097,7 @@ func _save_game() -> void:
 	config.set_value("game", "world_speed_index", world_speed_index)
 	config.set_value("game", "library_upgrade_level", library_upgrade_level)
 	config.set_value("game", "sanctum_upgrade_level", sanctum_upgrade_level)
+	config.set_value("game", "known_recipes", known_recipes)
 	config.set_value("game", "queue_distractions", queue_distractions)
 	config.set_value("game", "products", products)
 	config.save(SAVE_PATH)
@@ -1900,6 +2164,13 @@ func _load_game() -> void:
 	world_speed_index = clampi(int(config.get_value("game", "world_speed_index", world_speed_index)), 0, world_speed_options.size() - 1)
 	library_upgrade_level = clampi(int(config.get_value("game", "library_upgrade_level", library_upgrade_level)), 0, 5)
 	sanctum_upgrade_level = clampi(int(config.get_value("game", "sanctum_upgrade_level", sanctum_upgrade_level)), 0, 5)
+	var saved_recipes = config.get_value("game", "known_recipes", [])
+	if saved_recipes is Array:
+		known_recipes.clear()
+		for saved_recipe in saved_recipes:
+			var recipe_key := str(saved_recipe)
+			if not recipe_key.is_empty() and not known_recipes.has(recipe_key):
+				known_recipes.append(recipe_key)
 	queue_distractions = int(config.get_value("game", "queue_distractions", queue_distractions))
 	var saved_achievements = config.get_value("game", "unlocked_achievements", [])
 	if saved_achievements is Array:
@@ -1928,6 +2199,8 @@ func _max_faction_tier() -> int:
 	return highest
 
 func _is_product_unlocked(item: Dictionary) -> bool:
+	if known_recipes.has(str(item.get("id", ""))):
+		return true
 	return player_level >= int(item.get("required_level", 1))
 
 const TALENT_REACTIONS := {

@@ -5,13 +5,18 @@ extends RefCounted
 const THRESHOLDS: Array[int] = [0, 3, 8, 15]
 const TIER_NAMES: Array[String] = ["Novo rosto", "Conhecido", "Freguês", "Devoto"]
 
-# "favorite" é o índice do produto em main.gd (0 Dano Emocional, 1 Pato, 2 Lágrimas,
-# 3 Caixa Vazia, 4 Confiança). "portrait" é o índice do retrato do cliente.
+# "favorite" é o id do produto em main.gd (dano_emocional, pato_amaldicoado,
+# lagrimas_jogador, caixa_misteriosa, confianca_instantanea, elixir_memoria,
+# incenso_teleporte, cristal_credito, pergaminho_procrastinacao, frasco_motivacao,
+# adaga_charme, martelo_faisca). "portrait" é o índice do retrato em main.gd
+# (customer_portrait_paths): 0 aventureiro, 1 maga, 2 gótico, 3 bárbaro,
+# 4 ladina, 5 clérigo, 6 mercadora, 7 nobre, 8 goblin, 9 cobrador.
 # "faction" aponta para um id em factions.gd.
 # "lines" tem uma lista de falas por nível; a primeira fala do nível 0 é a apresentação.
+# Mantenha o favorito em um produto de nível baixo: capítulos pedem três compras favoritas.
 const DATA: Array = [
 	{
-		"id": "aldric", "name": "Sir Aldric, o Nível 1", "short": "Aldric", "portrait": 0, "favorite": 4, "faction": "nobres",
+		"id": "aldric", "name": "Sir Aldric, o Nível 1", "short": "Aldric", "portrait": 0, "favorite": "confianca_instantanea", "faction": "nobres",
 		"lines": [
 			["“Disseram que esta loja vende confiança em frasco. Eu aceito dois. Ontem eu morri para uma porta.”",
 			 "“Sir Aldric, paladino nível 1! E antes que perguntem: sim, ainda é o tutorial.”"],
@@ -31,7 +36,7 @@ const DATA: Array = [
 		]
 	},
 	{
-		"id": "lyra", "name": "Lyra Cinzalume", "short": "Lyra", "portrait": 1, "favorite": 0, "faction": "guildas",
+		"id": "lyra", "name": "Lyra Cinzalume", "short": "Lyra", "portrait": 1, "favorite": "dano_emocional", "faction": "guildas",
 		"lines": [
 			["“Só vim buscar uma poção. Não olhe para mim. Não fale comigo. ...O que você recomenda?”",
 			 "“Dizem que esta loja é cheia de gente esquisita. Já me sinto em casa.”"],
@@ -51,7 +56,7 @@ const DATA: Array = [
 		]
 	},
 	{
-		"id": "korvax", "name": "Korvax, o Bárbaro Sensível", "short": "Korvax", "portrait": 2, "favorite": 2, "faction": "aventureiros",
+		"id": "korvax", "name": "Korvax, o Bárbaro Sensível", "short": "Korvax", "portrait": 3, "favorite": "lagrimas_jogador", "faction": "aventureiros",
 		"lines": [
 			["“GRAAAH! ...Desculpa. Assustei alguém? Eu só queria comprar uma coisa bonita.”",
 			 "“Um bárbaro forte também precisa de cuidados. Você tem hidratante para armadura?”"],
@@ -71,7 +76,7 @@ const DATA: Array = [
 		]
 	},
 	{
-		"id": "mina", "name": "Mina Duas-Adagas", "short": "Mina", "portrait": 2, "favorite": 3, "faction": "submundo",
+		"id": "mina", "name": "Mina Duas-Adagas", "short": "Mina", "portrait": 4, "favorite": "caixa_misteriosa", "faction": "submundo",
 		"lines": [
 			["“Olá, bonita. Quanto custa o desconto? Brincadeira. Mais ou menos.”",
 			 "“Não me olhe assim. Meu bolso só está vazio por motivos estratégicos.”"],
@@ -91,7 +96,7 @@ const DATA: Array = [
 		]
 	},
 	{
-		"id": "tuck", "name": "Frei Tuck Sem-Mana", "short": "Tuck", "portrait": 0, "favorite": 1, "faction": "guildas",
+		"id": "tuck", "name": "Frei Tuck Sem-Mana", "short": "Tuck", "portrait": 5, "favorite": "pato_amaldicoado", "faction": "guildas",
 		"lines": [
 			["“Que a luz o abençoe! E o desconto também, se possível. Estou sem mana desde terça.”",
 			 "“Sou clérigo de cura. Estou curando uma ressaca. Ela se recusa a sair.”"],
@@ -108,6 +113,86 @@ const DATA: Array = [
 			"“Que honra! Ser lembrado numa loja tão... movimentada.”",
 			"“Posso abençoar a sua porta? De graça. Meu primeiro serviço sem cobrar.”",
 			"“Eu trairia meu deus por um desconto seu. Mas é só o dízimo de volta. Só o dízimo.”"
+		]
+	},
+	{
+		"id": "bruna", "name": "Bruna Preço-Certo", "short": "Bruna", "portrait": 6, "favorite": "pato_amaldicoado", "faction": "mercadores",
+		"lines": [
+			["“Só passando para conferir seus preços. É amizade. É pesquisa de mercado. São as duas coisas.”",
+			 "“Uma colega lojista! Relaxa, não vim copiar nada. Vim olhar bem de perto, com carinho.”"],
+			["“Seu pato está 12% mais barato que o meu. Isso é maldade ou é planilha?”",
+			 "“Trouxe biscoito para a reunião. Seu cliente comeu meu biscoito. Estamos bem entre nós?”"],
+			["“Nossa planilha compartilhada está bonita demais. Eu chamo de fundo de investimento afetivo.”",
+			 "“Se você subir o preço, eu subo junto. Combinamos sem combinar. É quase romance.”"],
+			["“Oficialmente você é minha consultora. Extraoficialmente, meu contador pediu demissão por sua causa.”",
+			 "“Registrei a loja como patrimônio. Não é amor, é contabilidade. Mas fica perto do amor.”"]
+		],
+		"request": "“Me vende outro pato. O meu julga minhas decisões contábeis e eu preciso dessa honestidade toda manhã.”",
+		"empty": "“Sem estoque? Anotado: dia 47 sem estoque. Sua concorrência agradece. Eu agradeço. Todo mundo agradece.”",
+		"tier_up": [
+			"“Vou te chamar de sócia. Não responde nada, que fica estranho escrito.”",
+			"“Você é a única pessoa desta cidade que me empresta planilha de graça.”",
+			"“Se a guilda dos mercadores souber que a gente se dá bem, eu perco meu cargo.”"
+		]
+	},
+	{
+		"id": "ondina", "name": "Condessa Ondina Esquecida", "short": "Ondina", "portrait": 7, "favorite": "elixir_memoria", "faction": "nobres",
+		"lines": [
+			["“Juro que nunca pisei aqui. Que loja encantadora. Já nos vimos em algum salão?”",
+			 "“Meu cocheiro diz que é a quarta vez hoje. Eu discordo veementemente e exijo desconto.”"],
+			["“Voltei! Para comprar a mesma coisa de ontem. E de anteontem. Não conte para minha família.”",
+			 "“Esquecimento sai caro na corte. Aqui eu compro memória a preço justo. É poético, não é?”"],
+			["“Bebi seu elixir e acordei com o nome do meu advogado escrito na mão. Ele nega tudo.”",
+			 "“Chame minha criada quando eu esquecer o preço. Ela finge que também esqueceu. Time.”"],
+			["“Sei que esqueço. Sei que volto. E sei que você é o único lugar onde isso é negócio.”",
+			 "“Mudei o testamento. Não pergunte o quê. Só me vende mais um elixir e esquece junto.”"]
+		],
+		"request": "“O elixir, querida. O mesmo elixir. Sim, sei que já comprei. Não, não lembro do sabor.”",
+		"empty": "“Vazio? Que alívio, então eu não estava enlouquecendo. Anote aí: a condessa tinha razão.”",
+		"tier_up": [
+			"“Você lembra do meu nome. Minha família não lembra, mas você lembra.”",
+			"“Vim de carruagem hoje. Na nobreza isso é praticamente uma declaração.”",
+			"“Não direi a ninguém que volto tanto. Isso arruína todo o meu mistério.”"
+		]
+	},
+	{
+		"id": "rax", "name": "Rax, o Estagiário Goblin", "short": "Rax", "portrait": 8, "favorite": "adaga_charme", "faction": "aventureiros",
+		"lines": [
+			["“Eu sou MUITO perigoso. Tenho até uma adaga. Ah, ela ficou na loja do lado. Me vende outra?”",
+			 "“Estágio não remunerado, mas o currículo agradece. Quero algo que pareça violência elegante.”"],
+			["“Aprendi a pronunciar 'sinergia' e a furtar poção. A loja ainda me deixa trabalhar aqui.”",
+			 "“Meu chefe disse que você é referência de mercado. Não sei se é elogio. Obedeço mesmo assim.”"],
+			["“Consegui a vaga no grupo de aventureiros! Fui reprovado, mas a vaga foi minha.”",
+			 "“Sua adaga brilha quando alguém promete pagar amanhã. Eu prometi a mim mesmo. Brilha o dia todo.”"],
+			["“Quando eu comandar o sindicato, você será a fornecedora oficial. Já falei do seu currículo pro espelho.”",
+			 "“Aceito trabalhar de graça só aqui. Não é você. É o estágio. O estágio vence sempre.”"]
+		],
+		"request": "“Me vende a adaga bonita. Se o grupo perguntar, eu consegui com desconto de herói.”",
+		"empty": "“Estoque zerado? Meu mentor disse que isso é aprendizado. Mentira. É prejuízo mesmo.”",
+		"tier_up": [
+			"“Você lembrou que eu sou um goblin e não um entregador!”",
+			"“Ganhei um crachá da loja. É de papel. Vou carregar para sempre.”",
+			"“Te apresentei como 'minha contato no setor'. Soa mais honesto assim.”"
+		]
+	},
+	{
+		"id": "vespertino", "name": "Vespertino, Cobrador de Favores", "short": "Vespertino", "portrait": 9, "favorite": "confianca_instantanea", "faction": "submundo",
+		"lines": [
+			["“Boa tarde. Não vim cobrar você. Vim cobrar um cliente seu, que insiste que você garante a dívida.”",
+			 "“Trabalho com favores. Não funcionam em dinheiro. Funcionam em constrangimento.”"],
+			["“Seu nome apareceu em três contratos hoje. Dois são legíveis. O terceiro também é seu.”",
+			 "“Aceito pagamento em ouro, joia ou simpatia. A simpatia paga melhor, dizem por aí.”"],
+			["“Recomendei a loja para a casa. Agora eles cobram com educação, o que é infinitamente pior.”",
+			 "“Compro confiança. Ironia à parte, é o único cliente desta cidade que paga em dia.”"],
+			["“A sombra da sua loja está no meu livro de favores. No submundo, isso é quase contrato de casamento.”",
+			 "“Se um dia eu precisar de álibi, você é a primeira página. Não queira saber da segunda.”"]
+		],
+		"request": "“Uma poção de confiança, por favor. Preciso cobrar um anjo. É meu caso mais difícil do semestre.”",
+		"empty": "“Sem estoque. Terei de anotar seu nome como fiador. É meu plano B padrão, sem malícia.”",
+		"tier_up": [
+			"“Você paga antes de eu pedir. Raro. Comovente. Registrado em triplicata.”",
+			"“Minha chefe quer conhecer você. Não é convite. É auditoria.”",
+			"“Chamam sua loja de 'seguro' no submundo. Não é elogio. É política.”"
 		]
 	}
 ]
