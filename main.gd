@@ -127,6 +127,9 @@ var theft_recovery_available: bool = false
 var seduction_peak_triggered: bool = false
 var ambient_particles: CPUParticles2D
 var music_player: AudioStreamPlayer
+const GameAudio = preload("res://audio.gd")
+var audio: Node
+var mute_button: Button
 var feedback_audio_player: AudioStreamPlayer
 var toast_label: Label
 var toast_tween: Tween
@@ -164,10 +167,14 @@ const SUCCUBUS_NEGOTIATION_LINES := [
 ]
 
 func _ready() -> void:
+	audio = GameAudio.new()
+	add_child(audio)
+	audio.settings_changed.connect(_apply_music_settings)
 	_load_game()
 	_build_ui()
 	_setup_feedback_audio()
 	_setup_background_music()
+	_apply_music_settings()
 	_refresh_ui()
 	_start_ambient_animations()
 	var timer := Timer.new()
@@ -185,7 +192,7 @@ func _cycle_world_speed() -> void:
 	if is_instance_valid(world_timer):
 		world_timer.wait_time = 3.0 / world_speed()
 	last_event = "Velocidade do mundo ajustada para %.1fx. A forja e a paciência dos clientes acompanham o ritmo." % world_speed()
-	_play_feedback_tone(520.0 + world_speed() * 60.0, 0.08, 0.1)
+	audio.play("click")
 	_save_game()
 	_refresh_ui()
 
@@ -296,6 +303,21 @@ func _build_ui() -> void:
 	sanctum_button.pressed.connect(_set_sector.bind("sanctum"))
 	header.add_child(sanctum_button)
 
+	mute_button = Button.new()
+	mute_button.custom_minimum_size = Vector2(54, 42)
+	mute_button.tooltip_text = "Ligar/desligar o som"
+	mute_button.pressed.connect(func() -> void: audio.toggle_muted())
+	header.add_child(mute_button)
+	var volume_slider := HSlider.new()
+	volume_slider.min_value = 0.0
+	volume_slider.max_value = 1.0
+	volume_slider.step = 0.05
+	volume_slider.value = audio.volume
+	volume_slider.custom_minimum_size = Vector2(90, 42)
+	volume_slider.tooltip_text = "Volume"
+	volume_slider.value_changed.connect(func(v: float) -> void: audio.set_volume(v))
+	header.add_child(volume_slider)
+
 	var stats := FlowContainer.new()
 	stats.add_theme_constant_override("h_separation", 24)
 	stats.add_theme_constant_override("v_separation", 8)
@@ -371,7 +393,7 @@ func _build_ui() -> void:
 	var separator := HSeparator.new()
 	root.add_child(separator)
 
-	var body := HBoxContainer.new()
+	var body := BoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.clip_contents = true
 	body.add_theme_constant_override("separation", 22)
@@ -787,7 +809,7 @@ func _toggle_market_panel() -> void:
 	market_panel.visible = not market_panel.visible
 	if is_instance_valid(market_toggle_button):
 		market_toggle_button.text = "☰ Ocultar mercado" if market_panel.visible else "☰ Abrir mercado"
-	_play_feedback_tone(520.0 if market_panel.visible else 360.0, 0.08, 0.1)
+	audio.play("click")
 	_show_feedback("Mercado expandido." if market_panel.visible else "Recepção em foco.", Color(0.78, 0.95, 1.0))
 
 func _buy_sector_upgrade(sector: String) -> void:
@@ -890,7 +912,7 @@ func _play_seduction_peak_pose() -> void:
 	private_moments_unlocked += 1
 	reputation += 3
 	_add_xp(15)
-	_play_feedback_tone(1040.0, 0.26, 0.22)
+	audio.play("talent")
 	_show_feedback("♥ Pose especial desbloqueada!", Color(1.0, 0.62, 0.88))
 
 func _setup_feedback_audio() -> void:
@@ -915,6 +937,13 @@ func _setup_background_music() -> void:
 	music_player.volume_db = -13.0
 	add_child(music_player)
 	music_player.play()
+
+func _apply_music_settings() -> void:
+	if is_instance_valid(mute_button):
+		mute_button.text = "🔇" if audio.muted else "🔊"
+	if is_instance_valid(music_player):
+		music_player.stream_paused = audio.muted
+		music_player.volume_db = -13.0 + linear_to_db(maxf(audio.volume, 0.0001))
 
 func _play_feedback_tone(frequency: float, duration: float = 0.12, volume: float = 0.16) -> void:
 	if not is_instance_valid(feedback_audio_player):
@@ -968,7 +997,7 @@ func _craft_product(index: int) -> void:
 	var duration := 6.0 + float(index) * 1.4 - float(alchemy_rank) * 0.7 - float(library_upgrade_level) * 0.45
 	craft_jobs.append({"index": index, "remaining": maxf(3.0, duration)})
 	last_event = "Forja iniciada: %s levará %.1fs de tempo de mundo." % [item["name"], maxf(3.0, duration)]
-	_play_feedback_tone(420.0, 0.12, 0.14)
+	audio.play("click")
 	_show_feedback("⚒ Fabricação em andamento.", Color(1.0, 0.82, 0.48))
 	_save_game()
 	_refresh_ui()
@@ -995,11 +1024,11 @@ func _advance_craft_jobs(game_seconds: float) -> void:
 			premium_stock[product_name] = int(premium_stock.get(product_name, 0)) + 1
 			premium_crafted += 1
 			last_event = "OBRA-PRIMA! %s saiu impecável e vale 50%% a mais. A chefe finge que foi de propósito." % product_name
-			_play_feedback_tone(880.0, 0.16, 0.18)
+			audio.play("rare")
 			_show_feedback("✦ Obra-prima criada!", Color(1.0, 0.86, 0.45))
 		else:
 			last_event = "Produzido: %s. O ferreiro bateu o martelo e pediu aplausos." % item["name"]
-			_play_feedback_tone(560.0)
+			audio.play("craft")
 			_show_feedback("Produto pronto para vender.")
 	_check_achievements()
 	_save_game()
@@ -1044,7 +1073,7 @@ func _buy_ingredient(ingredient_id: String) -> void:
 	ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) + 1
 	total_ingredients_bought += 1
 	last_event = "Comprado: %s por %d ouro. O fornecedor jurou que era o preço de amigo." % [str(Ingredients.find(ingredient_id).get("name", ingredient_id)), price]
-	_play_feedback_tone(420.0)
+	audio.play("buy")
 	_show_feedback("Ingrediente adicionado ao estoque.", Color(0.78, 0.95, 1.0))
 	_check_achievements()
 	_save_game()
@@ -1386,7 +1415,7 @@ func _trigger_random_event() -> void:
 			customer_emotion_label.text = "💘 distraído"
 		status_label.text = "CLIENTE: distraído pelo charme"
 		_play_sensual_reception_moment()
-	_play_feedback_tone(280.0, 0.2, 0.18)
+	audio.play("rare")
 	_show_feedback("Evento raro!", Color(1.0, 0.86, 0.45))
 	if adult_content_enabled and affection >= 5 and randi() % 2 == 0:
 		last_event += "\nA súcubo ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui, querido.”"
@@ -1449,7 +1478,7 @@ func _handle_thief_escape(profile: Dictionary, available: Array[int]) -> void:
 		customer_emotion_label.text = "🏃 ladrão"
 	last_event = "%s pegou %s e correu! A succubus rosna: “Ninguém rouba da minha loja e sai sem deixar um recibo.”" % [profile.get("name", "O cliente"), stolen_item_name]
 	_show_feedback("⚠ Roubo! O rastreador está pronto.", Color(1.0, 0.55, 0.45))
-	_play_feedback_tone(150.0, 0.2, 0.18)
+	audio.play("sad")
 	_play_customer_reaction("hurry")
 
 func _recover_stolen_item() -> void:
@@ -1466,7 +1495,7 @@ func _recover_stolen_item() -> void:
 	stolen_item_name = ""
 	fury = maxi(0, fury - 1)
 	_update_demonic_form()
-	_play_feedback_tone(680.0, 0.14, 0.16)
+	audio.play("happy")
 	_show_feedback("Item recuperado.", Color(0.75, 1.0, 0.72))
 	_save_game()
 	_refresh_ui()
@@ -1531,13 +1560,13 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 		seller_speech_label.text = line
 	match animation:
 		"delighted":
-			_play_feedback_tone(880.0, 0.14, 0.17)
+			audio.play("happy")
 			_show_feedback("♥ Cliente encantado!", Color(1.0, 0.78, 0.9))
 		"disappointed":
-			_play_feedback_tone(180.0, 0.18, 0.14)
+			audio.play("sad")
 			_show_feedback("Estoque vazio: cliente perdido.", Color(1.0, 0.55, 0.55))
 		_:
-			_play_feedback_tone(660.0, 0.1, 0.13)
+			audio.play("coin")
 			_show_feedback("Venda concluída.", Color(0.91, 1.0, 0.75))
 	_play_customer_reaction("hurry" if animation == "disappointed" and current_customer_patience <= 1 else animation)
 	if animation != "disappointed" and not theft_recovery_available:
@@ -1594,7 +1623,7 @@ func _update_demonic_form() -> void:
 			var demon_tween := create_tween()
 			demon_tween.tween_property(seller_portrait, "scale", Vector2(1.10, 1.10), 0.22).set_trans(Tween.TRANS_BACK)
 			demon_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.34)
-		_play_feedback_tone(120.0, 0.25, 0.2)
+		audio.play("rare")
 		_show_feedback("Forma demoníaca ativada.", Color(1.0, 0.48, 0.58))
 	elif demonic_form_active and fury <= 1:
 		demonic_form_active = false
@@ -1902,6 +1931,7 @@ func _buy_talent(kind: String) -> void:
 			last_event = "Talento Logística melhorado! Ingredientes ficam 5% mais baratos por nível."
 
 	skill_points -= 1
+	audio.play("talent")
 	_save_game()
 	_refresh_ui()
 
@@ -1925,6 +1955,7 @@ func _add_xp(amount: int) -> void:
 			var required_level: int = int(item.get("required_level", 1))
 			if required_level > previous_level and required_level <= player_level:
 				newly_unlocked.append(str(item["name"]))
+		audio.play("levelup")
 		last_event = "SUBIU DE NÍVEL! Nível %d: +%d ponto(s) de talento, ouro e reputação." % [player_level, levels_gained]
 		if not newly_unlocked.is_empty():
 			last_event += "\nNOVAS RECEITAS: " + ", ".join(newly_unlocked)
