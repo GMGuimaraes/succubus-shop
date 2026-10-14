@@ -366,7 +366,7 @@ var _stage_sequence_cache: Dictionary = {}
 const STAGE_ROOM_PROPS := {
 	"res://assets/shop_scene.png": [Rect2(0.435, 0.495, 0.565, 0.44), Rect2(0.0, 0.585, 0.19, 0.415)],
 	"res://assets/forge_scene.png": [Rect2(0.0, 0.555, 0.165, 0.445), Rect2(0.77, 0.60, 0.23, 0.40), Rect2(0.655, 0.525, 0.095, 0.15)],
-	"res://assets/library_room_scene.png": [Rect2(0.225, 0.42, 0.13, 0.27), Rect2(0.0, 0.52, 0.215, 0.21), Rect2(0.78, 0.525, 0.205, 0.195)],
+	"res://assets/library_room_scene.png": [Rect2(0.225, 0.42, 0.13, 0.30), Rect2(0.0, 0.52, 0.215, 0.21), Rect2(0.78, 0.525, 0.205, 0.195)],
 	"res://assets/sanctum_room_scene.png": [Rect2(0.0, 0.53, 0.14, 0.17), Rect2(0.862, 0.53, 0.138, 0.17), Rect2(0.235, 0.515, 0.055, 0.15), Rect2(0.71, 0.505, 0.055, 0.15)],
 }
 ## Faixa de piso por onde o elenco anda em cada sala, em fração da largura. Na
@@ -375,6 +375,27 @@ const STAGE_ROOM_PROPS := {
 const STAGE_ROOM_WALK := {
 	"res://assets/shop_scene.png": Vector2(0.13, 0.42),
 }
+## O caminho da porta até o balcão, em (fração da largura, profundidade do chão),
+## sem contar o próprio balcão. É a trilha que decide o que o visitante passa por
+## trás: ela recua para o fundo ao cruzar o móvel pintado e volta para a frente da
+## sala no chão livre, em vez de atravessar a loja na linha de frente.
+const STAGE_ROOM_DOOR := {
+	"res://assets/shop_scene.png": [Vector2(0.02, 0.12), Vector2(0.24, 0.34)],
+	"res://assets/forge_scene.png": [Vector2(0.02, 0.12), Vector2(0.26, 0.30)],
+	"res://assets/library_room_scene.png": [Vector2(0.98, 0.12), Vector2(0.72, 0.30)],
+	"res://assets/sanctum_room_scene.png": [Vector2(0.02, 0.10), Vector2(0.30, 0.30)],
+}
+## Vitrines de cada sala, em (fração da largura, profundidade do chão): é onde quem
+## foi bem atendido se detém para olhar a mercadoria antes de sair. A profundidade
+## fica na frente do móvel, para a parada não esconder o corpo inteiro.
+const STAGE_ROOM_BROWSE := {
+	"res://assets/shop_scene.png": [Vector2(0.26, 0.62), Vector2(0.33, 0.80)],
+	"res://assets/forge_scene.png": [Vector2(0.60, 0.55), Vector2(0.20, 0.66)],
+	"res://assets/library_room_scene.png": [Vector2(0.29, 0.58), Vector2(0.87, 0.48)],
+	"res://assets/sanctum_room_scene.png": [Vector2(0.62, 0.50), Vector2(0.37, 0.60)],
+}
+## Poses que um cliente satisfeito faz parado diante de uma prateleira.
+const STAGE_BROWSE_POSES := ["curiosidade", "pensativo", "aprovacao", "aponta", "risada", "felicidade"]
 ## Onde a chefe espera atrás do balcão e onde o cliente do turno encosta, por sala.
 const STAGE_ROOM_MEET := {
 	"res://assets/shop_scene.png": Vector2(0.505, 0.37),
@@ -394,6 +415,17 @@ const STAGE_ROOM_FLOOR := {
 ## Altura de um adulto em primeiro plano. As camadas de trás escalam em cima dela
 ## para casar com a perspectiva da arte.
 const STAGE_FIGURE_HEIGHT := 250.0
+## Onde a visita nasce e onde ela encosta no balcão. Entrar lá do fundo, onde a
+## estante pega, e vir até a frente da sala é o que faz o cliente passar POR TRÁS
+## do móvel pintado em vez de atravessar por cima dele.
+const STAGE_ENTRY_DEPTH := 0.12
+const STAGE_FRONT_DEPTH := 0.82
+## Janela de uma visita: ele tem de chegar ao balcão antes do próximo tique, mas
+## sem correr parado.
+const STAGE_ARRIVE_SECONDS := 2.8
+## Para quanto o passo pode ser apertado quando a trilha é longa: o corpo acelera
+## junto com a caminhada, então ninguém desliza pelo chão.
+const STAGE_MAX_PACE := 1.9
 ## Velocidade de caminhada em pixels por segundo na escala 1 e duração de cada
 ## passo. Amarra os dois: o pé que se move e o corpo que avança concordam.
 const STAGE_WALK_SPEED := 215.0
@@ -418,7 +450,6 @@ func _stage_walk_sequence(count: int) -> Array[int]:
 const STAGE_BAND_SHARE := 0.30
 const SIDE_PANEL_LIFT := 0.10
 var stage_layer: Control
-var stage_front_layer: Control
 var stage_occluder: TextureRect
 var ui_layer: Control
 var stage_seller: Control
@@ -437,7 +468,9 @@ var _seller_home: Vector2 = Vector2.ZERO
 var _stage_layout_key := Vector2(-1.0, -1.0)
 var _seller_lean_tween: Tween
 var _customer_bob: Tween
-var _customer_leave_tween: Tween
+## Se o balcão atendeu bem quem está no palco agora. Decide se a visita dá uma
+## olhada nas prateleiras na saída ou vai direto à porta.
+var _customer_served: bool = false
 var _stage_fade_tweens: Array[Tween] = []
 var _stage_occluder_material: ShaderMaterial
 var sector_title_label: Label
@@ -601,7 +634,6 @@ func _process(delta: float) -> void:
 		_stage_walker_timer = randf_range(2.5, 6.5)
 		_spawn_stage_walker()
 	stage_layer.queue_redraw()
-	stage_front_layer.queue_redraw()
 
 ## Transeunte anônimo atravessa o salão em uma das camadas de profundidade. O
 ## elenco são as artes de corpo inteiro dos fregueses, menores e mais frias quanto
@@ -712,7 +744,7 @@ func _retire_walker(walker: Control) -> void:
 			_stage_walkers.remove_at(i)
 			for key in ["bob", "stride", "trip"]:
 				var mover: Tween = entry[key]
-				if mover.is_valid():
+				if mover != null and mover.is_valid():
 					mover.kill()
 			break
 	if crowd >= 0:
@@ -728,12 +760,14 @@ func _retire_walker(walker: Control) -> void:
 ## Troca de sala não pode apagar ninguém de repente: quem estava no salão anterior
 ## sai de cena e a equipe da sala nova entra pelo fundo.
 func _dismiss_stage_cast() -> void:
+	# Primeiro o cliente: ele vira transeunte e entra na lista, aí o laço abaixo
+	# o devolve para os bastidores junto com o resto do elenco.
+	_stage_customer_leaves()
 	for entry in _stage_walkers.duplicate():
 		var walker := entry["node"] as Control
 		if is_instance_valid(walker):
 			_retire_walker(walker)
 	_stage_walkers.clear()
-	_stage_customer_leaves()
 
 func _show_stage_for_room(scene_path: String, walkable: bool) -> void:
 	# Trocas rápidas de sala não podem deixar um fade velho escondendo a camada
@@ -746,7 +780,7 @@ func _show_stage_for_room(scene_path: String, walkable: bool) -> void:
 	# A sala nova tem outro ponto de encontro: sem isso a chefe ficaria parada na
 	# marca da sala anterior, porque o resto do layout não mudou.
 	_layout_stage_figures()
-	var layers: Array[Control] = [stage_layer, stage_front_layer]
+	var layers: Array[Control] = [stage_layer]
 	if not walkable:
 		# Sala sem chão pintado (só close-up): o elenco volta para os bastidores.
 		_dismiss_stage_cast()
@@ -785,8 +819,9 @@ func _host_enters_room() -> void:
 	stage_seller.scale = Vector2.ONE
 	_seller_lean_tween.tween_property(stage_seller, "position", _seller_home, 0.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
-## O cliente do turno entra pela esquerda, para diante do balcão e sai quando o
-## próximo tick o substitui.
+## O cliente do turno entra pela porta da sala e vem até o balcão seguindo a
+## trilha do chão: ela recua para o fundo onde há móvel pintado, então ele passa
+## POR TRÁS dele, como o resto do elenco, em vez de atravessar por cima.
 func _stage_customer_arrives(portrait_index: int) -> void:
 	if not is_instance_valid(stage_customer) or stage_layer.size.x <= 0:
 		return
@@ -799,31 +834,98 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 		if int(entry.get("crowd", -1)) == body:
 			_retire_walker(entry["node"] as Control)
 	var front := _lane(2)
-	var floor_y: float = front["floor_y"] - stage_customer.size.y
-	if _customer_leave_tween != null and _customer_leave_tween.is_valid():
-		_customer_leave_tween.kill()
-	_set_stage_flip(stage_customer, false)
+	_customer_served = false
 	stage_customer.modulate = Color(1.0, 0.95, 0.98, front["alpha"])
 	stage_customer.rotation_degrees = 0.0
 	stage_customer.pivot_offset = stage_customer.size / 2.0
-	stage_customer.position = Vector2(-stage_customer.size.x - 20.0, floor_y)
+	stage_customer.set_meta("walk_frames", _stage_crowd_frames(body).size())
 	stage_customer.visible = true
-	var spot := Vector2(_room_meet().y * stage_layer.size.x - stage_customer.size.x * 0.5, floor_y)
-	# Mesma cadência e mesma velocidade dos transeuntes: o cliente atravessa o
-	# salão caminhando, não deslizando nem disparando até o balcão.
-	var walk_time := absf(spot.x - stage_customer.position.x) / (STAGE_WALK_SPEED * float(front["scale"]))
+	var path := _room_path()
+	_place_stage_figure(stage_customer, path[0].y, path[0].x)
 	if _customer_bob != null and _customer_bob.is_valid():
 		_customer_bob.kill()
+	# A chegada tem de caber no tique. Quando a trilha é longa, o corpo é quem
+	# aperta o passo: a batida do pé encurta na mesma proporção da caminhada, e
+	# ninguém desliza pelo chão nem corre com as pernas paradas.
+	var pace := clampf(_path_time(stage_customer, path) / STAGE_ARRIVE_SECONDS, 1.0, STAGE_MAX_PACE)
 	var walk := create_tween()
-	walk.tween_property(stage_customer, "position:x", spot.x, walk_time * 0.78).set_trans(Tween.TRANS_LINEAR)
-	walk.tween_property(stage_customer, "position:x", spot.x, walk_time * 0.22).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	walk.parallel().tween_property(stage_customer, "rotation_degrees", 0.0, walk_time * 0.22)
+	_walk_path(walk, stage_customer, path, pace)
 	walk.tween_callback(_stage_customer_stops)
+	var step_time := STAGE_STEP_SECONDS / pace
 	_customer_bob = create_tween().set_loops()
-	_customer_bob.tween_property(stage_customer, "rotation_degrees", 1.6, STAGE_STEP_SECONDS).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_customer_bob.tween_property(stage_customer, "rotation_degrees", 1.6, step_time).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_customer_bob.tween_callback(_advance_stage_frame.bind(stage_customer))
-	_customer_bob.tween_property(stage_customer, "rotation_degrees", -1.6, STAGE_STEP_SECONDS).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_customer_bob.tween_property(stage_customer, "rotation_degrees", -1.6, step_time).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_customer_bob.tween_callback(_advance_stage_frame.bind(stage_customer))
+
+## A trilha da porta até o balcão, já em pixels. O primeiro ponto é empurrado para
+## fora da tela, para a visita nascer além da porta em vez de aparecer do nada.
+func _room_path() -> Array[Vector2]:
+	var path: Array[Vector2] = []
+	for point in STAGE_ROOM_DOOR.get(_stage_room, []):
+		path.append(point)
+	if path.is_empty():
+		path.append(Vector2(0.0, STAGE_ENTRY_DEPTH))
+	path.append(Vector2(_room_meet().y, STAGE_FRONT_DEPTH))
+	var first: Vector2 = path[0]
+	path[0] = Vector2(-0.08 if first.x < 0.5 else 1.08, first.y)
+	for i in range(path.size()):
+		path[i] = Vector2(path[i].x * stage_layer.size.x, path[i].y)
+	return path
+
+## Planta uma figura num ponto do chão da sala. A profundidade decide o tamanho,
+## a linha onde o pé encosta e o quanto ela some na névoa do fundo; o x é o centro
+## do corpo. Guardar a profundidade no meta é o que permite a ela voltar a andar
+## de onde está sem adivinhar o próprio tamanho.
+func _place_stage_figure(node: Control, depth: float, center_x: float) -> void:
+	var lane := _lane_at(depth)
+	var figure_scale: float = lane["scale"]
+	node.set_meta("stage_depth", depth)
+	node.scale = Vector2(figure_scale, figure_scale)
+	node.position = Vector2(
+		center_x - node.size.x * 0.5,
+		float(lane["floor_y"]) - node.size.y * (1.0 + figure_scale) * 0.5
+	)
+
+func _stage_step_to(t: float, node: Control, from_x: float, to_x: float, from_depth: float, to_depth: float) -> void:
+	if not is_instance_valid(node):
+		return
+	_place_stage_figure(node, lerpf(from_depth, to_depth, t), lerpf(from_x, to_x, t))
+
+## Quanto um corpo leva para ir de um ponto do chão a outro. A velocidade é a do
+## tamanho médio do trajeto, porque o passo longe da câmera cobre menos tela.
+func _stage_walk_time(from_depth: float, from_x: float, to_depth: float, to_x: float) -> float:
+	var from := _lane_at(from_depth)
+	var to := _lane_at(to_depth)
+	var distance := Vector2(from_x, float(from["floor_y"])).distance_to(Vector2(to_x, float(to["floor_y"])))
+	return distance / maxf(30.0, STAGE_WALK_SPEED * (float(from["scale"]) + float(to["scale"])) * 0.5)
+
+## Quanto a trilha inteira leva no passo natural, de onde a figura está agora.
+func _path_time(node: Control, path: Array[Vector2]) -> float:
+	var total := 0.0
+	var depth := float(node.get_meta("stage_depth", STAGE_FRONT_DEPTH))
+	var x := node.position.x + node.size.x * 0.5
+	for point in path:
+		total += _stage_walk_time(depth, x, point.y, point.x)
+		depth = point.y
+		x = point.x
+	return total
+
+## Acrescenta a uma caminhada o percurso pela lista de pontos do chão.
+func _walk_path(trip: Tween, node: Control, path: Array[Vector2], pace := 1.0) -> void:
+	for point in path:
+		_stroll_leg(trip, node, point.y, point.x, pace)
+
+## Um trecho da caminhada, com a meia-volta antes do primeiro passo. Trechos sem
+## comprimento não entram na fila: tween de duração zero só emite aviso.
+func _stroll_leg(trip: Tween, node: Control, to_depth: float, to_x: float, pace := 1.0) -> void:
+	var from_depth := float(node.get_meta("stage_depth", to_depth))
+	var from_x := node.position.x + node.size.x * 0.5
+	var time := _stage_walk_time(from_depth, from_x, to_depth, to_x) / pace
+	if time < 0.05:
+		return
+	trip.tween_callback(_set_stage_flip.bind(node, to_x < from_x))
+	trip.tween_method(_stage_step_to.bind(node, from_x, to_x, from_depth, to_depth), 0.0, 1.0, time)
 
 ## O cliente encosta no balcão: para de andar, apruma o corpo e só então a chefe
 ## se debruça para atendê-lo.
@@ -843,22 +945,71 @@ func _stage_customer_stops() -> void:
 	_show_stage_emotion(stage_seller_body, "aceno")
 	_seller_lean_in()
 
+## Quem larga o balcão não evapora nem dispara para o lado: ele é devolvido ao
+## salão como transeunte e anda até a porta, enquanto o corpo do turno fica livre
+## para a próxima visita entrar pelo mesmo canto.
 func _stage_customer_leaves() -> void:
 	if not is_instance_valid(stage_customer) or not stage_customer.visible:
 		return
 	if _customer_bob != null and _customer_bob.is_valid():
 		_customer_bob.kill()
-	_set_stage_flip(stage_customer, true)
-	var exit := Vector2(-stage_customer.size.x - 30.0, stage_customer.position.y)
-	var leaving := create_tween()
-	_customer_leave_tween = leaving
-	leaving.tween_property(stage_customer, "position", exit, 0.7).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-	leaving.parallel().tween_property(stage_customer, "modulate:a", 0.2, 0.7)
-	leaving.tween_callback(_hide_stage_customer)
+	_customer_bob = null
+	var body := int(stage_customer.get_meta("crowd", -1))
+	var depth := float(stage_customer.get_meta("stage_depth", STAGE_FRONT_DEPTH))
+	var center_x := stage_customer.position.x + stage_customer.size.x * 0.5
+	var served := _customer_served
+	stage_customer.visible = false
+	if body < 0:
+		return
+	if _stage_walkers.size() >= STAGE_MAX_WALKERS:
+		_retire_walker(_stage_walkers[0]["node"] as Control)
+	_release_to_floor(body, depth, center_x, served)
 
-func _hide_stage_customer() -> void:
-	if is_instance_valid(stage_customer):
-		stage_customer.visible = false
+## Devolve um corpo ao salão. Bem atendido, ele ainda dá uma olhada nas
+## prateleiras e acena antes de ir; saiu mal-humorado, atravessa sem parar.
+func _release_to_floor(body: int, depth: float, center_x: float, served: bool) -> void:
+	var stroller := _make_stage_poses(body, _lane_height(2))
+	stroller.pivot_offset = stroller.size / 2.0
+	stage_layer.add_child(stroller)
+	# Um degrau abaixo de quem está no balcão agora: o recém-chegado vem vindo pelo
+	# fundo e crescendo, e tem de passar na frente das costas de quem está indo.
+	stage_layer.move_child(stroller, stage_customer.get_index())
+	_place_stage_figure(stroller, depth, center_x)
+	_set_stage_flip(stroller, false)
+	var stride := create_tween().set_loops()
+	stride.tween_property(stroller, "rotation_degrees", 1.6, STAGE_STEP_SECONDS).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	stride.tween_callback(_advance_stage_frame.bind(stroller))
+	stride.tween_property(stroller, "rotation_degrees", -1.6, STAGE_STEP_SECONDS).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	stride.tween_callback(_advance_stage_frame.bind(stroller))
+	var trip := create_tween()
+	var spots: Array = STAGE_ROOM_BROWSE.get(_stage_room, [])
+	if served and not spots.is_empty():
+		var spot: Vector2 = spots.pick_random()
+		_stroll_leg(trip, stroller, spot.y, spot.x * stage_layer.size.x)
+		trip.tween_callback(stroller.set_meta.bind("walk_frames", 1))
+		trip.tween_callback(_show_stage_emotion.bind(stroller, str(STAGE_BROWSE_POSES.pick_random())))
+		trip.tween_interval(1.7)
+		trip.tween_callback(_show_stage_emotion.bind(stroller, "aceno"))
+		trip.tween_interval(1.0)
+		trip.tween_callback(stroller.set_meta.bind("walk_frames", _stage_crowd_frames(body).size()))
+	var back := _room_path()
+	back.reverse()
+	_walk_path(trip, stroller, back)
+	trip.tween_callback(_discard_stroller.bind(stroller))
+	_stage_walkers.append({"node": stroller, "crowd": body, "bob": null, "stride": stride, "trip": trip})
+
+## O transeunte que saiu pela porta sai também da lista: ficasse, a sombra
+## continuaria desenhando um corpo que já foi liberado.
+func _discard_stroller(node: Control) -> void:
+	for i in range(_stage_walkers.size()):
+		if _stage_walkers[i]["node"] == node:
+			var mover: Tween = _stage_walkers[i]["stride"]
+			if mover != null and mover.is_valid():
+				mover.kill()
+			_stage_walkers.remove_at(i)
+			break
+	if is_instance_valid(node):
+		node.queue_free()
 
 ## A chefe se debruça sobre o balcão quando alguém encosta nele: ela troca para a
 ## pose inclinada enquanto se aproxima.
@@ -934,11 +1085,19 @@ func _layout_stage_figures() -> void:
 		stage_seller_body.pivot_offset = stage_seller_body.size / 2.0
 	if is_instance_valid(stage_customer):
 		stage_customer.pivot_offset = stage_customer.size / 2.0
+		# Parado no balcão ninguém é dono da posição dele, então a janela nova o
+		# devolve ao chão novo; andando, o tween da chegada é quem manda.
+		if stage_customer.visible and (_customer_bob == null or not _customer_bob.is_valid()):
+			_place_stage_figure(
+				stage_customer,
+				float(stage_customer.get_meta("stage_depth", STAGE_FRONT_DEPTH)),
+				_room_meet().y * stage_layer.size.x
+			)
 
 ## O palco é a tela inteira: as figuras vivem sobre a arte de fundo, sem moldura e
 ## sem cópia da arte. A UI abre apenas um respiro largo, por onde o salão aparece.
-## São três camadas empilhadas: elenco atrás dos móveis, os próprios móveis
-## recortados da arte, e o cliente do turno na frente de tudo.
+## São duas camadas: o elenco inteiro, e por cima dele os móveis recortados da
+## própria arte de fundo — é isso que esconde quem passa atrás do balcão.
 func _build_stage(root: Control) -> void:
 	_stage_back_band = Control.new()
 	_stage_back_band.custom_minimum_size = Vector2(0, 186.0)
@@ -958,9 +1117,6 @@ func _build_stage(root: Control) -> void:
 	stage_occluder.material = _occluder_material()
 	add_child(stage_occluder)
 	move_child(stage_occluder, insert_at + 1)
-	stage_front_layer = _make_stage_layer("StageFront")
-	add_child(stage_front_layer)
-	move_child(stage_front_layer, insert_at + 2)
 
 	# A chefe tem um nó externo (inclinação no balcão) e um corpo interno
 	# (respiração e balanço), para as duas animações não brigarem pela mesma propriedade.
@@ -974,9 +1130,10 @@ func _build_stage(root: Control) -> void:
 	stage_seller.add_child(stage_seller_body)
 	stage_customer = _make_stage_poses(0, _lane_height(2))
 	stage_customer.visible = false
-	stage_front_layer.add_child(stage_customer)
-	stage_layer.draw.connect(_draw_stage_shadows.bind(stage_layer, false))
-	stage_front_layer.draw.connect(_draw_stage_shadows.bind(stage_front_layer, true))
+	# O cliente do turno também fica sob os móveis: entrando pelo fundo da sala ele
+	# é escondido pela estante como qualquer transeunte.
+	stage_layer.add_child(stage_customer)
+	stage_layer.draw.connect(_draw_stage_shadows.bind(stage_layer))
 	# Os respiros só têm tamanho depois do primeiro layout da UI, e a camada do
 	# palco já nasce grande o bastante para não emitir resized: quem marca o chão
 	# são os próprios respiros.
@@ -1165,18 +1322,15 @@ func _turn_stage_walker(walker: Control) -> void:
 
 ## Sem sombra de contato nenhuma figura fica de pé numa arte pintada. Os elipses
 ## acompanham o pé de cada personagem e são desenhados antes dos filhos da camada.
-func _draw_stage_shadows(layer: Control, front: bool) -> void:
+func _draw_stage_shadows(layer: Control) -> void:
 	var figures: Array[Control] = []
-	if front:
-		if is_instance_valid(stage_customer) and stage_customer.visible:
-			figures.append(stage_customer)
-	else:
-		if is_instance_valid(stage_seller) and stage_seller.visible:
-			figures.append(stage_seller_body)
-		for entry in _stage_walkers:
-			var walker := entry["node"] as Control
-			if is_instance_valid(walker):
-				figures.append(walker)
+	if is_instance_valid(stage_seller) and stage_seller.visible:
+		figures.append(stage_seller_body)
+	for entry in _stage_walkers:
+		if is_instance_valid(entry["node"]):
+			figures.append(entry["node"])
+	if is_instance_valid(stage_customer) and stage_customer.visible:
+		figures.append(stage_customer)
 	for figure in figures:
 		var parent := figure.get_parent()
 		var origin: Vector2 = parent.position if parent is Control else Vector2.ZERO
@@ -3415,6 +3569,9 @@ func _set_negotiation_dialogue(profile: Dictionary, item: Dictionary, seduction_
 		seller_speech_label.text = "CHEFE: %s\n%s: %s" % [offer, customer_name, customer_line]
 
 func _react_to_visit(mood: String, charm_save: bool = false) -> void:
+	# O humor do balcão é o que ele faz ao virar as costas: atendido com gosto,
+	# ainda passeia pela loja antes de sair.
+	_customer_served = mood != "disappointed" or charm_save
 	var text := ""
 	var color := Color(0.91, 1.0, 0.75)
 	var line := ""
