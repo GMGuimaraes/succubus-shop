@@ -209,6 +209,12 @@ const STAGE_CROWD_BODIES: Array[String] = [
 	"noble",
 	"goblin",
 	"collector",
+	"dwarf",
+	"bard",
+	"paladin",
+	"witch",
+	"druid",
+	"pirate",
 ]
 ## Quantos transeuntes o salão comporta ao mesmo tempo. O elenco cresceu para
 ## dez corpos justamente para não repetir, mas sala cheia de gente andando tapa a
@@ -218,6 +224,7 @@ const STAGE_MAX_WALKERS := 4
 ## altura do palco, então sem isto o goblin andaria do tamanho de um humano.
 const STAGE_BODY_HEIGHT := {
 	"goblin": 0.62,
+	"dwarf": 0.74,
 }
 ## Emoções que o elenco sabe representar quando a arte existir. Os nomes vêm dos
 ## momentos da partida, não de uma lista de desejos: cada um deles é chamado por
@@ -373,7 +380,10 @@ var market_toggle_button: Button
 var sensual_tween: Tween
 ## Índice usado em "portrait" nos perfis e em regulars.gd. Ordem fixa:
 ## 0 aventureiro, 1 maga/mago, 2 gótico, 3 bárbaro, 4 ladina, 5 clérigo,
-## 6 mercadora, 7 nobre, 8 goblin, 9 cobrador do submundo.
+## 6 mercadora, 7 nobre, 8 goblin, 9 cobrador do submundo, 10 ferreiro anão,
+## 11 barda, 12 paladina, 13 bruxa, 14 druida, 15 capitã pirata.
+## Esta é a mesma ordem de STAGE_CROWD_BODIES: o corpo que anda no salão é o
+## rosto que o painel mostra.
 var customer_portrait_paths: Array[String] = [
 	"res://assets/customer_adventurer.png",
 	"res://assets/customer_mage.png",
@@ -384,7 +394,13 @@ var customer_portrait_paths: Array[String] = [
 	"res://assets/customer_merchant.png",
 	"res://assets/customer_noble.png",
 	"res://assets/customer_goblin.png",
-	"res://assets/customer_collector.png"
+	"res://assets/customer_collector.png",
+	"res://assets/customer_dwarf.png",
+	"res://assets/customer_bard.png",
+	"res://assets/customer_paladin.png",
+	"res://assets/customer_witch.png",
+	"res://assets/customer_druid.png",
+	"res://assets/customer_pirate.png"
 ]
 var seller_portrait_paths: Dictionary = {"happy": "res://assets/seller_happy.png", "neutral": "res://assets/seller_neutral.png", "surprised": "res://assets/seller_surprised.png", "demonic": "res://assets/seller_demonic.png"}
 
@@ -2804,10 +2820,13 @@ func _on_customer_tick() -> void:
 				{"name": "Colecionador de Patos", "favorite": "pato_amaldicoado", "line": "“Este pato combina com os outros 47 que não me julgam.”", "faction": "mercadores", "portrait": 8, "budget": 42, "patience": 2},
 				{"name": "Coach Interdimensional", "favorite": "confianca_instantanea", "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”", "faction": "guildas", "portrait": 5, "budget": 125, "patience": 3},
 				{"name": "Cliente Misterioso", "favorite": "", "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”", "faction": "nobres", "portrait": 9, "budget": 60, "patience": 1},
-				{"name": "Bardo do Duplo Sentido", "favorite": "confianca_instantanea", "line": "“Se essa poção for tão quente quanto seu sorriso, eu compro duas.”", "faction": "aventureiros", "portrait": 0, "budget": 110, "patience": 2},
-				{"name": "Paladina do Caos", "favorite": "adaga_charme", "line": "“Prometi ser virtuosa hoje. Mas posso abrir uma exceção para você.”", "faction": "nobres", "portrait": 0, "budget": 145, "patience": 2},
+				{"name": "Bardo do Duplo Sentido", "favorite": "confianca_instantanea", "line": "“Se essa poção for tão quente quanto seu sorriso, eu compro duas.”", "faction": "aventureiros", "portrait": 11, "budget": 110, "patience": 2},
+				{"name": "Paladina do Caos", "favorite": "adaga_charme", "line": "“Prometi ser virtuosa hoje. Mas posso abrir uma exceção para você.”", "faction": "nobres", "portrait": 12, "budget": 145, "patience": 2},
 				{"name": "Ladrão de Relíquias Sensíveis", "favorite": "pergaminho_procrastinacao", "line": "“Não estou roubando seu coração. Só testando se ele cabe no meu inventário.”", "faction": "submundo", "portrait": 4, "budget": 135, "patience": 1},
-				{"name": "Bruxa em Lua de Mel", "favorite": "incenso_teleporte", "line": "“Meu familiar disse que você é perigosa. Por isso mesmo fiquei.”", "faction": "guildas", "portrait": 1, "budget": 180, "patience": 3}
+				{"name": "Bruxa em Lua de Mel", "favorite": "incenso_teleporte", "line": "“Meu familiar disse que você é perigosa. Por isso mesmo fiquei.”", "faction": "guildas", "portrait": 13, "budget": 180, "patience": 3},
+				{"name": "Ferreiro do Estoque Infinito", "favorite": "martelo_faisca", "line": "“Vim comprar um martelo. Saí com três e uma opinião sobre os seus.”", "faction": "guildas", "portrait": 10, "budget": 165, "patience": 3},
+				{"name": "Druida em Greve", "favorite": "elixir_memoria", "line": "“A floresta me manda dizer que está decepcionada com vocês dois.”", "faction": "aventureiros", "portrait": 14, "budget": 85, "patience": 2},
+				{"name": "Capitã do Contrabando Afetivo", "favorite": "caixa_misteriosa", "line": "“Tudo que eu vendo é de procedência duvidosa e coração sincero.”", "faction": "mercadores", "portrait": 15, "budget": 210, "patience": 1, "thief": true}
 			]
 		var profile: Dictionary = profiles[randi() % profiles.size()]
 		if randi() % 100 < 35:
