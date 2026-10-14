@@ -140,6 +140,20 @@ var current_negotiation_dialogue: String = ""
 var customer_portrait: TextureRect
 var customer_emotion_label: Label
 var background_layer: TextureRect
+## Faixa de cenário viva: personagens atravessam a loja e a súcubus se debruça
+## sobre o balcão quando alguém chega.
+var stage_layer: Control
+var stage_scene: TextureRect
+var stage_seller: Control
+var stage_seller_body: TextureRect
+var stage_customer: TextureRect
+var _stage_walkers: Array[Dictionary] = []
+var _stage_walker_timer: float = 2.0
+var _stage_figure_shader: Shader
+var _seller_home: Vector2 = Vector2.ZERO
+var _seller_lean_tween: Tween
+var _customer_bob: Tween
+var _customer_leave_tween: Tween
 var sector_title_label: Label
 var sector_hint_label: Label
 var reception_button: Button
@@ -257,6 +271,210 @@ func _start_ambient_animations() -> void:
 		var glow := create_tween().set_loops()
 		glow.tween_property(seller_portrait, "modulate", Color(1.0, 0.91, 1.0, 1.0), 2.2).set_trans(Tween.TRANS_SINE)
 		glow.tween_property(seller_portrait, "modulate", Color.WHITE, 2.2).set_trans(Tween.TRANS_SINE)
+	if is_instance_valid(stage_seller):
+		stage_seller.pivot_offset = stage_seller.size / 2.0
+		var sway := create_tween().set_loops()
+		sway.tween_property(stage_seller_body, "rotation_degrees", -1.3, 2.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		sway.tween_property(stage_seller_body, "rotation_degrees", 1.0, 2.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		sway.tween_property(stage_seller_body, "rotation_degrees", 0.0, 1.8).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		var stage_breath := create_tween().set_loops()
+		stage_breath.tween_property(stage_seller_body, "scale", Vector2(1.0, 1.022), 1.9).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		stage_breath.tween_property(stage_seller_body, "scale", Vector2.ONE, 1.9).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+func _process(delta: float) -> void:
+	if not is_instance_valid(stage_layer) or stage_layer.size.x <= 0:
+		return
+	_stage_walker_timer -= delta
+	if _stage_walker_timer <= 0.0:
+		_stage_walker_timer = randf_range(2.5, 6.5)
+		_spawn_stage_walker()
+
+## Transeunte anônimo atravessa a loja na faixa de cenário. O elenco usa os
+## mesmos retratos dos clientes, com opacidade de fundo para não brigar com a chefe.
+func _spawn_stage_walker() -> void:
+	if _stage_walkers.size() >= 3:
+		return
+	var walker := _make_stage_figure(customer_portrait_paths[randi() % customer_portrait_paths.size()], Vector2(72, 92))
+	walker.modulate = Color(1.0, 0.90, 0.97, 0.55)
+	walker.pivot_offset = walker.size / 2.0
+	var to_the_right := randi() % 2 == 0
+	var floor_y: float = stage_layer.size.y - 34.0 - walker.size.y
+	walker.position = Vector2(-90.0, floor_y) if to_the_right else Vector2(stage_layer.size.x + 20.0, floor_y)
+	walker.flip_h = not to_the_right
+	stage_layer.add_child(walker)
+	var exit_x := stage_layer.size.x + 90.0 if to_the_right else -110.0
+	var trip := create_tween()
+	trip.tween_property(walker, "position:x", exit_x, randf_range(7.0, 12.0)).set_trans(Tween.TRANS_LINEAR)
+	trip.tween_callback(_retire_walker.bind(walker))
+	var bob := create_tween().set_loops()
+	bob.tween_property(walker, "rotation_degrees", 2.4, 0.3).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	bob.tween_property(walker, "rotation_degrees", -2.4, 0.3).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_stage_walkers.append({"node": walker, "bob": bob})
+
+func _retire_walker(walker: TextureRect) -> void:
+	for i in range(_stage_walkers.size()):
+		if _stage_walkers[i]["node"] == walker:
+			var entry: Dictionary = _stage_walkers[i]
+			_stage_walkers.remove_at(i)
+			var bob: Tween = entry["bob"]
+			if bob.is_valid():
+				bob.kill()
+			break
+	if not is_instance_valid(walker):
+		return
+	var fade := create_tween()
+	fade.tween_property(walker, "modulate:a", 0.0, 0.5)
+	fade.tween_callback(walker.queue_free)
+
+## O cliente do turno entra pela esquerda, para diante do balcão e sai quando o
+## próximo tick o substitui.
+func _stage_customer_arrives(portrait_index: int) -> void:
+	if not is_instance_valid(stage_customer) or stage_layer.size.x <= 0:
+		return
+	if portrait_index >= 0 and portrait_index < customer_portrait_paths.size():
+		stage_customer.texture = load(customer_portrait_paths[portrait_index])
+	var floor_y: float = stage_layer.size.y - 34.0 - stage_customer.size.y
+	if _customer_leave_tween != null and _customer_leave_tween.is_valid():
+		_customer_leave_tween.kill()
+	stage_customer.flip_h = false
+	stage_customer.modulate = Color(1.0, 0.95, 0.98, 1.0)
+	stage_customer.rotation_degrees = 0.0
+	stage_customer.position = Vector2(-120.0, floor_y)
+	stage_customer.visible = true
+	var spot := Vector2(maxf(40.0, stage_layer.size.x - 320.0), floor_y)
+	var walk := create_tween()
+	walk.tween_property(stage_customer, "position", spot, 0.9).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if _customer_bob != null and _customer_bob.is_valid():
+		_customer_bob.kill()
+	_customer_bob = create_tween().set_loops(4)
+	_customer_bob.tween_property(stage_customer, "rotation_degrees", 2.2, 0.16).set_trans(Tween.TRANS_SINE)
+	_customer_bob.tween_property(stage_customer, "rotation_degrees", -2.2, 0.16).set_trans(Tween.TRANS_SINE)
+	_seller_lean_in()
+
+func _stage_customer_leaves() -> void:
+	if not is_instance_valid(stage_customer) or not stage_customer.visible:
+		return
+	if _customer_bob != null and _customer_bob.is_valid():
+		_customer_bob.kill()
+	stage_customer.flip_h = true
+	var exit := Vector2(-130.0, stage_customer.position.y)
+	var leaving := create_tween()
+	_customer_leave_tween = leaving
+	leaving.tween_property(stage_customer, "position", exit, 0.7).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	leaving.parallel().tween_property(stage_customer, "modulate:a", 0.2, 0.7)
+	leaving.tween_callback(_hide_stage_customer)
+
+func _hide_stage_customer() -> void:
+	if is_instance_valid(stage_customer):
+		stage_customer.visible = false
+
+## A chefe se debruça sobre o balcão quando alguém encosta nele.
+func _seller_lean_in() -> void:
+	if not is_instance_valid(stage_seller):
+		return
+	if _seller_lean_tween != null and _seller_lean_tween.is_valid():
+		_seller_lean_tween.kill()
+	var home := _seller_home
+	_seller_lean_tween = create_tween()
+	_seller_lean_tween.tween_property(stage_seller, "position", home + Vector2(-18.0, 3.0), 0.3).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_seller_lean_tween.parallel().tween_property(stage_seller, "rotation_degrees", -6.0, 0.3).set_trans(Tween.TRANS_SINE)
+	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", Vector2(1.07, 1.07), 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_seller_lean_tween.tween_interval(1.15)
+	_seller_lean_tween.tween_property(stage_seller, "position", home, 0.65).set_trans(Tween.TRANS_SINE)
+	_seller_lean_tween.parallel().tween_property(stage_seller, "rotation_degrees", 0.0, 0.65).set_trans(Tween.TRANS_SINE)
+	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", Vector2.ONE, 0.65).set_trans(Tween.TRANS_SINE)
+
+func _layout_stage_figures() -> void:
+	if not is_instance_valid(stage_layer) or stage_layer.size.x <= 0:
+		return
+	var floor_y: float = stage_layer.size.y - 34.0
+	_seller_home = Vector2(stage_layer.size.x - 176.0, floor_y - stage_seller.size.y)
+	if is_instance_valid(stage_seller):
+		stage_seller.position = _seller_home
+		stage_seller.pivot_offset = stage_seller.size / 2.0
+		stage_seller_body.pivot_offset = stage_seller_body.size / 2.0
+	if is_instance_valid(stage_customer):
+		stage_customer.pivot_offset = stage_customer.size / 2.0
+
+## Faixa de cenário viva: o balcão, a chefe e os transeuntes andam pela loja em
+## vez de tudo ficar preso nos cards dos painéis.
+func _build_stage(parent: Control) -> void:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(0, 176)
+	panel.clip_contents = true
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	parent.add_child(panel)
+
+	stage_layer = Control.new()
+	stage_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage_layer.clip_contents = true
+	panel.add_child(stage_layer)
+
+	stage_scene = TextureRect.new()
+	stage_scene.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	stage_scene.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	stage_scene.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	stage_scene.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage_scene.texture = load("res://assets/shop_scene.png") if ResourceLoader.exists("res://assets/shop_scene.png") else background_layer.texture
+	# A faixa usa a loja vazia de propósito: as figuras em primeiro plano são os
+	# únicos personagens em cena, sem competir com a arte grande do painel.
+	stage_scene.modulate = Color(0.86, 0.8, 0.9, 1.0)
+	stage_layer.add_child(stage_scene)
+
+	var counter := ColorRect.new()
+	counter.color = Color(0.08, 0.025, 0.09, 0.9)
+	counter.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	counter.offset_top = -34.0
+	counter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage_layer.add_child(counter)
+
+	# A chefe tem um nó externo (inclinação no balcão) e um corpo interno
+	# (respiração e balanço), para as duas animações não brigarem pela mesma propriedade.
+	stage_seller = Control.new()
+	stage_seller.size = Vector2(118, 138)
+	stage_seller.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage_layer.add_child(stage_seller)
+	stage_seller_body = _make_stage_figure("res://assets/seller_neutral.png", Vector2(118, 138))
+	stage_seller.add_child(stage_seller_body)
+	stage_customer = _make_stage_figure(customer_portrait_paths[0], Vector2(96, 122))
+	stage_customer.visible = false
+	stage_layer.add_child(stage_customer)
+	_layout_stage_figures()
+	stage_layer.resized.connect(_layout_stage_figures)
+	get_viewport().size_changed.connect(_layout_stage_figures)
+
+## Os retratos são artes de meio corpo com fundo próprio. Numa faixa de cenário
+## eles leriam como cartas flutuando, então um shader recorta cada figura numa
+## vinheta oval com borda suave e aplica o tom quente da loja por cima.
+func _stage_material() -> ShaderMaterial:
+	if _stage_figure_shader == null:
+		_stage_figure_shader = Shader.new()
+		_stage_figure_shader.code = """
+shader_type canvas_item;
+void fragment() {
+	float d = length((UV - vec2(0.5)) * vec2(1.04, 0.92));
+	float mask = smoothstep(0.55, 0.33, d);
+	vec3 rim = mix(vec3(1.0), vec3(0.8, 0.72, 0.82), smoothstep(0.3, 0.54, d));
+	vec4 source = texture(TEXTURE, UV);
+	COLOR = vec4(source.rgb * COLOR.rgb * rim * vec3(1.02, 0.95, 1.0), source.a * COLOR.a * mask);
+}
+"""
+	var material := ShaderMaterial.new()
+	material.shader = _stage_figure_shader
+	return material
+
+func _make_stage_figure(path: String, figure_size: Vector2) -> TextureRect:
+	var figure := TextureRect.new()
+	figure.size = figure_size
+	figure.custom_minimum_size = figure_size
+	figure.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	figure.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	figure.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	figure.material = _stage_material()
+	if ResourceLoader.exists(path):
+		figure.texture = load(path)
+	return figure
+
 
 func _build_ui() -> void:
 	var bg := TextureRect.new()
@@ -439,6 +657,8 @@ func _build_ui() -> void:
 
 	var separator := HSeparator.new()
 	root.add_child(separator)
+
+	_build_stage(root)
 
 	var body := BoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1125,6 +1345,7 @@ func _apply_sector_visibility() -> void:
 func _play_sensual_reception_moment() -> void:
 	if not adult_content_enabled or not is_instance_valid(seller_portrait):
 		return
+	_seller_lean_in()
 	if sensual_tween != null and sensual_tween.is_valid():
 		sensual_tween.kill()
 	seller_portrait.pivot_offset = seller_portrait.size / 2.0
@@ -1582,6 +1803,7 @@ func _pick_regular() -> Dictionary:
 
 func _on_customer_tick() -> void:
 	ticks += 1
+	_stage_customer_leaves()
 	_advance_craft_jobs(3.0)
 	Sanctum.advance(active_buffs, 3.0)
 	_set_seller_mood("demonic" if demonic_form_active else "neutral")
@@ -1927,6 +2149,8 @@ func _animate_customer_arrival(profile: Dictionary) -> void:
 	tween.tween_property(customer_portrait, "position", Vector2.ZERO, 0.36).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_property(customer_portrait, "modulate:a", 1.0, 0.24).from(0.0)
 	tween.tween_property(customer_portrait, "scale", Vector2.ONE, 0.28).from(Vector2(0.78, 0.78))
+	# Mesmo rosto, mas em escala de cenário: ele entra andando e para no balcão.
+	_stage_customer_arrives(portrait_index)
 
 func _reputation_title() -> String:
 	if reputation >= 60:
@@ -2064,6 +2288,7 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 		_play_seduction_peak_pose()
 
 func _play_customer_reaction(mood: String) -> void:
+	_stage_customer_react(mood)
 	if not is_instance_valid(customer_portrait):
 		return
 	customer_portrait.pivot_offset = customer_portrait.size / 2.0
@@ -2099,6 +2324,23 @@ func _set_seller_mood(mood: String) -> void:
 		var mood_path := str(seller_portrait_paths[mood])
 		if ResourceLoader.exists(mood_path):
 			seller_portrait.texture = load(mood_path)
+			if is_instance_valid(stage_seller_body):
+				stage_seller_body.texture = seller_portrait.texture
+
+## O cliente do cenário também sente a reação do balcão, em tintura leve.
+func _stage_customer_react(mood: String) -> void:
+	if not is_instance_valid(stage_customer) or not stage_customer.visible:
+		return
+	var tint := Color(1.0, 0.86, 0.94, 1.0)
+	if mood == "disappointed":
+		tint = Color(0.62, 0.66, 0.80, 1.0)
+	elif mood == "hurry":
+		tint = Color(1.0, 0.78, 0.60, 1.0)
+	elif mood == "delighted":
+		tint = Color(1.0, 0.72, 0.86, 1.0)
+	var react := create_tween()
+	react.tween_property(stage_customer, "modulate", tint, 0.18)
+	react.tween_property(stage_customer, "modulate", Color.WHITE, 0.5)
 
 func _update_demonic_form() -> void:
 	if adult_content_enabled and fury >= 4 and not demonic_form_active:
