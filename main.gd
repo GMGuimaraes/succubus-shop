@@ -110,6 +110,11 @@ var total_ingredients_bought: int = 0
 ## Peças Refinado ou melhor já fabricadas (mantém a conquista "Mão de Midas").
 var premium_crafted: int = 0
 var best_quality_crafted: int = -1
+## Peças Lendárias: as que saíram da bigorna e as que foram entregues no balcão.
+var legendary_crafted: int = 0
+var legendary_sold: int = 0
+## Encomendas exclusivas do topo da forja já fechadas.
+var exclusive_finished: int = 0
 var rituals_performed: int = 0
 ## Viagens em andamento: [{ id, remaining, total }]
 var expeditions: Array[Dictionary] = []
@@ -176,6 +181,7 @@ const COMMISSION_STAGE_TEXTS := {
 	"gold": "Faturar %d de ouro",
 	"craft": "Fabricar %d peças",
 	"rare": "Presenciar %d eventos raros",
+	"legendary": "Entregar %d peça(s) Lendária(s) no balcão",
 }
 
 ## Encomendas de longo prazo: o pedido de um patrono que se cumpre em três etapas
@@ -183,6 +189,8 @@ const COMMISSION_STAGE_TEXTS := {
 ## tipos pedidos são exatamente os que a loja já mede sozinha, então não há
 ## mecânica nova para aprender — muda só o fôlego que a casa passa a exigir. Cada
 ## facção tem a sua, e fechar uma delas é o que empurra o prestígio daquela gente.
+## As três marcadas com "exclusive" só sobem ao balcão quando a forja já está no
+## topo: elas pedem peça Lendária entregue, e pagam como quem contrata uma lenda.
 const COMMISSIONS: Array[Dictionary] = [
 	{
 		"faction": "aventureiros",
@@ -239,6 +247,42 @@ const COMMISSIONS: Array[Dictionary] = [
 		],
 		"bonus_gold": 400, "bonus_rep": 10, "bonus_xp": 230, "bonus_standing": 8,
 	},
+	{
+		"faction": "guildas",
+		"name": "Obra do Grêmio-Mestre",
+		"exclusive": true,
+		"days": 9,
+		"stages": [
+			{"type": "craft", "target": 14, "gold": 200, "xp": 120},
+			{"type": "legendary", "target": 1, "gold": 340, "xp": 180},
+			{"type": "gold", "target": 900, "gold": 260, "xp": 150},
+		],
+		"bonus_gold": 540, "bonus_rep": 12, "bonus_xp": 300, "bonus_standing": 9,
+	},
+	{
+		"faction": "nobres",
+		"name": "Retábulo de Honra da Rainha",
+		"exclusive": true,
+		"days": 10,
+		"stages": [
+			{"type": "legendary", "target": 1, "gold": 360, "xp": 190},
+			{"type": "customers", "target": 20, "gold": 220, "xp": 130},
+			{"type": "gold", "target": 1200, "gold": 320, "xp": 180},
+		],
+		"bonus_gold": 660, "bonus_rep": 14, "bonus_xp": 340, "bonus_standing": 11,
+	},
+	{
+		"faction": "submundo",
+		"name": "O Encomendador Sem Rosto",
+		"exclusive": true,
+		"days": 11,
+		"stages": [
+			{"type": "rare", "target": 4, "gold": 260, "xp": 150},
+			{"type": "legendary", "target": 2, "gold": 480, "xp": 240},
+			{"type": "gold", "target": 1500, "gold": 380, "xp": 210},
+		],
+		"bonus_gold": 820, "bonus_rep": 16, "bonus_xp": 400, "bonus_standing": 13,
+	},
 ]
 
 var gold_label: Label
@@ -256,6 +300,7 @@ var quest_button: Button
 var commission_label: Label
 var commission_button: Button
 var forge_box: VBoxContainer
+var forge_mastery_label: Label
 var reception_box: VBoxContainer
 var library_box: VBoxContainer
 var sanctum_box: VBoxContainer
@@ -1690,6 +1735,14 @@ func _build_ui() -> void:
 	sector_action_button.pressed.connect(_activate_sector_feature)
 	scene_action_box.add_child(sector_action_button)
 
+	forge_box.add_child(_make_section_title("TOPO DA FORJA", Color(1.0, 0.72, 0.42)))
+	forge_mastery_label = Label.new()
+	forge_mastery_label.custom_minimum_size = Vector2(820, 40)
+	forge_mastery_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	forge_mastery_label.add_theme_font_size_override("font_size", 13)
+	forge_mastery_label.add_theme_color_override("font_color", Color(1.0, 0.80, 0.55))
+	forge_box.add_child(forge_mastery_label)
+
 	for i in range(products.size()):
 		var card := PanelContainer.new()
 		var style := StyleBoxFlat.new()
@@ -2666,13 +2719,15 @@ func _advance_craft_jobs(game_seconds: float) -> void:
 		_add_xp(5)
 		_progress_contracts("craft", 1)
 		# Alquimia, biblioteca e bênçãos do santuário empurram a rolagem de qualidade.
-		var luck := alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + int(job.get("luck", 0)) + _prestige_luck()
+		var luck := _forge_luck() + int(job.get("luck", 0))
 		if int(job.get("luck", 0)) > 0:
 			catalyst_crafted += 1
-		var tier := Quality.roll(luck)
+		var tier := Quality.roll(luck, _forge_mastery())
 		_add_piece(index, tier)
 		Economy.bump(economy_state, "product", str(item["id"]), -0.10)
 		var quality_name := str(Quality.tier(tier)["name"])
+		if tier == Quality.LEGENDARY:
+			legendary_crafted += 1
 		if tier >= 3:
 			premium_crafted += 1
 			best_quality_crafted = maxi(best_quality_crafted, tier)
@@ -2710,6 +2765,31 @@ func _expedition_slots() -> int:
 
 func _expedition_luck() -> int:
 	return alchemy_rank + logistics_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck()
+
+## Sorte da bigorna sem catalisador na mão: a mesma que rola a peça, menos o pó da
+## raridade do momento. Serve para o painel prometer uma chance honesta.
+func _forge_luck() -> int:
+	return alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + _prestige_luck()
+
+## Mestria da forja: os degraus que a casa já subiu nas duas trilhas que mexem na
+## bigorna, mais a memória das vidas anteriores. É ela que destrava o Lendário —
+## sorte não basta, porque sorte só inclina a curva dos níveis que já existem.
+func _forge_mastery() -> int:
+	return alchemy_rank + library_upgrade_level + prestige_runs
+
+func _forge_mastery_text() -> String:
+	var mastery := _forge_mastery()
+	var chance := Quality.chance(_forge_luck(), mastery, Quality.LEGENDARY)
+	var lines: Array[String] = []
+	if mastery < Quality.MASTERY_GATE:
+		lines.append("Topo da forja: %d/%d degraus. A peça Lendária ainda está selada — Alquimia + Biblioteca + vidas já vividas precisam somar %d." % [
+			mastery, Quality.MASTERY_GATE, Quality.MASTERY_GATE])
+	else:
+		lines.append("Topo da forja: %d/%d degraus. Lendário no rolo de hoje: %d%% das peças, uma a cada %d." % [
+			mastery, Quality.MASTERY_GATE, int(round(chance * 100.0)), maxi(1, int(round(1.0 / chance))) if chance > 0.0 else 0])
+	lines.append("Lendárias na bigorna: %d • entregues no balcão: %d • exclusivas fechadas: %d." % [
+		legendary_crafted, legendary_sold, exclusive_finished])
+	return "\n".join(lines)
 
 func _expedition_on_route(id: String) -> Dictionary:
 	for trip in expeditions:
@@ -2835,9 +2915,17 @@ func _take_catalyst() -> Dictionary:
 ## Barrinha de qualidade do produto, criada sob demanda para saves antigos que
 ## nunca tiveram `quality_stock` e para peças ganhas por eventos.
 func _quality_for(product_id: String) -> Array[int]:
-	if not quality_stock.has(product_id):
-		quality_stock[product_id] = Quality.empty_stock()
-	return quality_stock[product_id] as Array[int]
+	var stored = quality_stock.get(product_id, null)
+	if stored is Array[int] and (stored as Array[int]).size() == Quality.size():
+		return stored
+	# Save antigo: barra de cinco casas, lista solta ou produto sem registro entram
+	# aqui rearranjados no espectro de hoje, sem órfão e sem estouro de índice.
+	var counts := Quality.empty_stock()
+	if stored is Array:
+		for i in range(mini(stored.size(), counts.size())):
+			counts[i] = maxi(0, int(stored[i]))
+	quality_stock[product_id] = counts
+	return counts
 
 ## Peças que já existiam em saves antigos entram no registro como "Honesto";
 ## nenhum estoque fica órfão do espectro de qualidade.
@@ -2890,6 +2978,15 @@ func _take_piece(index: int, mode: int) -> int:
 	var stock := _quality_for(str(item["id"]))
 	var tier := Quality.take(stock, mode)
 	return 1 if tier < 0 else tier
+
+## Peça que sai pela porta é peça entregue: só ela conta para a etapa Lendária da
+## encomenda exclusiva. O ladrão que leva a melhor do estoque não conta — a
+## rainha quer ver a nota fiscal.
+func _register_sold_piece(tier: int) -> void:
+	if tier != Quality.LEGENDARY:
+		return
+	legendary_sold += 1
+	_progress_commission("legendary", 1)
 
 ## Etiqueta da peça: preço base do catálogo multiplicado pelo nível de qualidade.
 func _piece_price(item: Dictionary, tier: int) -> float:
@@ -2980,6 +3077,7 @@ func _sell_from_counter(index: int) -> void:
 		return
 	var tier := _take_piece(index, Quality.WORST)
 	var payout := maxi(1, int(round(_piece_price(item, tier) * _market_product_factor(item) * _prestige_price_factor() * 0.7)))
+	_register_sold_piece(tier)
 	Economy.bump(economy_state, "product", str(item["id"]), 0.12)
 	gold += payout
 	daily_gold_earned += payout
@@ -3346,6 +3444,7 @@ func _on_customer_tick() -> void:
 		var item: Dictionary = products[chosen_index]
 		var piece_tier := _take_piece(chosen_index, Quality.WORST)
 		var quality_name := str(Quality.tier(piece_tier)["name"])
+		_register_sold_piece(piece_tier)
 		if piece_tier == 0:
 			# Saiu torto da forja e o cliente viu: ninguém esconde a careta.
 			_show_stage_emotion(stage_customer, "nojo")
@@ -4061,6 +4160,8 @@ func _refresh_ui() -> void:
 		commission_button.text = "Entregar etapa %d da encomenda" % (commission_stage + 1) if stage_ready else "Etapa %d em andamento" % (commission_stage + 1)
 	if is_instance_valid(achievement_label):
 		achievement_label.text = _get_achievement_summary()
+	if is_instance_valid(forge_mastery_label):
+		forge_mastery_label.text = _forge_mastery_text()
 	for i in range(products.size()):
 		var item: Dictionary = products[i]
 		var unlocked := _is_product_unlocked(item)
@@ -4363,6 +4464,9 @@ func _save_game() -> void:
 	config.set_value("game", "total_crafted", total_crafted)
 	config.set_value("game", "total_ingredients_bought", total_ingredients_bought)
 	config.set_value("game", "premium_crafted", premium_crafted)
+	config.set_value("game", "legendary_crafted", legendary_crafted)
+	config.set_value("game", "legendary_sold", legendary_sold)
+	config.set_value("game", "exclusive_finished", exclusive_finished)
 	config.set_value("game", "happy_customers", happy_customers)
 	config.set_value("game", "disappointed_customers", disappointed_customers)
 	config.set_value("game", "seduction_attempts", seduction_attempts)
@@ -4536,6 +4640,9 @@ func _load_game() -> void:
 				completed_sets.append(str(saved_set))
 	total_ingredients_bought = int(config.get_value("game", "total_ingredients_bought", total_ingredients_bought))
 	premium_crafted = int(config.get_value("game", "premium_crafted", premium_crafted))
+	legendary_crafted = int(config.get_value("game", "legendary_crafted", legendary_crafted))
+	legendary_sold = int(config.get_value("game", "legendary_sold", legendary_sold))
+	exclusive_finished = int(config.get_value("game", "exclusive_finished", exclusive_finished))
 	happy_customers = int(config.get_value("game", "happy_customers", happy_customers))
 	disappointed_customers = int(config.get_value("game", "disappointed_customers", disappointed_customers))
 	seduction_attempts = int(config.get_value("game", "seduction_attempts", seduction_attempts))
@@ -4785,7 +4892,8 @@ func _commission_summary() -> String:
 	var commission := _get_commission()
 	var stage := _commission_stage()
 	var target: int = int(stage["target"])
-	return "ENCOMENDA DE LONGO PRAZO\n%s (%s)\nEtapa %d/%d — %s (%d/%d)\nRestam %d dia(s) de prazo." % [
+	return "ENCOMENDA DE LONGO PRAZO%s\n%s (%s)\nEtapa %d/%d — %s (%d/%d)\nRestam %d dia(s) de prazo." % [
+		" • EXCLUSIVA DO TOPO DA FORJA" if bool(commission.get("exclusive", false)) else "",
 		commission["name"],
 		Factions.find(str(commission["faction"])).get("short", commission["faction"]),
 		commission_stage + 1,
@@ -4821,6 +4929,9 @@ func _deliver_commission_stage() -> void:
 
 func _finish_commission(commission: Dictionary) -> void:
 	commissions_finished += 1
+	var exclusive := bool(commission.get("exclusive", false))
+	if exclusive:
+		exclusive_finished += 1
 	gold += int(commission["bonus_gold"])
 	reputation += int(commission["bonus_rep"])
 	_add_xp(int(commission["bonus_xp"]))
@@ -4829,7 +4940,8 @@ func _finish_commission(commission: Dictionary) -> void:
 	_clear_commission()
 	commission_next_offer = shop_day + 2
 	_show_stage_emotion(stage_seller_body, "aplausao")
-	last_event = "ENCOMENDA FECHADA: “%s” entregue por inteiro. +%d ouro, +%d XP, +%d reputação e a %s agora confia mais na casa." % [
+	last_event = "ENCOMENDA %sFECHADA: “%s” entregue por inteiro. +%d ouro, +%d XP, +%d reputação e a %s agora confia mais na casa." % [
+		"EXCLUSIVA " if exclusive else "",
 		commission["name"], int(commission["bonus_gold"]), int(commission["bonus_xp"]),
 		int(commission["bonus_rep"]), Factions.find(faction_id).get("short", faction_id),
 	]
@@ -4855,8 +4967,12 @@ func _advance_commission() -> void:
 		]
 		return
 	if commission_index < 0 and shop_day >= commission_next_offer:
+		var mastery := _forge_mastery()
 		var pool: Array[int] = []
 		for i in range(COMMISSIONS.size()):
+			# O pedido exclusivo não aparece para quem não tem bigorna que o cumpra.
+			if bool(COMMISSIONS[i].get("exclusive", false)) and not Quality.open(mastery):
+				continue
 			pool.append(i)
 		if pool.is_empty():
 			return
@@ -4886,6 +5002,9 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "ingredient_buyer", "name": "Fornecedor VIP (10 ingredientes comprados)", "condition": total_ingredients_bought >= 10, "gold": 25, "rep": 1},
 		{"id": "premium_artisan", "name": "Mão de Midas (3 peças de alto nível)", "condition": premium_crafted >= 3, "gold": 45, "rep": 2},
 		{"id": "myth_piece", "name": "Peça Mítica (uma lenda saiu da bigorna)", "condition": best_quality_crafted >= 4, "gold": 150, "rep": 8, "pose": "relic"},
+		{"id": "legendary_piece", "name": "Lendário (o topo do espectro tem sua assinatura)", "condition": best_quality_crafted >= Quality.LEGENDARY, "gold": 300, "rep": 12, "pose": "relic"},
+		{"id": "legendary_three", "name": "Mestra da Bigorna (3 peças Lendárias)", "condition": legendary_crafted >= 3, "gold": 420, "rep": 15},
+		{"id": "exclusive_patron", "name": "Casa das Obras Raras (encomenda exclusiva fechada)", "condition": exclusive_finished >= 1, "gold": 350, "rep": 14, "pose": "book"},
 		{"id": "market_barometer", "name": "Termômetro do Balcão (produto no pico de procura)", "condition": _max_product_heat() >= 0.8, "gold": 55, "rep": 3},
 		{"id": "ritual_apprentice", "name": "Aprendiz de Ritos (3 rituais)", "condition": rituals_performed >= 3, "gold": 40, "rep": 2},
 		{"id": "ritual_devotee", "name": "Fiel do Santuário (10 rituais)", "condition": rituals_performed >= 10, "gold": 100, "rep": 5, "pose": "book"},
@@ -4997,6 +5116,7 @@ func business_score() -> int:
 		+ player_level * 25 + premium_crafted * 15 + expeditions_done * 20 + rituals_performed * 10 \
 		+ campaign_step * 60 + private_moments_unlocked * 8 + _romance_steps_paid() * 20 \
 		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0) \
+		+ legendary_crafted * 60 + exclusive_finished * 120 \
 		+ prestige_runs * 150 + _perk_levels_total() * 20 + prestige_goals_paid * 40
 
 func _publish_score() -> void:
@@ -5499,6 +5619,9 @@ func _reset_run() -> void:
 	total_crafted = 0
 	premium_crafted = 0
 	best_quality_crafted = -1
+	legendary_crafted = 0
+	legendary_sold = 0
+	exclusive_finished = 0
 	rituals_performed = 0
 	expeditions.clear()
 	expedition_log.clear()
