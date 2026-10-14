@@ -39,6 +39,14 @@ var daily_quest_progress: int = 0
 var daily_quest_claimed: bool = false
 var daily_gold_earned: int = 0
 var daily_crafts: int = 0
+## Encomenda de longo prazo: o pedido de um patrono que se cumpre em etapas
+## atravessando dias. Índice -1 é a prateleira livre: nada sobre o balcão.
+var commission_index: int = -1
+var commission_stage: int = 0
+var commission_progress: int = 0
+var commission_deadline: int = 0
+var commission_next_offer: int = 3
+var commissions_finished: int = 0
 var alchemy_rank: int = 0
 var trade_rank: int = 0
 var charm_rank: int = 0
@@ -116,6 +124,86 @@ var products: Array = [
 		}
 	]
 
+## Os quatro contratos do dia, um por virada. A tabela é constante justamente
+## para que a virada não precise saber de cabeça quantos contratos existem.
+const DAILY_QUESTS: Array[Dictionary] = [
+	{"name": "Atenda 5 clientes hoje", "type": "customers", "target": 5, "gold": 45, "xp": 25},
+	{"name": "Fature 100 de ouro hoje", "type": "gold", "target": 100, "gold": 55, "xp": 30},
+	{"name": "Fabrique 3 produtos hoje", "type": "craft", "target": 3, "gold": 40, "xp": 35},
+	{"name": "Encontre 1 evento raro hoje", "type": "rare", "target": 1, "gold": 65, "xp": 40},
+]
+
+## O que cada tipo de etapa pede, escrito para caber no painel do balcão.
+const COMMISSION_STAGE_TEXTS := {
+	"customers": "Atender %d clientes",
+	"gold": "Faturar %d de ouro",
+	"craft": "Fabricar %d peças",
+	"rare": "Presenciar %d eventos raros",
+}
+
+## Encomendas de longo prazo: o pedido de um patrono que se cumpre em três etapas
+## atravessando dias, enquanto o contrato do dia nasce e morre na mesma virada. Os
+## tipos pedidos são exatamente os que a loja já mede sozinha, então não há
+## mecânica nova para aprender — muda só o fôlego que a casa passa a exigir. Cada
+## facção tem a sua, e fechar uma delas é o que empurra o prestígio daquela gente.
+const COMMISSIONS: Array[Dictionary] = [
+	{
+		"faction": "aventureiros",
+		"name": "Mochila cheia da Tropa",
+		"days": 5,
+		"stages": [
+			{"type": "craft", "target": 5, "gold": 55, "xp": 40},
+			{"type": "customers", "target": 8, "gold": 70, "xp": 50},
+			{"type": "gold", "target": 260, "gold": 95, "xp": 70},
+		],
+		"bonus_gold": 170, "bonus_rep": 5, "bonus_xp": 120, "bonus_standing": 4,
+	},
+	{
+		"faction": "mercadores",
+		"name": "Vitrine do Balcão Novo",
+		"days": 6,
+		"stages": [
+			{"type": "gold", "target": 220, "gold": 60, "xp": 45},
+			{"type": "customers", "target": 12, "gold": 85, "xp": 55},
+			{"type": "craft", "target": 10, "gold": 110, "xp": 75},
+		],
+		"bonus_gold": 210, "bonus_rep": 6, "bonus_xp": 140, "bonus_standing": 5,
+	},
+	{
+		"faction": "guildas",
+		"name": "Selo de Confiança da Guilda",
+		"days": 7,
+		"stages": [
+			{"type": "craft", "target": 12, "gold": 90, "xp": 65},
+			{"type": "rare", "target": 2, "gold": 120, "xp": 80},
+			{"type": "gold", "target": 380, "gold": 150, "xp": 95},
+		],
+		"bonus_gold": 260, "bonus_rep": 7, "bonus_xp": 165, "bonus_standing": 6,
+	},
+	{
+		"faction": "nobres",
+		"name": "Encomenda Reservada da Corte",
+		"days": 8,
+		"stages": [
+			{"type": "customers", "target": 16, "gold": 110, "xp": 70},
+			{"type": "gold", "target": 520, "gold": 160, "xp": 100},
+			{"type": "rare", "target": 3, "gold": 190, "xp": 120},
+		],
+		"bonus_gold": 320, "bonus_rep": 8, "bonus_xp": 190, "bonus_standing": 7,
+	},
+	{
+		"faction": "submundo",
+		"name": "Dívida de Favores do Coletor",
+		"days": 9,
+		"stages": [
+			{"type": "rare", "target": 3, "gold": 150, "xp": 95},
+			{"type": "craft", "target": 16, "gold": 185, "xp": 115},
+			{"type": "gold", "target": 700, "gold": 230, "xp": 140},
+		],
+		"bonus_gold": 400, "bonus_rep": 10, "bonus_xp": 230, "bonus_standing": 8,
+	},
+]
+
 var gold_label: Label
 var rep_label: Label
 var customers_label: Label
@@ -128,6 +216,8 @@ var achievement_label: Label
 var progression_label: Label
 var quest_label: Label
 var quest_button: Button
+var commission_label: Label
+var commission_button: Button
 var forge_box: VBoxContainer
 var reception_box: VBoxContainer
 var library_box: VBoxContainer
@@ -1874,6 +1964,16 @@ func _build_ui() -> void:
 	quest_button.text = "Resgatar contrato"
 	quest_button.pressed.connect(_claim_daily_quest)
 	right.add_child(quest_button)
+	commission_label = Label.new()
+	commission_label.custom_minimum_size = Vector2(280, 78)
+	commission_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	commission_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.62))
+	right.add_child(commission_label)
+	commission_button = Button.new()
+	commission_button.custom_minimum_size.y = 42
+	commission_button.text = "Entregar etapa da encomenda"
+	commission_button.pressed.connect(_deliver_commission_stage)
+	right.add_child(commission_button)
 
 	upgrade_button = Button.new()
 	upgrade_button.custom_minimum_size.y = 48
@@ -2260,7 +2360,7 @@ func _advance_craft_jobs(game_seconds: float) -> void:
 		daily_crafts += 1
 		total_crafted += 1
 		_add_xp(5)
-		_progress_daily_quest("craft", 1)
+		_progress_contracts("craft", 1)
 		# Alquimia, biblioteca e bênçãos do santuário empurram a rolagem de qualidade.
 		var luck := alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + int(job.get("luck", 0))
 		if int(job.get("luck", 0)) > 0:
@@ -2558,7 +2658,7 @@ func _sell_ingredient(ingredient_id: String) -> void:
 	Economy.bump(economy_state, "ingredient", ingredient_id, -0.12)
 	gold += payout
 	daily_gold_earned += payout
-	_progress_daily_quest("gold", payout)
+	_progress_contracts("gold", payout)
 	last_event = "Revendido: %s por %d ouro. O fornecedor fingiu que não viu." % [str(Ingredients.find(ingredient_id).get("name", ingredient_id)), payout]
 	audio.play("coin")
 	_show_feedback("Material devolvido ao mercado.", Color(0.78, 0.95, 1.0))
@@ -2579,7 +2679,7 @@ func _sell_from_counter(index: int) -> void:
 	Economy.bump(economy_state, "product", str(item["id"]), 0.12)
 	gold += payout
 	daily_gold_earned += payout
-	_progress_daily_quest("gold", payout)
+	_progress_contracts("gold", payout)
 	last_event = "Venda no balcão: %s %s por %d ouro. Levou sem agradecer, mas pagou." % [item["name"], str(Quality.tier(tier)["name"]).to_lower(), payout]
 	audio.play("coin")
 	_show_feedback("+%d ouro no balcão." % payout, Color(1.0, 0.86, 0.45))
@@ -2762,7 +2862,7 @@ func _on_customer_tick() -> void:
 		shop_day += 1
 		_show_stage_emotion(stage_seller_body, "sono")
 		Economy.advance_day(economy_state)
-		daily_quest_index = (daily_quest_index + 1) % 4
+		daily_quest_index = (daily_quest_index + 1) % DAILY_QUESTS.size()
 		daily_quest_progress = 0
 		daily_quest_claimed = false
 		daily_gold_earned = 0
@@ -2775,6 +2875,11 @@ func _on_customer_tick() -> void:
 		# quem fecha o jogo sem mover mais nada perde a virada.
 		_save_game()
 		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA)]
+		# A encomenda do patrono vence e chega no mesmo instante da virada, e o
+		# resultado é gravado junto: quem fecha o jogo nessa manhã não acorda com o
+		# prazo de um dia que já passou.
+		_advance_commission()
+		_save_game()
 	if imp_hired and ticks % 3 == 0:
 		_imp_work()
 
@@ -2782,7 +2887,7 @@ func _on_customer_tick() -> void:
 	if randi() % 100 < 7 + library_upgrade_level * 2:
 		_trigger_random_event()
 		_add_xp(20)
-		_progress_daily_quest("rare", 1)
+		_progress_contracts("rare", 1)
 		_check_achievements()
 		_save_game()
 		_refresh_ui()
@@ -3006,8 +3111,8 @@ func _on_customer_tick() -> void:
 				last_event += "\nBônus de facção (%s): +%d ouro." % [Factions.find(faction_id).get("short", faction_id), faction_bonus]
 		daily_gold_earned += sale_price
 		_add_xp(12)
-		_progress_daily_quest("customers", 1)
-		_progress_daily_quest("gold", sale_price)
+		_progress_contracts("customers", 1)
+		_progress_contracts("gold", sale_price)
 		_add_affection(1 + charm_rank + sanctum_upgrade_level)
 		_set_customer_status("CLIENTE: %s" % profile["name"])
 		_set_seller_mood("happy")
@@ -3510,6 +3615,13 @@ func _refresh_ui() -> void:
 		var quest_ready: bool = daily_quest_progress >= int(_get_daily_quest()["target"]) and not daily_quest_claimed
 		quest_button.disabled = not quest_ready
 		quest_button.text = "Resgatar contrato" if quest_ready else "Contrato resgatado ✓" if daily_quest_claimed else "Contrato em andamento"
+	if is_instance_valid(commission_label):
+		commission_label.text = _commission_summary()
+	if is_instance_valid(commission_button):
+		var stage_ready := _commission_ready()
+		commission_button.visible = commission_index >= 0
+		commission_button.disabled = not stage_ready
+		commission_button.text = "Entregar etapa %d da encomenda" % (commission_stage + 1) if stage_ready else "Etapa %d em andamento" % (commission_stage + 1)
 	if is_instance_valid(achievement_label):
 		achievement_label.text = _get_achievement_summary()
 	for i in range(products.size()):
@@ -3740,6 +3852,12 @@ func _save_game() -> void:
 	config.set_value("game", "daily_quest_index", daily_quest_index)
 	config.set_value("game", "daily_quest_progress", daily_quest_progress)
 	config.set_value("game", "daily_quest_claimed", daily_quest_claimed)
+	config.set_value("game", "commission_index", commission_index)
+	config.set_value("game", "commission_stage", commission_stage)
+	config.set_value("game", "commission_progress", commission_progress)
+	config.set_value("game", "commission_deadline", commission_deadline)
+	config.set_value("game", "commission_next_offer", commission_next_offer)
+	config.set_value("game", "commissions_finished", commissions_finished)
 	config.set_value("game", "daily_gold_earned", daily_gold_earned)
 	config.set_value("game", "daily_crafts", daily_crafts)
 	config.set_value("game", "alchemy_rank", alchemy_rank)
@@ -3825,6 +3943,19 @@ func _load_game() -> void:
 	daily_quest_index = int(config.get_value("game", "daily_quest_index", daily_quest_index))
 	daily_quest_progress = int(config.get_value("game", "daily_quest_progress", daily_quest_progress))
 	daily_quest_claimed = bool(config.get_value("game", "daily_quest_claimed", daily_quest_claimed))
+	commission_index = int(config.get_value("game", "commission_index", commission_index))
+	commission_stage = int(config.get_value("game", "commission_stage", commission_stage))
+	commission_progress = int(config.get_value("game", "commission_progress", commission_progress))
+	commission_deadline = int(config.get_value("game", "commission_deadline", commission_deadline))
+	commission_next_offer = int(config.get_value("game", "commission_next_offer", commission_next_offer))
+	commissions_finished = int(config.get_value("game", "commissions_finished", commissions_finished))
+	# Save antigo não tinha encomenda nenhuma, e um índice lido de um catálogo que
+	# mudou de tamanho apontaria para fora da tabela: na dúvida, o balcão fica livre.
+	if commission_index < 0 or commission_index >= COMMISSIONS.size():
+		commission_index = -1
+		_clear_commission()
+	if commission_next_offer <= 0:
+		commission_next_offer = shop_day + 1
 	daily_gold_earned = int(config.get_value("game", "daily_gold_earned", daily_gold_earned))
 	daily_crafts = int(config.get_value("game", "daily_crafts", daily_crafts))
 	alchemy_rank = int(config.get_value("game", "alchemy_rank", alchemy_rank))
@@ -4078,20 +4209,15 @@ func _add_xp(amount: int) -> void:
 			last_event += "\nNOVAS RECEITAS: " + ", ".join(newly_unlocked)
 
 func _get_daily_quest() -> Dictionary:
-	var quests: Array[Dictionary] = [
-		{"name": "Atenda 5 clientes hoje", "type": "customers", "target": 5, "gold": 45, "xp": 25},
-		{"name": "Fature 100 de ouro hoje", "type": "gold", "target": 100, "gold": 55, "xp": 30},
-		{"name": "Fabrique 3 produtos hoje", "type": "craft", "target": 3, "gold": 40, "xp": 35},
-		{"name": "Encontre 1 evento raro hoje", "type": "rare", "target": 1, "gold": 65, "xp": 40}
-	]
-	return quests[posmod(daily_quest_index, quests.size())]
+	return DAILY_QUESTS[posmod(daily_quest_index, DAILY_QUESTS.size())]
 
-func _progress_daily_quest(kind: String, amount: int) -> void:
-	if daily_quest_claimed:
-		return
-	var quest := _get_daily_quest()
-	if str(quest["type"]) == kind:
+## Um tique só alimenta as duas escalas de contrato: o do dia, que expira na
+## virada, e a encomenda do patrono, que atravessa dias. Manter os dois num único
+## ponto é o que impede uma venda de contar para um e esquecer o outro.
+func _progress_contracts(kind: String, amount: int) -> void:
+	if not daily_quest_claimed and str(_get_daily_quest()["type"]) == kind:
 		daily_quest_progress += amount
+	_progress_commission(kind, amount)
 
 func _claim_daily_quest() -> void:
 	var quest := _get_daily_quest()
@@ -4106,6 +4232,127 @@ func _claim_daily_quest() -> void:
 	last_event = "Contrato concluído: %s. Recompensa: %d ouro, %d XP e 3 de reputação." % [quest["name"], gold_reward, xp_reward]
 	_save_game()
 	_refresh_ui()
+
+func _get_commission() -> Dictionary:
+	if commission_index < 0 or commission_index >= COMMISSIONS.size():
+		return {}
+	return COMMISSIONS[commission_index]
+
+func _commission_stages() -> Array:
+	var commission := _get_commission()
+	if commission.is_empty():
+		return []
+	return commission["stages"]
+
+func _commission_stage() -> Dictionary:
+	var stages := _commission_stages()
+	if commission_stage < 0 or commission_stage >= stages.size():
+		return {}
+	return stages[commission_stage]
+
+func _commission_stage_text(stage: Dictionary) -> String:
+	return COMMISSION_STAGE_TEXTS.get(str(stage["type"]), "Cumprir %d tarefas") % int(stage["target"])
+
+func _commission_ready() -> bool:
+	var stage := _commission_stage()
+	return not stage.is_empty() and commission_progress >= int(stage["target"])
+
+func _progress_commission(kind: String, amount: int) -> void:
+	var stage := _commission_stage()
+	if commission_index < 0 or stage.is_empty() or str(stage["type"]) != kind:
+		return
+	commission_progress += amount
+
+func _commission_summary() -> String:
+	if commission_index < 0:
+		return "ENCOMENDA DE LONGO PRAZO\nNada sobre o balcão. O próximo patrono chega no dia %d." % commission_next_offer
+	var commission := _get_commission()
+	var stage := _commission_stage()
+	var target: int = int(stage["target"])
+	return "ENCOMENDA DE LONGO PRAZO\n%s (%s)\nEtapa %d/%d — %s (%d/%d)\nRestam %d dia(s) de prazo." % [
+		commission["name"],
+		Factions.find(str(commission["faction"])).get("short", commission["faction"]),
+		commission_stage + 1,
+		_commission_stages().size(),
+		_commission_stage_text(stage),
+		mini(commission_progress, target),
+		target,
+		maxi(0, commission_deadline - shop_day),
+	]
+
+## Entrega a etapa pronta e, se era a última, fecha a encomenda. O ouro da etapa
+## cresce com o dia da loja para que uma encomenda antiga não valha menos que uma
+## recém-chegada.
+func _deliver_commission_stage() -> void:
+	if not _commission_ready():
+		return
+	var commission := _get_commission()
+	var stage := _commission_stage()
+	var gold_reward: int = int(stage["gold"]) + shop_day * 2
+	gold += gold_reward
+	_add_xp(int(stage["xp"]))
+	commission_progress = 0
+	commission_stage += 1
+	if commission_stage >= _commission_stages().size():
+		_finish_commission(commission)
+	else:
+		last_event = "Etapa %d da encomenda “%s” entregue: +%d ouro, +%d XP. Próxima: %s." % [
+			commission_stage, commission["name"], gold_reward, int(stage["xp"]),
+			_commission_stage_text(_commission_stage()),
+		]
+	_save_game()
+	_refresh_ui()
+
+func _finish_commission(commission: Dictionary) -> void:
+	commissions_finished += 1
+	gold += int(commission["bonus_gold"])
+	reputation += int(commission["bonus_rep"])
+	_add_xp(int(commission["bonus_xp"]))
+	var faction_id := str(commission["faction"])
+	faction_standing[faction_id] = int(faction_standing.get(faction_id, 0)) + int(commission["bonus_standing"])
+	_clear_commission()
+	commission_next_offer = shop_day + 2
+	_show_stage_emotion(stage_seller_body, "aplausao")
+	last_event = "ENCOMENDA FECHADA: “%s” entregue por inteiro. +%d ouro, +%d XP, +%d reputação e a %s agora confia mais na casa." % [
+		commission["name"], int(commission["bonus_gold"]), int(commission["bonus_xp"]),
+		int(commission["bonus_rep"]), Factions.find(faction_id).get("short", faction_id),
+	]
+	_check_achievements()
+
+func _clear_commission() -> void:
+	commission_index = -1
+	commission_stage = 0
+	commission_progress = 0
+	commission_deadline = 0
+
+## A encomenda vive no relógio da virada: atrasar custa reputação, e o balcão livre
+## recebe o pedido do dia seguinte sem precisar de aceitação — o patrono simplesmente
+## deixa o envelope sobre o caixa.
+func _advance_commission() -> void:
+	if commission_index >= 0 and shop_day > commission_deadline:
+		var late := _get_commission()
+		reputation = maxi(0, reputation - 4)
+		_clear_commission()
+		commission_next_offer = shop_day + 1
+		last_event += "\nENCOMENDA ATRASADA: “%s” venceu. A %s cobrou o prejuízo em reputação (-4)." % [
+			late["name"], Factions.find(str(late["faction"])).get("short", "casa"),
+		]
+		return
+	if commission_index < 0 and shop_day >= commission_next_offer:
+		var pool: Array[int] = []
+		for i in range(COMMISSIONS.size()):
+			pool.append(i)
+		if pool.is_empty():
+			return
+		commission_index = pool[randi() % pool.size()]
+		var commission := _get_commission()
+		commission_stage = 0
+		commission_progress = 0
+		commission_deadline = shop_day + int(commission["days"])
+		last_event += "\nNOVA ENCOMENDA DE LONGO PRAZO: “%s”, da %s. Primeira etapa: %s. Prazo até o dia %d." % [
+			commission["name"], Factions.find(str(commission["faction"])).get("short", commission["faction"]),
+			_commission_stage_text(_commission_stage()), commission_deadline,
+		]
 
 ## Um único lugar define as conquistas: a checagem do jogo e o catálogo que a
 ## Steam precisa conhecer na inicialização.
@@ -4137,6 +4384,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
 		{"id": "half_way", "name": "Meio caminho (4 capítulos)", "condition": campaign_step >= 4, "gold": 160, "rep": 7, "pose": "book"},
 		{"id": "private_sanctuary", "name": "Cantinho reservado (5 momentos só da loja)", "condition": private_moments_unlocked >= 5, "gold": 90, "rep": 3},
+		{"id": "commission_first", "name": "Palavra de loja (primeira encomenda fechada)", "condition": commissions_finished >= 1, "gold": 60, "rep": 3},
+		{"id": "commission_five", "name": "Casa de confiança (5 encomendas fechadas)", "condition": commissions_finished >= 5, "gold": 200, "rep": 8},
 		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"}
 	]
 
