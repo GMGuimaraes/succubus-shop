@@ -77,6 +77,18 @@ var ruined_seasons: Array[String] = []
 ## A linha do dia nasce e morre no mesmo tique (conquista, encomenda e diabrete
 ## escrevem por cima), então o resultado da conta precisa de lugar fixo na recepção.
 var day_report: String = ""
+## O popup do balanço: a conta da virada em uma janela que para o relógio no meio
+## da rua, com o OK da chefe e a opção de ela não ter tempo nem para isso.
+var day_layer: Control
+var day_auto_ok: bool = false
+var _day_countdown: Tween
+var _day_countdown_label: Label
+## Quanto o placar tinha no instante em que o dia abriu. O balanço mostra o delta da
+## virada, não a conta acumulada da vida, então a régua precisa nascer com o dia.
+var day_snap_gold: int = 0
+var day_snap_served: int = 0
+var day_snap_happy: int = 0
+var day_snap_lost: int = 0
 ## Filiais abertas nesta vida. Cada uma paga um lucro por virada e engrossa a conta
 ## da casa; a mais rentável é também a que mais afunda quando o dia vira.
 var branches: Array[String] = []
@@ -382,6 +394,7 @@ var branch_summary_label: Label
 var branch_labels: Array = []
 var branch_buttons: Array = []
 var staff_summary_label: Label
+var queue_label: Label
 var staff_labels: Array = []
 var staff_buttons: Array = []
 var arc_summary_label: Label
@@ -518,15 +531,24 @@ const STAGE_MOOD_POSE := {
 }
 var _stage_frame_cache: Dictionary = {}
 var _stage_sequence_cache: Dictionary = {}
-## Móveis pintados que ficam NA FRENTE do elenco, por sala, em coordenadas
-## normais (x, y, largura, altura) batendo com o STRETCH_SCALE do fundo. É o que
-## faz a figura sumir de cintura para baixo ao passar atrás do balcão.
+## Móveis pintados que ficam NA FRENTE do elenco, por sala, em coordenadas normais
+## batendo com o STRETCH_SCALE do fundo. Cada vaga aceita um Retângulo ou uma lista
+## de quatro cantos (superior esquerdo, superior direito, inferior direito, inferior
+## esquerdo): o contorno inclinado faz a borda de cima seguir o tampo pintado, que
+## na perspectiva nunca é horizontal, e a figura some na linha do móvel em vez de
+## dentro de um caixote. É o que faz a visita sumir de cintura para baixo ao passar
+## atrás do balcão.
 const STAGE_ROOM_PROPS := {
-	"res://assets/shop_scene.png": [Rect2(0.435, 0.495, 0.565, 0.44), Rect2(0.0, 0.585, 0.19, 0.415)],
+	"res://assets/shop_scene.png": [
+		[Vector2(0.437, 0.487), Vector2(1.0, 0.512), Vector2(1.0, 1.0), Vector2(0.437, 1.0)],
+		[Vector2(0.0, 0.575), Vector2(0.187, 0.635), Vector2(0.187, 1.0), Vector2(0.0, 1.0)],
+	],
 	"res://assets/forge_scene.png": [Rect2(0.0, 0.555, 0.165, 0.445), Rect2(0.77, 0.60, 0.23, 0.40), Rect2(0.655, 0.525, 0.095, 0.15)],
 	"res://assets/library_room_scene.png": [Rect2(0.225, 0.42, 0.13, 0.30), Rect2(0.0, 0.52, 0.215, 0.21), Rect2(0.78, 0.525, 0.205, 0.195)],
 	"res://assets/sanctum_room_scene.png": [Rect2(0.0, 0.53, 0.14, 0.17), Rect2(0.862, 0.53, 0.138, 0.17), Rect2(0.235, 0.515, 0.055, 0.15), Rect2(0.71, 0.505, 0.055, 0.15)],
 }
+## Quantos contornos de móvel o shader aguenta ao mesmo tempo.
+const STAGE_PROP_SLOTS := 8
 ## Faixa de piso por onde o elenco anda em cada sala, em fração da largura. Na
 ## recepção o balcão cobre o resto do salão: quem passasse por ali ficaria só com
 ## a cabeça de fora, então o transeunte patrulha o piso visível e volta.
@@ -543,6 +565,39 @@ const STAGE_ROOM_DOOR := {
 	"res://assets/library_room_scene.png": [Vector2(0.98, 0.12), Vector2(0.72, 0.30)],
 	"res://assets/sanctum_room_scene.png": [Vector2(0.02, 0.10), Vector2(0.30, 0.30)],
 }
+## Profundidade da quarta parede: abaixo de 1.0 o pé ainda pisa no chão pintado;
+## daqui para baixo a figura entra cortada pela beirada da tela.
+const STAGE_FOURTH_WALL_DEPTH := 1.42
+## A porta de verdade é a do fundo, mas a visita não entra por ela: o tapete nasce
+## no pé da tela, então quem chega vem da quarta parede, entrando gigante e
+## cortado pela beirada de baixo e encolhendo até o ponto de fuga do salão. A
+## ordem é do mais perto da câmera até o primeiro ponto do chão da sala.
+const STAGE_ROOM_ARRIVE := {
+	"res://assets/shop_scene.png": [Vector2(0.34, STAGE_FOURTH_WALL_DEPTH), Vector2(0.36, 1.00), Vector2(0.40, 0.90)],
+	"res://assets/forge_scene.png": [Vector2(0.42, STAGE_FOURTH_WALL_DEPTH), Vector2(0.40, 1.00), Vector2(0.42, 0.90)],
+	"res://assets/library_room_scene.png": [Vector2(0.52, STAGE_FOURTH_WALL_DEPTH), Vector2(0.50, 1.00), Vector2(0.48, 0.90)],
+	"res://assets/sanctum_room_scene.png": [Vector2(0.46, STAGE_FOURTH_WALL_DEPTH), Vector2(0.44, 1.00), Vector2(0.46, 0.90)],
+}
+## Onde a fila espera, do primeiro (mais perto do balcão) ao último degrau, na
+## lateral do tapete: quem espera não tapa a chefe nem atravessa o salão, e o corpo
+## que sobe para ser atendido sai exatamente deste lugar.
+const STAGE_ROOM_QUEUE := {
+	"res://assets/shop_scene.png": [Vector2(0.27, 0.70), Vector2(0.22, 0.60), Vector2(0.17, 0.50), Vector2(0.13, 0.40), Vector2(0.09, 0.30), Vector2(0.05, 0.22)],
+	"res://assets/forge_scene.png": [Vector2(0.22, 0.70), Vector2(0.18, 0.60), Vector2(0.14, 0.50), Vector2(0.10, 0.40), Vector2(0.07, 0.30), Vector2(0.04, 0.22)],
+	"res://assets/library_room_scene.png": [Vector2(0.66, 0.70), Vector2(0.72, 0.60), Vector2(0.78, 0.50), Vector2(0.84, 0.40), Vector2(0.89, 0.30), Vector2(0.94, 0.22)],
+	"res://assets/sanctum_room_scene.png": [Vector2(0.28, 0.70), Vector2(0.23, 0.60), Vector2(0.18, 0.50), Vector2(0.13, 0.40), Vector2(0.09, 0.30), Vector2(0.05, 0.22)],
+}
+## Quanto o chão desce por ponto de profundidade na quarta parede, em fração da
+## altura da tela. Sem isso o corpo entraria flutuando na borda em vez de subir do
+## fora da cena.
+const STAGE_FOURTH_FLOOR_DROP := 0.78
+## Quantos pontos de fila a sala desenha e quantos batem na porta num só tique no
+## teto da fama. O resto espera fora de cena: o número do painel conta todos.
+const QUEUE_SPOTS := 6
+## Tique que um espera antes de desistir, somado à paciência do próprio perfil.
+## Fama sem balcão que dê conta é cliente perdido, e é isso que segura a porta.
+const QUEUE_PATIENCE_TICKS := 4
+const QUEUE_LIMIT := 12
 ## Vitrines de cada sala, em (fração da largura, profundidade do chão): é onde quem
 ## foi bem atendido se detém para olhar a mercadoria antes de sair. A profundidade
 ## fica na frente do móvel, para a parada não esconder o corpo inteiro.
@@ -616,9 +671,20 @@ var stage_customer: Control
 var _stage_walkers: Array[Dictionary] = []
 var _stage_retired: Array[Dictionary] = []
 var _stage_walker_timer: float = 2.0
-var _lane_depths: Array[float] = [0.08, 0.40, 0.82]
-var _lane_scales: Array[float] = [0.56, 0.78, 1.0]
-var _lane_alphas: Array[float] = [0.90, 0.96, 1.0]
+var _lane_depths: Array[float] = [0.08, 0.40, 0.82, STAGE_FOURTH_WALL_DEPTH]
+var _lane_scales: Array[float] = [0.56, 0.78, 1.0, 1.45]
+var _lane_alphas: Array[float] = [0.90, 0.96, 1.0, 1.0]
+## A fila de atendimento: quem bateu à porta e ainda não chegou ao balcão. Cada
+## entrada é o perfil sorteado (nome, retrato, orçamento) mais o tique em que ela
+## entrou e o limite de espera. Os corpos em cena são no máximo QUEUE_SPOTS; o
+## resto espera fora da tela e só aparece no número do painel.
+var service_queue: Array[Dictionary] = []
+## Quantos desistiram da fila nesta vida. É o preço da fama sem balcão.
+var queue_walkouts: int = 0
+## Os que saíram da fila só desde a última virada do dia, para o balanço da manhã
+## poder dizer quantos clientes o dia perdeu na porta.
+var day_walkouts: int = 0
+var _stage_waiters: Array[Dictionary] = []
 var _stage_back_band: Control
 var _market_top_guard: Control
 var _stage_room: String = "res://assets/shop_scene.png"
@@ -767,6 +833,7 @@ func _ready() -> void:
 	steam.boot(_achievement_ids())
 	steam.connect("leaderboard_ready", _on_leaderboard_ready)
 	_load_game()
+	_mark_day_start()
 	_sync_quality_stock()
 	_build_ui()
 	_apply_sector_visibility()
@@ -916,6 +983,8 @@ func _free_crowd_index() -> int:
 	var taken: Array[int] = []
 	for entry in _stage_walkers:
 		taken.append(int(entry.get("crowd", -1)))
+	for entry in _stage_waiters:
+		taken.append(int(entry.get("crowd", -1)))
 	for i in range(_stage_retired.size() - 1, -1, -1):
 		if not is_instance_valid(_stage_retired[i]["node"]):
 			_stage_retired.remove_at(i)
@@ -943,6 +1012,16 @@ func _retire_walker(walker: Control) -> void:
 				if mover != null and mover.is_valid():
 					mover.kill()
 			break
+	if crowd < 0:
+		for i in range(_stage_waiters.size()):
+			if _stage_waiters[i]["node"] == walker:
+				var waiting: Dictionary = _stage_waiters[i]
+				crowd = int(waiting.get("crowd", -1))
+				_stage_waiters.remove_at(i)
+				var still: Tween = waiting.get("trip", null)
+				if still != null and still.is_valid():
+					still.kill()
+				break
 	if crowd >= 0:
 		# O corpo ainda some da tela durante o fade: liberado antes, entraria
 		# duplicado em cena enquanto o velho se apaga.
@@ -963,7 +1042,12 @@ func _dismiss_stage_cast() -> void:
 		var walker := entry["node"] as Control
 		if is_instance_valid(walker):
 			_retire_walker(walker)
+	for entry in _stage_waiters.duplicate():
+		var waiting := entry["node"] as Control
+		if is_instance_valid(waiting):
+			_retire_walker(waiting)
 	_stage_walkers.clear()
+	_stage_waiters.clear()
 
 func _show_stage_for_room(scene_path: String, walkable: bool) -> void:
 	# Trocas rápidas de sala não podem deixar um fade velho escondendo a camada
@@ -1001,6 +1085,9 @@ func _show_stage_for_room(scene_path: String, walkable: bool) -> void:
 	_stage_fade_tweens.append(props_in)
 	props_in.tween_property(stage_occluder, "modulate:a", 1.0, 0.45)
 	_host_enters_room()
+	# A fila atravessa a porta junto com a loja: quem esperava na recepção espera no
+	# mesmo degrau da sala nova, porque a espera é do balcão, não do cenário.
+	_reline_waiters()
 
 ## A chefe chega pelo lado do balcão quando a sala nova abre.
 func _host_enters_room() -> void:
@@ -1029,12 +1116,17 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 	for entry in _stage_walkers.duplicate():
 		if int(entry.get("crowd", -1)) == body:
 			_retire_walker(entry["node"] as Control)
+	for entry in _stage_waiters.duplicate():
+		if int(entry.get("crowd", -1)) == body:
+			_retire_walker(entry["node"] as Control)
 	var front := _lane(2)
 	_customer_served = false
 	# O corpo é outro cliente agora: se o anterior saiu de cena com uma pose no ar,
 	# a trava não pode congelar o passo deste.
 	stage_customer.set_meta("emotion_pose", false)
-	stage_customer.modulate = Color(1.0, 0.95, 0.98, front["alpha"])
+	# Ele nasce do lado de cá da tela, grande demais para caber: a opacidade sobe
+	# junto com os primeiros passos para a visita entrar andando, não piscada.
+	stage_customer.modulate = Color(1.0, 0.95, 0.98, 0.0)
 	stage_customer.rotation_degrees = 0.0
 	stage_customer.pivot_offset = stage_customer.size / 2.0
 	stage_customer.set_meta("walk_frames", _stage_crowd_frames(body).size())
@@ -1053,6 +1145,8 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 	var walk := create_tween()
 	_walk_path(walk, stage_customer, path, pace)
 	walk.tween_callback(_stage_customer_stops)
+	var reveal := create_tween()
+	reveal.tween_property(stage_customer, "modulate:a", float(front["alpha"]), 0.5)
 	var step_time := STAGE_STEP_SECONDS / pace
 	_customer_bob = create_tween().set_loops()
 	_customer_bob.tween_property(stage_customer, "rotation_degrees", 1.6, step_time).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
@@ -1060,17 +1154,34 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 	_customer_bob.tween_property(stage_customer, "rotation_degrees", -1.6, step_time).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_customer_bob.tween_callback(_advance_stage_frame.bind(stage_customer))
 
-## A trilha da porta até o balcão, já em pixels. O primeiro ponto é empurrado para
-## fora da tela, para a visita nascer além da porta em vez de aparecer do nada.
+## A trilha da quarta parede até o balcão, já em pixels. O primeiro ponto está com
+## o pé fora da tela: a visita sobe do chão do lado de cá, gigante e cortada, e
+## encolhe no caminho do ponto de fuga em vez de atravessar a loja na linha de
+## frente. Sala sem chegada escrita entra pela porta antiga.
 func _room_path() -> Array[Vector2]:
 	var path: Array[Vector2] = []
-	for point in STAGE_ROOM_DOOR.get(_stage_room, []):
+	for point in STAGE_ROOM_ARRIVE.get(_stage_room, []):
 		path.append(point)
+	if path.is_empty():
+		for point in STAGE_ROOM_DOOR.get(_stage_room, []):
+			path.append(point)
 	if path.is_empty():
 		path.append(Vector2(0.0, STAGE_ENTRY_DEPTH))
 	path.append(Vector2(_room_meet().y, STAGE_FRONT_DEPTH))
-	var first: Vector2 = path[0]
-	path[0] = Vector2(-0.08 if first.x < 0.5 else 1.08, first.y)
+	for i in range(path.size()):
+		path[i] = Vector2(path[i].x * stage_layer.size.x, path[i].y)
+	return path
+
+## A saída é pela porta simbólica do fundo, não pelo pé da tela: o corpo anda para
+## dentro da sala, encolhe até o ponto de fuga e some ali, porque a loja tem uma
+## porta só e quem entra pela frente tem de sair pelo fundo.
+func _room_exit_path() -> Array[Vector2]:
+	var door: Array = STAGE_ROOM_DOOR.get(_stage_room, [Vector2(0.02, STAGE_ENTRY_DEPTH)])
+	var path: Array[Vector2] = []
+	for i in range(door.size() - 1, -1, -1):
+		path.append(door[i])
+	var last: Vector2 = path[path.size() - 1]
+	path.append(Vector2(last.x, maxf(-0.2, last.y - 0.16)))
 	for i in range(path.size()):
 		path[i] = Vector2(path[i].x * stage_layer.size.x, path[i].y)
 	return path
@@ -1168,6 +1279,181 @@ func _stage_customer_leaves() -> void:
 		_retire_walker(_stage_walkers[0]["node"] as Control)
 	_release_to_floor(body, depth, center_x, served)
 
+## Quantos batem na porta neste tique: um sempre, mais um por degrau de fama, mais
+## um para cada duas filiais abertas. É o que faz a loja começar quase vazia e
+## terminar com gente esperando na rua — e é também o que faz a fama custar caro
+## quando o balcão não dá conta.
+func _arrivals_this_tick() -> int:
+	var crowd := 1
+	if reputation >= 12:
+		crowd += 1
+	if reputation >= 30:
+		crowd += 1
+	if reputation >= 55:
+		crowd += 1
+	crowd += int(float(branches.size()) / 2.0)
+	return clampi(crowd, 1, QUEUE_LIMIT)
+
+## Quanto um cliente topa esperar: o limite da casa mais a paciência do próprio
+## perfil, o quanto a chefe já é querida e quantas mãos há no balcão. Charme é
+## literalmente tempo de espera, e contratar também é.
+func _queue_patience(profile: Dictionary) -> int:
+	return QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size()
+
+## Manda para dentro quem o balcão não consegue atender agora. Cada um chega com o
+## perfil sorteado na hora, então a fila é gente com retrato e orçamento, não um
+## contador no painel.
+func _flood_service_queue() -> int:
+	var arrived := 0
+	for i in range(maxi(0, _arrivals_this_tick() - 1)):
+		if service_queue.size() >= QUEUE_LIMIT:
+			break
+		var profile: Dictionary = _draw_visitor_profile()
+		var entry := {
+			"profile": profile,
+			"waited": 0,
+			"limit": _queue_patience(profile),
+		}
+		service_queue.append(entry)
+		_spawn_waiter(entry)
+		arrived += 1
+	return arrived
+
+## A fila anda: um tique a mais para cada espera, e quem passa do próprio limite
+## vai embora sem comprar. Devolve quantos saíram, para o balanço do dia saber que
+## a porta também perde gente.
+func _advance_service_queue() -> int:
+	var gone := 0
+	for entry in service_queue.duplicate():
+		entry["waited"] = int(entry["waited"]) + 1
+		if int(entry["waited"]) < int(entry["limit"]):
+			continue
+		service_queue.erase(entry)
+		_desert_waiter(entry)
+		gone += 1
+	if gone > 0:
+		# A fama cobra a virada em que o balcão não deu conta, não cobra cada corpo
+		# que virou as costas: três desistências do mesmo tique valeriam três
+		# pancadas e a loja nunca sairia do buraco que a própria fama cavou.
+		reputation = maxi(0, reputation - 1)
+		_reline_waiters()
+	return gone
+
+## Quem desistiu da fila: conta como cliente perdido e avisa no mural. Um som para
+## a rajada inteira, porque a fila é justamente o que impede três visitas de
+## tocarem o mesmo "sad" por cima uma da outra.
+func _desert_waiter(entry: Dictionary) -> void:
+	var profile: Dictionary = entry["profile"]
+	var visitor_name := str(profile.get("name", "Um cliente"))
+	queue_walkouts += 1
+	disappointed_customers += 1
+	day_walkouts += 1
+	last_event = "%s esperou %d viradas na porta e foi comprar em outro beco. A chefe rangea os dentes: fila longa sem balcão que dê conta é loja com a placa de FECHADO." % [visitor_name, int(entry["waited"])]
+	_show_feedback("✗ %s desistiu da fila." % visitor_name, Color(1.0, 0.55, 0.55))
+	_dismiss_waiter(entry)
+	audio.play("sad")
+
+## O balcão atende primeiro quem já estava esperando: a fila não é enfeite, ela
+## troca a ordem de quem entra. Sem ninguém esperando, sorteia a visita do tique.
+func _next_served_profile() -> Dictionary:
+	if service_queue.is_empty():
+		return _draw_visitor_profile()
+	var entry: Dictionary = service_queue[0]
+	service_queue.pop_front()
+	_dismiss_waiter(entry)
+	_reline_waiters()
+	return entry["profile"]
+
+## O corpo de quem espera: entra pelo mesmo canto da visita, anda até o degrau da
+## fila e fica parado ali, pensando na vida. Passou do tempo, ele se apaga.
+func _spawn_waiter(entry: Dictionary) -> void:
+	if not is_instance_valid(stage_layer) or stage_layer.size.x <= 0:
+		return
+	var spots: Array = STAGE_ROOM_QUEUE.get(_stage_room, [])
+	if _stage_waiters.size() >= mini(QUEUE_SPOTS, spots.size()):
+		return
+	var profile: Dictionary = entry["profile"]
+	var body := absi(int(profile.get("portrait", 0))) % STAGE_CROWD_BODIES.size()
+	if _crowd_taken(body):
+		return
+	var node := _make_stage_poses(body, _lane_height(2))
+	node.pivot_offset = node.size / 2.0
+	node.set_meta("walk_frames", 1)
+	stage_layer.add_child(node)
+	stage_layer.move_child(node, stage_customer.get_index())
+	_place_stage_figure(node, STAGE_FOURTH_WALL_DEPTH, float(spots[0].x) * stage_layer.size.x)
+	_stage_waiters.append({"node": node, "crowd": body, "entry": entry, "trip": null})
+	_show_stage_emotion(node, "pensativo")
+	_reline_waiters()
+
+## Recoloca todo mundo nos degraus da fila, na ordem de chegada: o primeiro some
+## para o balcão e o resto dá um passo à frente, em vez de deixar buraco no meio.
+func _reline_waiters() -> void:
+	if not is_instance_valid(stage_layer) or stage_layer.size.x <= 0:
+		return
+	var spots: Array = STAGE_ROOM_QUEUE.get(_stage_room, [])
+	if spots.is_empty():
+		return
+	for i in range(_stage_waiters.size()):
+		var entry: Dictionary = _stage_waiters[i]
+		var node := entry["node"] as Control
+		if not is_instance_valid(node):
+			continue
+		var spot: Vector2 = spots[mini(i, spots.size() - 1)]
+		var trip: Tween = entry["trip"]
+		if trip != null and trip.is_valid():
+			trip.kill()
+		# Quem já está no degrau certo não recebe tween: uma caminhada de comprimento
+		# zero só faria o motor reclamar de uma fila vazia de movimentos.
+		var depth := float(node.get_meta("stage_depth", STAGE_FRONT_DEPTH))
+		var here_x := node.position.x + node.size.x * 0.5
+		var there_x := float(spot.x) * stage_layer.size.x
+		if _stage_walk_time(depth, here_x, float(spot.y), there_x) < 0.06:
+			entry["trip"] = null
+			continue
+		trip = create_tween()
+		_stroll_leg(trip, node, float(spot.y), there_x)
+		entry["trip"] = trip
+
+## Tira o corpo da fila do cenário: quem subiu para o balcão apaga aqui, e o
+## atendimento desenha o mesmo rosto no balcão.
+func _dismiss_waiter(entry: Dictionary) -> void:
+	for waiting in _stage_waiters.duplicate():
+		if waiting.get("entry") == entry:
+			_retire_walker(waiting["node"] as Control)
+			return
+
+## Aquele rosto já está em cena? A fila obedece à mesma lei do resto do elenco:
+## dois do mesmo corpo na tela pareciam um sprite colado duas vezes.
+func _crowd_taken(body: int) -> bool:
+	for entry in _stage_walkers:
+		if int(entry.get("crowd", -1)) == body:
+			return true
+	for entry in _stage_waiters:
+		if int(entry.get("crowd", -1)) == body:
+			return true
+	return (
+		is_instance_valid(stage_customer)
+		and stage_customer.visible
+		and int(stage_customer.get_meta("crowd", -1)) == body
+	)
+
+## Quantos corpos o salão está desenhando agora: transeuntes, quem espera na fila
+## e quem está no balcão. É este o número do painel, para a contagem bater com a
+## imagem em vez de contar a vida inteira da loja.
+func _bodies_on_stage() -> int:
+	var count := _stage_walkers.size() + _stage_waiters.size()
+	if is_instance_valid(stage_customer) and stage_customer.visible:
+		count += 1
+	return count
+
+## Apaga os corpos da fila sem mexer na fila: é o que a troca de sala e o reset
+## fazem antes de desenhar a linha de novo no chão novo.
+func _stage_clear_waiters() -> void:
+	for waiting in _stage_waiters.duplicate():
+		_retire_walker(waiting["node"] as Control)
+	_stage_waiters.clear()
+
 ## Devolve um corpo ao salão. Bem atendido, ele ainda dá uma olhada nas
 ## prateleiras e acena antes de ir; saiu mal-humorado, atravessa sem parar.
 func _release_to_floor(body: int, depth: float, center_x: float, served: bool) -> void:
@@ -1195,9 +1481,12 @@ func _release_to_floor(body: int, depth: float, center_x: float, served: bool) -
 		trip.tween_callback(_show_stage_emotion.bind(stroller, "aceno"))
 		trip.tween_interval(1.0)
 		trip.tween_callback(stroller.set_meta.bind("walk_frames", _stage_crowd_frames(body).size()))
-	var back := _room_path()
-	back.reverse()
+	var back := _room_exit_path()
 	_walk_path(trip, stroller, back)
+	# No ponto de fuga o corpo some junto com a própria opacidade: sem o fade ele
+	# ficaria plantado no rodapé da parede pintada, do tamanho de um boneco de
+	# tabuleiro, e a sala perderia a ilusão de que a porta é longe.
+	trip.tween_property(stroller, "modulate:a", 0.0, 0.55)
 	trip.tween_callback(_discard_stroller.bind(stroller))
 	_stage_walkers.append({"node": stroller, "crowd": body, "bob": null, "stride": stride, "trip": trip})
 
@@ -1240,13 +1529,19 @@ func _seller_lean_in() -> void:
 func _lane(depth: int) -> Dictionary:
 	return _lane_at(_lane_depths[clampi(depth, 0, _lane_depths.size() - 1)])
 
-## Profundidade contínua entre as três faixas. O elenco anda por aqui: um
-## transeunte pode ficar a meio caminho do fundo em vez de parar exatamente na
-## linha onde a chefe atende, que é o que colava os dois corpos numa mancha só.
+## Profundidade contínua entre as faixas. O elenco anda por aqui: um transeunte
+## pode ficar a meio caminho do fundo em vez de parar exatamente na linha onde a
+## chefe atende, que é o que colava os dois corpos numa mancha só. Abaixo de 1.0
+## começa a quarta parede: o chão desce para fora da tela e o corpo passa da
+## escala da frente da sala, porque quem entra pelo pé do tapete chega perto
+## demais para caber inteiro.
 func _lane_at(depth: float) -> Dictionary:
 	var floor_line: Vector2 = STAGE_ROOM_FLOOR.get(_stage_room, Vector2(0.60, 0.80))
+	var floor_y := lerpf(floor_line.x, floor_line.y, clampf(depth, -0.25, 1.0))
+	if depth > 1.0:
+		floor_y += STAGE_FOURTH_FLOOR_DROP * (depth - 1.0)
 	return {
-		"floor_y": lerpf(floor_line.x, floor_line.y, clampf(depth, 0.0, 1.0)) * stage_layer.size.y,
+		"floor_y": floor_y * stage_layer.size.y,
 		"scale": _lane_stop(depth, _lane_scales),
 		"alpha": _lane_stop(depth, _lane_alphas),
 	}
@@ -1365,12 +1660,36 @@ func _occluder_material() -> ShaderMaterial:
 
 func _apply_room_props(scene_path: String) -> void:
 	_stage_room = scene_path
+	if _stage_occluder_material == null:
+		return
 	var props: Array = STAGE_ROOM_PROPS.get(scene_path, [])
-	for i in range(4):
-		var rect: Rect2 = props[i] if i < props.size() else Rect2()
-		_stage_occluder_material.set_shader_parameter("rect%d" % i, Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y))
+	for i in range(STAGE_PROP_SLOTS):
+		var corners := _prop_corners(props[i]) if i < props.size() else _blank_corners()
+		_stage_occluder_material.set_shader_parameter("prop%da" % i, Vector4(corners[0].x, corners[0].y, corners[1].x, corners[1].y))
+		_stage_occluder_material.set_shader_parameter("prop%db" % i, Vector4(corners[2].x, corners[2].y, corners[3].x, corners[3].y))
 	if is_instance_valid(stage_occluder) and ResourceLoader.exists(scene_path):
 		stage_occluder.texture = load(scene_path)
+
+## Os quatro cantos do contorno de um móvel: superior esquerdo, superior direito,
+## inferior direito, inferior esquerdo. Retângulo vira quadrilátero reto; contorno
+## medido na arte passa do jeito que foi desenhado.
+func _prop_corners(prop: Variant) -> PackedVector2Array:
+	if prop is Array:
+		var traced: Array = prop
+		var corners := _blank_corners()
+		for i in range(mini(4, traced.size())):
+			corners[i] = traced[i]
+		return corners
+	var rect := prop as Rect2
+	return PackedVector2Array([
+		rect.position,
+		Vector2(rect.end.x, rect.position.y),
+		rect.end,
+		Vector2(rect.position.x, rect.end.y),
+	])
+
+func _blank_corners() -> PackedVector2Array:
+	return PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
 
 ## Nome do corpo de um índice do elenco, com rotação: a lista pode crescer e
 ## qualquer índice fora dela continua desenhando alguém.
@@ -1987,6 +2306,14 @@ func _build_ui() -> void:
 	day_report_label.add_theme_font_size_override("font_size", 13)
 	day_report_label.add_theme_color_override("font_color", Color(0.86, 0.82, 0.92))
 	reception_box.add_child(day_report_label)
+
+	reception_box.add_child(_make_section_title("FILA DE ATENDIMENTO", Color(0.98, 0.86, 0.55)))
+	reception_box.add_child(_make_section_hint("Fama bate à porta em mais de uma visita por tique, e o balcão atende uma. Quem sobra espera na linha do tapete; passou do tempo, desiste e a reputação paga a conta."))
+	queue_label = Label.new()
+	queue_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	queue_label.add_theme_font_size_override("font_size", 14)
+	queue_label.add_theme_color_override("font_color", Color(0.98, 0.90, 0.66))
+	reception_box.add_child(queue_label)
 
 	reception_box.add_child(_make_section_title("FILIAIS DA CASA", Color(0.72, 1.0, 0.82)))
 	reception_box.add_child(_make_section_hint("Fora do salão a loja também trabalha, e também paga conta. Cada filial abre com ouro e cobra um custo por virada; a mais rentável é a que mais deve no dia ruim."))
@@ -3555,9 +3882,62 @@ func _pick_regular() -> Dictionary:
 			return Regulars.DATA[i]
 	return Regulars.DATA[0]
 
+## Quem bate na porta sem ser freguês de casa: retrato, orçamento e paciência.
+## É a mesma lista que alimenta a fila de espera, então quem espera na porta é
+## alguém com rosto próprio, não um número de painel.
+const CUSTOMER_PROFILES: Array[Dictionary] = [
+	{"name": "Speedrunner", "favorite": "caixa_misteriosa", "line": "“Compra feita. Onde fica o botão de pular diálogo?”", "faction": "aventureiros", "portrait": 0, "budget": 75, "patience": 1},
+	{"name": "Especialista em Tudo", "favorite": "dano_emocional", "line": "“Vi um tutorial de 12 segundos e agora sou consultor.”", "faction": "guildas", "portrait": 1, "budget": 48, "patience": 2},
+	{"name": "Gótico Econômico", "favorite": "lagrimas_jogador", "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”", "faction": "submundo", "portrait": 2, "budget": 90, "patience": 3},
+	{"name": "Mago do Quero Mana", "favorite": "frasco_motivacao", "line": "“Quero manaaa! Isso aqui é uma porcaria... me vê duas poções mesmo assim.”", "faction": "guildas", "portrait": 1, "budget": 120, "patience": 2},
+	{"name": "Fiscal do Pix Astral", "favorite": "incenso_teleporte", "line": "“Aceita Pix astral? Se não aceitar, vou pagar em promessa e reclamar no fórum.”", "faction": "mercadores", "portrait": 6, "budget": 115, "patience": 2},
+	{"name": "Só Mais Uma Run", "favorite": "caixa_misteriosa", "line": "“É rapidinho, só mais uma compra. Dessa vez eu paro antes do amanhecer.”", "faction": "aventureiros", "portrait": 3, "budget": 100, "patience": 1},
+	{"name": "Ladino do Ctrl+C", "favorite": "dano_emocional", "line": "“Vi isso em outro lugar. Vou levar o seu, porque parece mais fácil.”", "faction": "submundo", "portrait": 4, "budget": 70, "patience": 2, "thief": true},
+	{"name": "Cliente do É Sobre Isso", "favorite": "confianca_instantanea", "line": "“É sobre isso e está tudo bem. Mas se tiver desconto, fica ainda mais sobre isso.”", "faction": "nobres", "portrait": 0, "budget": 150, "patience": 3},
+	{"name": "Colecionador de Patos", "favorite": "pato_amaldicoado", "line": "“Este pato combina com os outros 47 que não me julgam.”", "faction": "mercadores", "portrait": 8, "budget": 42, "patience": 2},
+	{"name": "Coach Interdimensional", "favorite": "confianca_instantanea", "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”", "faction": "guildas", "portrait": 5, "budget": 125, "patience": 3},
+	{"name": "Cliente Misterioso", "favorite": "", "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”", "faction": "nobres", "portrait": 9, "budget": 60, "patience": 1},
+	{"name": "Bardo do Duplo Sentido", "favorite": "confianca_instantanea", "line": "“Se essa poção for tão quente quanto seu sorriso, eu compro duas.”", "faction": "aventureiros", "portrait": 11, "budget": 110, "patience": 2},
+	{"name": "Paladina do Caos", "favorite": "adaga_charme", "line": "“Prometi ser virtuosa hoje. Mas posso abrir uma exceção para você.”", "faction": "nobres", "portrait": 12, "budget": 145, "patience": 2},
+	{"name": "Ladrão de Relíquias Sensíveis", "favorite": "pergaminho_procrastinacao", "line": "“Não estou roubando seu coração. Só testando se ele cabe no meu inventário.”", "faction": "submundo", "portrait": 4, "budget": 135, "patience": 1},
+	{"name": "Bruxa em Lua de Mel", "favorite": "incenso_teleporte", "line": "“Meu familiar disse que você é perigosa. Por isso mesmo fiquei.”", "faction": "guildas", "portrait": 13, "budget": 180, "patience": 3},
+	{"name": "Ferreiro do Estoque Infinito", "favorite": "martelo_faisca", "line": "“Vim comprar um martelo. Saí com três e uma opinião sobre os seus.”", "faction": "guildas", "portrait": 10, "budget": 165, "patience": 3},
+	{"name": "Druida em Greve", "favorite": "elixir_memoria", "line": "“A floresta me manda dizer que está decepcionada com vocês dois.”", "faction": "aventureiros", "portrait": 14, "budget": 85, "patience": 2},
+	{"name": "Capitã do Contrabando Afetivo", "favorite": "caixa_misteriosa", "line": "“Tudo que eu vendo é de procedência duvidosa e coração sincero.”", "faction": "mercadores", "portrait": 15, "budget": 210, "patience": 1, "thief": true}
+	]
+
+## Sorteia a visita de um tique: um nome avulso da lista ou, quando a loja já tem
+## nome, um freguês de sempre no degrau de confiança em que ele está. A fila de
+## espera chama a mesma função, então quem fica na porta é gente com retrato e
+## orçamento próprios. Quem é o freguês do palco fica no próprio perfil.
+func _draw_visitor_profile() -> Dictionary:
+	var profile: Dictionary = CUSTOMER_PROFILES[randi() % CUSTOMER_PROFILES.size()]
+	if randi() % 100 >= 35:
+		return profile
+	var regular: Dictionary = _pick_regular()
+	var regular_id := str(regular["id"])
+	var bond := int(regular_bonds.get(regular_id, 0))
+	var tier := Regulars.tier_for(bond)
+	var lines_by_tier: Array = regular["lines"][tier]
+	var personal_request := tier >= 1 and randi() % 100 < 35
+	var regular_line := str(regular["request"]) if personal_request else str(lines_by_tier[randi() % lines_by_tier.size()])
+	return {
+		"name": regular["name"],
+		"favorite": str(regular["favorite"]),
+		"line": regular_line,
+		"regular_id": regular_id,
+		"portrait": int(regular["portrait"]),
+		"tier": tier,
+		"personal_request": personal_request,
+		"faction": str(regular.get("faction", "aventureiros")),
+		"budget": 60 + tier * 30,
+		"patience": 2 + (1 if tier >= 2 else 0),
+	}
+
 func _on_customer_tick() -> void:
 	ticks += 1
 	_stage_customer_leaves()
+	_advance_service_queue()
 	_advance_craft_jobs(3.0)
 	Sanctum.advance(active_buffs, 3.0)
 	_advance_expeditions(3.0)
@@ -3596,7 +3976,12 @@ func _on_customer_tick() -> void:
 			_update_demonic_form()
 			calm_line = " %s levou %d de fúria da chefe com um prato no fim do turno." % [
 				str(Staff.find("cozinha")["name"]), calm]
-		day_report = bill_line + (" " + branch_line if branch_line != "" else "") + calm_line
+		# A fila que desistiu também fecha o dia: é o número que o balanço da manhã
+		# precisa mostrar para a fama ter preço visível.
+		var lost_line := ""
+		if day_walkouts > 0:
+			lost_line = " %d saíram da fila sem comprar." % day_walkouts
+		day_report = bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + lost_line
 		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s\n%s%s" % [
 			shop_day, Economy.report(economy_state, products, Ingredients.DATA), bill_line,
 			("\n" + branch_line) if branch_line != "" else ""]
@@ -3605,6 +3990,9 @@ func _on_customer_tick() -> void:
 		# prazo de um dia que já passou.
 		_advance_commission()
 		_save_game()
+		# A conta da virada fecha depois de todo mundo ter pago e recebido: casa,
+		# filiais e encomenda do patrono entram no mesmo número que a chefe vai ler.
+		var balance := _close_day_balance()
 		# A última lembrança não depende de capítulo nenhum: ela chega na manhã
 		# seguinte a ter fechado o império, quando a loja já não tem meta nova.
 		if game_completed:
@@ -3614,6 +4002,8 @@ func _on_customer_tick() -> void:
 		_check_achievements()
 		if debt >= _debt_limit():
 			_claim_ruin()
+		else:
+			_show_day_report(balance)
 	if imp_hired and ticks % 3 == 0:
 		_imp_work()
 
@@ -3663,49 +4053,9 @@ func _on_customer_tick() -> void:
 		last_event = "%s entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. %s Reabasteça a loja para não perder vendas." % [visitor["short"], grumble]
 		_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank + (15 if _has_spec("charm", "boca") else 0))
 	else:
-		var profiles: Array[Dictionary] = [
-			{"name": "Speedrunner", "favorite": "caixa_misteriosa", "line": "“Compra feita. Onde fica o botão de pular diálogo?”", "faction": "aventureiros", "portrait": 0, "budget": 75, "patience": 1},
-			{"name": "Especialista em Tudo", "favorite": "dano_emocional", "line": "“Vi um tutorial de 12 segundos e agora sou consultor.”", "faction": "guildas", "portrait": 1, "budget": 48, "patience": 2},
-				{"name": "Gótico Econômico", "favorite": "lagrimas_jogador", "line": "“Minhas lágrimas são artesanais. As suas têm desconto?”", "faction": "submundo", "portrait": 2, "budget": 90, "patience": 3},
-				{"name": "Mago do Quero Mana", "favorite": "frasco_motivacao", "line": "“Quero manaaa! Isso aqui é uma porcaria... me vê duas poções mesmo assim.”", "faction": "guildas", "portrait": 1, "budget": 120, "patience": 2},
-				{"name": "Fiscal do Pix Astral", "favorite": "incenso_teleporte", "line": "“Aceita Pix astral? Se não aceitar, vou pagar em promessa e reclamar no fórum.”", "faction": "mercadores", "portrait": 6, "budget": 115, "patience": 2},
-				{"name": "Só Mais Uma Run", "favorite": "caixa_misteriosa", "line": "“É rapidinho, só mais uma compra. Dessa vez eu paro antes do amanhecer.”", "faction": "aventureiros", "portrait": 3, "budget": 100, "patience": 1},
-				{"name": "Ladino do Ctrl+C", "favorite": "dano_emocional", "line": "“Vi isso em outro lugar. Vou levar o seu, porque parece mais fácil.”", "faction": "submundo", "portrait": 4, "budget": 70, "patience": 2, "thief": true},
-				{"name": "Cliente do É Sobre Isso", "favorite": "confianca_instantanea", "line": "“É sobre isso e está tudo bem. Mas se tiver desconto, fica ainda mais sobre isso.”", "faction": "nobres", "portrait": 0, "budget": 150, "patience": 3},
-				{"name": "Colecionador de Patos", "favorite": "pato_amaldicoado", "line": "“Este pato combina com os outros 47 que não me julgam.”", "faction": "mercadores", "portrait": 8, "budget": 42, "patience": 2},
-				{"name": "Coach Interdimensional", "favorite": "confianca_instantanea", "line": "“Acredite no seu potencial! Meu boleto acredita em mim.”", "faction": "guildas", "portrait": 5, "budget": 125, "patience": 3},
-				{"name": "Cliente Misterioso", "favorite": "", "line": "“Não nos conhecemos. Se nos conhecemos, não se lembra.”", "faction": "nobres", "portrait": 9, "budget": 60, "patience": 1},
-				{"name": "Bardo do Duplo Sentido", "favorite": "confianca_instantanea", "line": "“Se essa poção for tão quente quanto seu sorriso, eu compro duas.”", "faction": "aventureiros", "portrait": 11, "budget": 110, "patience": 2},
-				{"name": "Paladina do Caos", "favorite": "adaga_charme", "line": "“Prometi ser virtuosa hoje. Mas posso abrir uma exceção para você.”", "faction": "nobres", "portrait": 12, "budget": 145, "patience": 2},
-				{"name": "Ladrão de Relíquias Sensíveis", "favorite": "pergaminho_procrastinacao", "line": "“Não estou roubando seu coração. Só testando se ele cabe no meu inventário.”", "faction": "submundo", "portrait": 4, "budget": 135, "patience": 1},
-				{"name": "Bruxa em Lua de Mel", "favorite": "incenso_teleporte", "line": "“Meu familiar disse que você é perigosa. Por isso mesmo fiquei.”", "faction": "guildas", "portrait": 13, "budget": 180, "patience": 3},
-				{"name": "Ferreiro do Estoque Infinito", "favorite": "martelo_faisca", "line": "“Vim comprar um martelo. Saí com três e uma opinião sobre os seus.”", "faction": "guildas", "portrait": 10, "budget": 165, "patience": 3},
-				{"name": "Druida em Greve", "favorite": "elixir_memoria", "line": "“A floresta me manda dizer que está decepcionada com vocês dois.”", "faction": "aventureiros", "portrait": 14, "budget": 85, "patience": 2},
-				{"name": "Capitã do Contrabando Afetivo", "favorite": "caixa_misteriosa", "line": "“Tudo que eu vendo é de procedência duvidosa e coração sincero.”", "faction": "mercadores", "portrait": 15, "budget": 210, "patience": 1, "thief": true}
-			]
-		var profile: Dictionary = profiles[randi() % profiles.size()]
-		current_regular_id = ""
-		if randi() % 100 < 35:
-			var regular: Dictionary = _pick_regular()
-			var regular_id := str(regular["id"])
-			var bond := int(regular_bonds.get(regular_id, 0))
-			var tier := Regulars.tier_for(bond)
-			var lines_by_tier: Array = regular["lines"][tier]
-			var regular_line := str(lines_by_tier[randi() % lines_by_tier.size()])
-			var personal_request := tier >= 1 and randi() % 100 < 35
-			if personal_request:
-				regular_line = str(regular["request"])
-			profile = {
-				"name": regular["name"],
-				"favorite": str(regular["favorite"]),
-				"line": regular_line,
-				"regular_id": regular_id,
-				"portrait": int(regular["portrait"]),
-				"tier": tier,
-				"personal_request": personal_request,
-				"faction": str(regular.get("faction", "aventureiros"))
-			}
-			current_regular_id = regular_id
+		_flood_service_queue()
+		var profile: Dictionary = _next_served_profile()
+		current_regular_id = str(profile.get("regular_id", ""))
 		_animate_customer_arrival(profile)
 		var preferred_index: int = _product_index(str(profile["favorite"]))
 		current_customer_budget = int(profile.get("budget", 50)) + trade_rank * 8
@@ -4385,7 +4735,10 @@ func _refresh_ui() -> void:
 		return
 	gold_label.text = "Ouro: %d" % gold
 	rep_label.text = "Reputação: %d • %s (+%d%%)" % [reputation, _reputation_title(), int(round((_reputation_price_multiplier() - 1.0) * 100.0))]
-	customers_label.text = "Clientes: %d  ♥%d  ✗%d" % [customers_served, happy_customers, disappointed_customers]
+	# O número do painel é o corpo desenhado no salão agora, e a fila à parte:
+	# contar a vida inteira fazia "Clientes: 12" com três visitas na tela.
+	customers_label.text = "No salão: %d • Fila: %d  ♥%d  ✗%d  •  Atendidos: %d" % [
+		_bodies_on_stage(), service_queue.size(), happy_customers, disappointed_customers, customers_served]
 	affection_label.text = "Afinidade: %d/100 • Seduções: %d/%d" % [affection, seduction_successes, seduction_attempts]
 	if is_instance_valid(fury_label):
 		fury_label.text = "Fúria: %d/5%s%s" % [fury,
@@ -4613,6 +4966,19 @@ func _refresh_ui() -> void:
 			branch_button.disabled = opened or blocked != "" or gold < branch_cost
 			branch_button.text = "ABERTA" if opened else (
 				"Abrir por %d" % branch_cost if blocked == "" else "Trancada: %s" % blocked)
+	if is_instance_valid(queue_label):
+		if service_queue.is_empty():
+			queue_label.text = "A porta está quieta: ninguém espera do lado de fora. %s" % (
+				"Com %d de fama, %d batem no mesmo tique." % [reputation, _arrivals_this_tick()]
+				if reputation >= 12 else "Com a loja desconhecida, um cliente por tique é o teto.")
+		else:
+			var waiting: Array[String] = []
+			for entry in service_queue.slice(0, 4):
+				waiting.append("%s (%d/%d)" % [
+					str(entry["profile"].get("name", "?")), int(entry["waited"]), int(entry["limit"])])
+			queue_label.text = "ESPERANDO: %d na fila • %s%s • saíram sem comprar: %d. O balcão atende um por tique; o resto é fila." % [
+				service_queue.size(), " • ".join(waiting),
+				" …" if service_queue.size() > 4 else "", queue_walkouts]
 	if is_instance_valid(staff_summary_label):
 		# A folha é a conta: o painel diz quanto os do balcão somam por virada e onde
 		# esse dinheiro aparece — no custo da casa, não numa linha separada.
@@ -4951,7 +5317,9 @@ func _save_game() -> void:
 	config.set_value("game", "branches", branches)
 	config.set_value("game", "staff_hired", staff_hired)
 	config.set_value("game", "theft_blocked", theft_blocked)
+	config.set_value("game", "queue_walkouts", queue_walkouts)
 	config.set_value("game", "day_report", day_report)
+	config.set_value("game", "day_auto_ok", day_auto_ok)
 	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "faction_arc_step", faction_arc_step)
 	config.set_value("game", "faction_customers", faction_customers)
@@ -5144,7 +5512,9 @@ func _load_game() -> void:
 			if Staff.knows(str(seat_id)) and not staff_hired.has(str(seat_id)):
 				staff_hired.append(str(seat_id))
 	theft_blocked = maxi(0, int(config.get_value("game", "theft_blocked", theft_blocked)))
+	queue_walkouts = maxi(0, int(config.get_value("game", "queue_walkouts", queue_walkouts)))
 	day_report = str(config.get_value("game", "day_report", day_report))
+	day_auto_ok = bool(config.get_value("game", "day_auto_ok", day_auto_ok))
 	prestige_runs = int(config.get_value("game", "prestige_runs", prestige_runs))
 	prestige_aura = int(config.get_value("game", "prestige_aura", prestige_aura))
 	var saved_perks = config.get_value("game", "prestige_perks", {})
@@ -5714,6 +6084,7 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "branch_all", "name": "Império de esquina a beco (todas as filiais abertas)", "condition": branches.size() >= Branches.size(), "gold": 500, "rep": 15, "pose": "danca"},
 		{"id": "staff_full", "name": "Quadro cheio (as quatro vagas do balcão pagando salário juntas)", "condition": staff_hired.size() >= Staff.size(), "gold": 340, "rep": 12, "pose": "vitoria"},
 		{"id": "staff_rounds", "name": "A ronda conhece o beco (três furtos barrados na mesma vida)", "condition": theft_blocked >= 3, "gold": 220, "rep": 8, "pose": "book"},
+		{"id": "queue_lost", "name": "A porta também chora (cinco visitas que desistiram da fila)", "condition": queue_walkouts >= 5, "gold": 180, "rep": 6, "pose": "recusa"},
 		{"id": "house_talent_max", "name": "A casa no cabresto (Administração da Casa no nível máximo)", "condition": house_rank >= 5, "gold": 260, "rep": 9, "pose": "book"},
 		{"id": "faction_arc_first", "name": "Primeira assinatura no caderno (um pedido de facção entregue)", "condition": _faction_asks_delivered() >= 1, "gold": 100, "rep": 3},
 		{"id": "faction_arc_all", "name": "As cinco fachadas assinadas (todas as facções com arco fechado)", "condition": _faction_arcs_closed() >= Factions.DATA.size(), "gold": 700, "rep": 22, "pose": "vitoria"},
@@ -6506,7 +6877,10 @@ func _close_origin() -> void:
 	if is_instance_valid(origin_layer):
 		origin_layer.queue_free()
 	origin_layer = null
-	world_timer.start()
+	# Duas janelas na mesma manhã: o balanço do dia e a lembrança seguram o relógio,
+	# e quem fecha uma não tem o direito de reabrir a loja por cima da outra.
+	if not is_instance_valid(day_layer) and not is_instance_valid(ending_layer):
+		world_timer.start()
 	audio.play("click")
 	# O botão de relembrar abre o quadro sem prêmio: a cena já foi paga no dia em
 	# que a loja a descobriu.
@@ -6515,6 +6889,154 @@ func _close_origin() -> void:
 		var next := _origin_next
 		_origin_next = Callable()
 		next.call()
+
+## Marca a régua do dia: tudo que o balanço da virada vai subtrair.
+func _mark_day_start() -> void:
+	day_snap_gold = gold
+	day_snap_served = customers_served
+	day_snap_happy = happy_customers
+	day_snap_lost = disappointed_customers
+
+## A conta da virada em números. Fecha também a fila do dia, porque o mesmo
+## balanço que mostra quem saiu é o que zera o contador da próxima manhã.
+func _close_day_balance() -> Dictionary:
+	var balance := {
+		"gold": gold - day_snap_gold,
+		"served": customers_served - day_snap_served,
+		"happy": happy_customers - day_snap_happy,
+		"lost": disappointed_customers - day_snap_lost,
+		"walkouts": day_walkouts,
+	}
+	_mark_day_start()
+	day_walkouts = 0
+	return balance
+
+## O popup do balanço: a rua para, e a chefe vê o dia em números antes de dormir.
+## A linha do mural se apaga na virada seguinte; o caixa, não.
+func _show_day_report(balance: Dictionary) -> void:
+	if is_instance_valid(day_layer):
+		day_layer.queue_free()
+	day_layer = null
+	var dim := ColorRect.new()
+	dim.color = Color(0.03, 0.01, 0.05, 0.82)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(dim)
+	day_layer = dim
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.add_child(center)
+
+	var panel := PanelContainer.new()
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.08, 0.03, 0.11, 0.99)
+	panel_style.border_color = Color(0.85, 0.62, 1.0, 0.95)
+	panel_style.set_border_width_all(2)
+	panel_style.set_corner_radius_all(14)
+	panel_style.content_margin_left = 28
+	panel_style.content_margin_right = 28
+	panel_style.content_margin_top = 22
+	panel_style.content_margin_bottom = 22
+	panel.add_theme_stylebox_override("panel", panel_style)
+	center.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(520, 0)
+	box.add_theme_constant_override("separation", 10)
+	panel.add_child(box)
+
+	var who := Label.new()
+	who.text = "BALANÇO • DIA %d" % (shop_day - 1)
+	who.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	who.add_theme_font_size_override("font_size", 14)
+	who.add_theme_color_override("font_color", Color(0.78, 0.62, 0.92))
+	box.add_child(who)
+
+	var net := int(balance["gold"])
+	var title := Label.new()
+	title.text = "%+d de ouro no caixa" % net
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 26)
+	title.add_theme_color_override("font_color", Color(0.62, 1.0, 0.72) if net >= 0 else Color(1.0, 0.55, 0.55))
+	box.add_child(title)
+
+	var counts := Label.new()
+	counts.text = "Atendidos: %d  •  Saíram felizes: %d  •  Saíram sem comprar: %d (destes, %d da fila)" % [
+		int(balance["served"]), int(balance["happy"]), int(balance["lost"]), int(balance["walkouts"])]
+	counts.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	counts.add_theme_font_size_override("font_size", 15)
+	counts.add_theme_color_override("font_color", Color(0.93, 0.89, 0.96))
+	box.add_child(counts)
+
+	var prose := Label.new()
+	prose.text = day_report
+	prose.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	prose.add_theme_font_size_override("font_size", 13)
+	prose.add_theme_color_override("font_color", Color(0.72, 0.66, 0.8))
+	box.add_child(prose)
+
+	var auto := CheckBox.new()
+	auto.text = "Fechar o balanço sozinho em 5 segundos"
+	auto.button_pressed = day_auto_ok
+	auto.add_theme_font_size_override("font_size", 13)
+	auto.toggled.connect(_on_day_auto_ok_toggled)
+	box.add_child(auto)
+
+	_day_countdown_label = Label.new()
+	_day_countdown_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_day_countdown_label.add_theme_font_size_override("font_size", 12)
+	_day_countdown_label.add_theme_color_override("font_color", Color(0.62, 0.56, 0.74))
+	box.add_child(_day_countdown_label)
+
+	var close_button := Button.new()
+	close_button.text = "Fechar o dia"
+	close_button.custom_minimum_size = Vector2(240, 46)
+	close_button.pressed.connect(_close_day_report)
+	box.add_child(close_button)
+
+	world_timer.stop()
+	audio.play("coin" if net >= 0 else "sad", true)
+	_refresh_ui()
+	if day_auto_ok:
+		_start_day_countdown()
+
+func _start_day_countdown() -> void:
+	if _day_countdown != null and _day_countdown.is_valid():
+		_day_countdown.kill()
+	_day_countdown = create_tween()
+	_day_countdown.tween_method(_tick_day_countdown, 5.0, 0.0, 5.0)
+	_day_countdown.tween_callback(_close_day_report)
+
+func _tick_day_countdown(left: float) -> void:
+	if is_instance_valid(_day_countdown_label):
+		_day_countdown_label.text = "A chefe já virou a página: fecha em %d…" % int(ceil(left))
+
+func _on_day_auto_ok_toggled(pressed: bool) -> void:
+	day_auto_ok = pressed
+	_save_game()
+	if _day_countdown != null and _day_countdown.is_valid():
+		_day_countdown.kill()
+		_day_countdown = null
+	if is_instance_valid(_day_countdown_label):
+		_day_countdown_label.text = ""
+	if pressed:
+		_start_day_countdown()
+
+## Fechar o balanço devolve a rua ao relógio — mas só se não houver outra janela
+## segurando a loja parada em cima dele.
+func _close_day_report() -> void:
+	if _day_countdown != null and _day_countdown.is_valid():
+		_day_countdown.kill()
+	_day_countdown = null
+	if is_instance_valid(day_layer):
+		day_layer.queue_free()
+	day_layer = null
+	_day_countdown_label = null
+	if is_instance_valid(origin_layer) or is_instance_valid(ending_layer):
+		return
+	world_timer.start()
+	audio.play("click", true)
 
 ## Painel das memórias: o que a loja já contou de si e o que ainda está trancado
 ## em capítulo.
@@ -6688,6 +7210,14 @@ func _reset_run() -> void:
 	# quem quiser do zero.
 	staff_hired.clear()
 	theft_blocked = 0
+	# A fila é da loja velha: reencarnar abre a porta vazia, e o corpo que esperava
+	# sai de cena junto com o balcão anterior.
+	for waiting in _stage_waiters.duplicate():
+		_retire_walker(waiting["node"] as Control)
+	_stage_waiters.clear()
+	service_queue.clear()
+	queue_walkouts = 0
+	day_walkouts = 0
 	day_report = ""
 	reputation = 0
 	customers_served = 0
@@ -6772,6 +7302,10 @@ func _reset_run() -> void:
 	# Quem encheu o balcão na vida anterior não está na fila desta: a contagem de
 	# clientes por facção é da temporada, o pedido já entregue no caderno não é.
 	faction_customers.clear()
+	# A régua do balanço nasce no fim, depois de todo mundo ter zerado: marcada no
+	# meio da limpeza, o primeiro popup da vida nova contaria o caixa inteiro como
+	# se fosse lucro de um dia só.
+	_mark_day_start()
 
 func _board_text() -> String:
 	if steam == null:
