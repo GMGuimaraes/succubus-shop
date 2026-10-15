@@ -16,6 +16,7 @@ const Endings = preload("res://endings.gd")
 const Branches = preload("res://branches.gd")
 const FactionArcs = preload("res://faction_arcs.gd")
 const TalentSpecs = preload("res://talent_specs.gd")
+const Staff = preload("res://staff.gd")
 const SteamBridge = preload("res://steam_bridge.gd")
 
 ## Caixa e despensa com que a loja abre a primeira vida — e cada vida seguinte.
@@ -79,6 +80,12 @@ var day_report: String = ""
 ## Filiais abertas nesta vida. Cada uma paga um lucro por virada e engrossa a conta
 ## da casa; a mais rentável é também a que mais afunda quando o dia vira.
 var branches: Array[String] = []
+## Quem está no balcão nesta vida. Vaga é da vida como a filial: reencarnar devolve
+## o salário e devolve a entrega, porque a folha é conta da casa e a casa recomeça
+## no nome dela.
+var staff_hired: Array[String] = []
+## Furtos barrados pela ronda nesta vida — o número que a conquista do beco lê.
+var theft_blocked: int = 0
 ## Pedidos de facção já entregues (facção → quantos). É nome, não ouro: fica na
 ## conta salva depois da ruína e da reencarnação, e o privilégio do arco fechado
 ## continua valendo na vida seguinte.
@@ -374,6 +381,9 @@ var day_report_label: Label
 var branch_summary_label: Label
 var branch_labels: Array = []
 var branch_buttons: Array = []
+var staff_summary_label: Label
+var staff_labels: Array = []
+var staff_buttons: Array = []
 var arc_summary_label: Label
 var arc_labels: Array = []
 var arc_desc_labels: Array = []
@@ -2013,6 +2023,47 @@ func _build_ui() -> void:
 		branch_row.add_child(branch_button)
 		branch_buttons.append(branch_button)
 
+	reception_box.add_child(_make_section_title("QUADRO DE FUNCIONÁRIOS", Color(1.0, 0.78, 0.62)))
+	reception_box.add_child(_make_section_hint("Gente fixa não é prêmio, é conta: cada vaga cobra taxa uma vez e salário em toda virada, dentro do custo da casa. Ninguém inventa número novo — cada um mexe numa fórmula que a loja já usa, e a vaga só abre quando a loja já tem o que ela exige de quem entra no balcão."))
+	staff_summary_label = Label.new()
+	staff_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	staff_summary_label.add_theme_font_size_override("font_size", 14)
+	staff_summary_label.add_theme_color_override("font_color", Color(0.98, 0.86, 0.76))
+	reception_box.add_child(staff_summary_label)
+	for seat in Staff.DATA:
+		var staff_card := _make_sector_card(Color(0.08, 0.05, 0.045, 0.94), Color(0.66, 0.40, 0.28, 0.95))
+		reception_box.add_child(staff_card)
+		var staff_row := HBoxContainer.new()
+		staff_row.add_theme_constant_override("separation", 12)
+		staff_card.add_child(staff_row)
+		var staff_info := VBoxContainer.new()
+		staff_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		staff_row.add_child(staff_info)
+		var staff_label := Label.new()
+		staff_label.add_theme_font_size_override("font_size", 15)
+		staff_label.add_theme_color_override("font_color", Color(1.0, 0.90, 0.80))
+		staff_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		staff_info.add_child(staff_label)
+		staff_labels.append(staff_label)
+		var staff_bg := Label.new()
+		staff_bg.text = str(seat["bg"])
+		staff_bg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		staff_bg.add_theme_font_size_override("font_size", 12)
+		staff_bg.add_theme_color_override("font_color", Color(0.74, 0.68, 0.66))
+		staff_info.add_child(staff_bg)
+		var staff_does := Label.new()
+		staff_does.text = str(seat["does"])
+		staff_does.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		staff_does.add_theme_font_size_override("font_size", 12)
+		staff_does.add_theme_color_override("font_color", Color(0.86, 0.78, 0.60))
+		staff_info.add_child(staff_does)
+		var staff_button := Button.new()
+		staff_button.custom_minimum_size = Vector2(170, 40)
+		staff_button.add_theme_font_size_override("font_size", 14)
+		staff_button.pressed.connect(_manage_staff.bind(str(seat["id"])))
+		staff_row.add_child(staff_button)
+		staff_buttons.append(staff_button)
+
 	reception_box.add_child(_make_section_title("PEDIDOS DAS FACÇÕES", Color(1.0, 0.86, 0.45)))
 	reception_box.add_child(_make_section_hint("Cada facção tem três pedidos escritos, e eles só abrem na medida em que a loja vira gente conhecida. Fechar os três deixa um privilégio permanente — nome não apaga com reencarnação."))
 	arc_summary_label = Label.new()
@@ -2897,6 +2948,7 @@ func _craft_product(index: int) -> void:
 	gold -= cost
 	_consume_ingredients(item)
 	var duration := 6.0 + float(index) * 1.4 - float(alchemy_rank) * 0.7 - float(library_upgrade_level) * 0.45
+	duration *= Staff.craft_time_factor(staff_hired)
 	duration /= Sanctum.scale(active_buffs, "craft")
 	var catalyst := _take_catalyst()
 	var job_luck := int(catalyst.get("catalyst_luck", 0))
@@ -3535,7 +3587,16 @@ func _on_customer_tick() -> void:
 		# já acorda devendo, e dívida tem teto.
 		var bill_line := _pay_upkeep()
 		var branch_line := _collect_branches()
-		day_report = bill_line + (" " + branch_line if branch_line != "" else "")
+		# A cozinha serve no fim do turno: fúria é fome disfarçada de opinião, e cada
+		# ponto a menos é 5% de etiqueta que volta para a próxima venda.
+		var calm_line := ""
+		var calm := Staff.calm_per_turn(staff_hired)
+		if calm > 0 and fury > 0:
+			fury = maxi(0, fury - calm)
+			_update_demonic_form()
+			calm_line = " %s levou %d de fúria da chefe com um prato no fim do turno." % [
+				str(Staff.find("cozinha")["name"]), calm]
+		day_report = bill_line + (" " + branch_line if branch_line != "" else "") + calm_line
 		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s\n%s%s" % [
 			shop_day, Economy.report(economy_state, products, Ingredients.DATA), bill_line,
 			("\n" + branch_line) if branch_line != "" else ""]
@@ -3654,9 +3715,15 @@ func _on_customer_tick() -> void:
 		if is_instance_valid(customer_emotion_label):
 			customer_emotion_label.text = "🏃 pressa" if current_customer_patience <= 1 else "🙂 observando"
 		if bool(profile.get("thief", false)) and current_customer_patience <= 1:
+			var round_block := Staff.block_chance(staff_hired)
 			if Sanctum.guards(active_buffs):
 				last_event = "%s enfiou a mão na prateleira, mas o Selo da Cadeia estalou e a mão saiu vazia. Ele ainda pagou o que levou." % str(profile.get("name", "O cliente"))
 				_show_feedback("⛓ Furto barrado pelo selo.", Color(0.75, 1.0, 0.72))
+			elif round_block > 0 and randi() % 100 < round_block:
+				theft_blocked += 1
+				last_event = "%s levou a mão à prateleira e a ronda não precisou levar a mão a ele: %s ficou olhando até a peça voltar para o lugar." % [
+					str(profile.get("name", "O cliente")), str(Staff.find("ronda")["name"])]
+				_show_feedback("⛔ A ronda viu primeiro.", Color(0.75, 1.0, 0.72))
 			else:
 				_handle_thief_escape(profile, available)
 				_check_achievements()
@@ -4501,7 +4568,7 @@ func _refresh_ui() -> void:
 	if is_instance_valid(upkeep_label):
 		# A conta do dia é a única razão para o caixa ter teto: sem ela, loja grande
 		# só cresce e nunca precisa de freguês.
-		upkeep_label.text = "CUSTO DA CASA: %d de ouro a cada virada (biblioteca, santuário, propaganda e diabrete pesam na conta).%s%s" % [
+		upkeep_label.text = "CUSTO DA CASA: %d de ouro a cada virada (biblioteca, santuário, propaganda, diabrete e a folha dos funcionários pesam na conta).%s%s" % [
 			_daily_upkeep(),
 			" Administração da casa derruba %d%% da conta. " % int(round(8.0 * float(house_rank))) if house_rank > 0 else "",
 			" Dívida aberta de %d — a casa leva o salão aos %d." % [debt, _debt_limit()] if debt > 0 else "",
@@ -4546,6 +4613,32 @@ func _refresh_ui() -> void:
 			branch_button.disabled = opened or blocked != "" or gold < branch_cost
 			branch_button.text = "ABERTA" if opened else (
 				"Abrir por %d" % branch_cost if blocked == "" else "Trancada: %s" % blocked)
+	if is_instance_valid(staff_summary_label):
+		# A folha é a conta: o painel diz quanto os do balcão somam por virada e onde
+		# esse dinheiro aparece — no custo da casa, não numa linha separada.
+		if staff_hired.is_empty():
+			staff_summary_label.text = "Ninguém no balcão além da chefe e do diabrete. A folha é zero e a conta também."
+		else:
+			var payroll := Staff.total_wage(staff_hired)
+			staff_summary_label.text = "NO BALCÃO: %d de %d • folha %d por virada, dentro do custo da casa (hoje %d). %s%s" % [
+				staff_hired.size(), Staff.size(), payroll, _daily_upkeep(), Staff.roster_line(staff_hired),
+				" • %d furtos barrados pela ronda." % theft_blocked if staff_hired.has("ronda") else ""]
+	for i in range(Staff.DATA.size()):
+		var seat: Dictionary = Staff.DATA[i]
+		var seat_id := str(seat["id"])
+		var hired := staff_hired.has(seat_id)
+		var blocked_by := Staff.gate(seat, _staff_gate_state())
+		var hire_fee := int(seat["hire"])
+		if i < staff_labels.size():
+			(staff_labels[i] as Label).text = "%s — %s • %s" % [
+				str(seat["name"]), str(seat["role"]),
+				"NO BALCÃO" if hired else ("disponível" if blocked_by == "" else "trancada")]
+		if i < staff_buttons.size():
+			var staff_button := staff_buttons[i] as Button
+			staff_button.disabled = not hired and (blocked_by != "" or gold < hire_fee)
+			staff_button.text = "Demitir • corta %d/dia" % int(seat["wage"]) if hired else (
+				"Contratar por %d • %d por virada" % [hire_fee, int(seat["wage"])]
+				if blocked_by == "" else "Sem vaga: %s" % blocked_by)
 	if is_instance_valid(arc_summary_label):
 		arc_summary_label.text = "PEDIDOS ENTREGUES: %d de %d • arcos fechados %d de %d.%s" % [
 			_faction_asks_delivered(), FactionArcs.total(), _faction_arcs_closed(), Factions.DATA.size(),
@@ -4856,6 +4949,8 @@ func _save_game() -> void:
 	config.set_value("game", "ruined_lives", ruined_lives)
 	config.set_value("game", "ruined_seasons", ruined_seasons)
 	config.set_value("game", "branches", branches)
+	config.set_value("game", "staff_hired", staff_hired)
+	config.set_value("game", "theft_blocked", theft_blocked)
 	config.set_value("game", "day_report", day_report)
 	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "faction_arc_step", faction_arc_step)
@@ -5040,6 +5135,15 @@ func _load_game() -> void:
 		for branch_id in saved_branches:
 			if Branches.knows(str(branch_id)) and not branches.has(str(branch_id)):
 				branches.append(str(branch_id))
+	# Save antigo não tem folha: o balcão acorda só com a chefe, sem salário nenhum
+	# na conta, exatamente como era antes de a loja contratar gente.
+	var saved_staff = config.get_value("game", "staff_hired", [])
+	staff_hired.clear()
+	if saved_staff is Array:
+		for seat_id in saved_staff:
+			if Staff.knows(str(seat_id)) and not staff_hired.has(str(seat_id)):
+				staff_hired.append(str(seat_id))
+	theft_blocked = maxi(0, int(config.get_value("game", "theft_blocked", theft_blocked)))
 	day_report = str(config.get_value("game", "day_report", day_report))
 	prestige_runs = int(config.get_value("game", "prestige_runs", prestige_runs))
 	prestige_aura = int(config.get_value("game", "prestige_aura", prestige_aura))
@@ -5608,6 +5712,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "branch_first", "name": "Endereço fora do bairro (primeira filial)", "condition": not branches.is_empty(), "gold": 120, "rep": 4},
 		{"id": "branch_self_made", "name": "A casa se paga (filiais cobrem a conta da casa)", "condition": not branches.is_empty() and Branches.expected_profit(branches, _branch_care()) >= _daily_upkeep(), "gold": 300, "rep": 10, "pose": "book"},
 		{"id": "branch_all", "name": "Império de esquina a beco (todas as filiais abertas)", "condition": branches.size() >= Branches.size(), "gold": 500, "rep": 15, "pose": "danca"},
+		{"id": "staff_full", "name": "Quadro cheio (as quatro vagas do balcão pagando salário juntas)", "condition": staff_hired.size() >= Staff.size(), "gold": 340, "rep": 12, "pose": "vitoria"},
+		{"id": "staff_rounds", "name": "A ronda conhece o beco (três furtos barrados na mesma vida)", "condition": theft_blocked >= 3, "gold": 220, "rep": 8, "pose": "book"},
 		{"id": "house_talent_max", "name": "A casa no cabresto (Administração da Casa no nível máximo)", "condition": house_rank >= 5, "gold": 260, "rep": 9, "pose": "book"},
 		{"id": "faction_arc_first", "name": "Primeira assinatura no caderno (um pedido de facção entregue)", "condition": _faction_asks_delivered() >= 1, "gold": 100, "rep": 3},
 		{"id": "faction_arc_all", "name": "As cinco fachadas assinadas (todas as facções com arco fechado)", "condition": _faction_arcs_closed() >= Factions.DATA.size(), "gold": 700, "rep": 22, "pose": "vitoria"},
@@ -5710,7 +5816,7 @@ func business_score() -> int:
 		+ campaign_step * 60 + private_moments_unlocked * 8 + _romance_steps_paid() * 20 \
 		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0) \
 		+ legendary_crafted * 60 + exclusive_finished * 120 + endings_seen.size() * 30 \
-		+ branches.size() * 90 \
+		+ branches.size() * 90 + staff_hired.size() * 30 \
 		+ prestige_runs * 150 + _perk_levels_total() * 20 + prestige_goals_paid * 40
 
 func _publish_score() -> void:
@@ -5807,7 +5913,8 @@ func _branch_care() -> int:
 
 func _daily_upkeep() -> int:
 	var bill := 12 + library_upgrade_level * 6 + sanctum_upgrade_level * 6 + ad_level * 5 \
-		+ (18 if imp_hired else 0) + Branches.total_upkeep(branches)
+		+ (18 if imp_hired else 0) + Branches.total_upkeep(branches) \
+		+ Staff.total_wage(staff_hired)
 	## Conta de casa bem administrada encolhe 8% por marcha, e a conta é o que
 	## segura o império: por isso a trilha mexe nela e não na receita.
 	return maxi(1, int(round(float(bill) * (1.0 - 0.08 * float(house_rank)) * (0.9 if _has_spec("house", "livro") else 1.0))))
@@ -5829,8 +5936,9 @@ func _pay_upkeep() -> String:
 			return "A casa cobrou %d e o caixa tinha só %d. Faltaram %d, e a dívida de %d já passa da metade do teto." % [
 				bill, paid, short, debt]
 		return "A casa cobrou %d e o caixa tinha só %d. A loja foi dormir devendo %d." % [bill, paid, debt]
-	# Ouro que sobra depois da conta é o único que escava: um décimo do caixa.
-	var dig := mini(debt, int(gold * 0.1))
+	# Ouro que sobra depois da conta é o único que escava: um décimo do caixa, e a
+	# escrevente do livro-caixa sabe achar mais na mesma sobra.
+	var dig := mini(debt, int(gold * Staff.debt_dig_share(staff_hired)))
 	debt -= dig
 	if dig > 0:
 		return "A casa cobrou %d, pago em dia — e a loja ainda abateu %d da dívida, que agora é %d." % [bill, dig, debt]
@@ -5897,6 +6005,60 @@ func _branch_faction_label(branch: Dictionary) -> String:
 	if faction_id == "":
 		return "qualquer loja de bairro dá o endereço"
 	return "padrinho: %s, %d de fama" % [str(Factions.find(faction_id).get("name", faction_id)), int(branch["standing"])]
+
+## ── Quadro de funcionários ─────────────────────────────────────────────────────
+
+## As portas que uma vaga lê: capítulo fechado, fama de facção, reputação no bairro,
+## degrau de trilha e o coração da chefe. Nada aqui é chave nova de save — é tudo
+## número que a loja já carrega.
+func _staff_gate_state() -> Dictionary:
+	return {
+		"chapter": campaign_step,
+		"standing": faction_standing,
+		"rep": reputation,
+		"ranks": {"alchemy": alchemy_rank, "trade": trade_rank, "charm": charm_rank,
+			"logistics": logistics_rank, "house": house_rank},
+		"affection": affection,
+	}
+
+## O mesmo botão serve para entrar e sair: a folha é despesa, e demitir tem de ser
+## tão barato quanto contratar é caro — senão a vaga vira melhoria permanente e a
+## conta deixa de ser decisão.
+func _manage_staff(id: String) -> void:
+	var seat := Staff.find(id)
+	if seat.is_empty():
+		return
+	if staff_hired.has(id):
+		staff_hired.erase(id)
+		last_event = "%s pegou a chave e o resto do mês. A loja agradece, e a conta deixa de cobrar %d por virada." % [
+			str(seat["name"]), int(seat["wage"])]
+		audio.play("click")
+		_show_feedback("✕ %s fora do balcão." % str(seat["name"]), Color(0.86, 0.72, 0.62))
+		_save_game()
+		_refresh_ui()
+		return
+	var blocked := Staff.gate(seat, _staff_gate_state())
+	if blocked != "":
+		last_event = "%s não entra hoje: %s." % [str(seat["name"]), blocked]
+		audio.play("sad")
+		_refresh_ui()
+		return
+	var fee := int(seat["hire"])
+	if gold < fee:
+		last_event = "%s pede %d de ouro na entrada. Faltam %d — e ela não começa de graça." % [
+			str(seat["name"]), fee, fee - gold]
+		audio.play("sad")
+		_refresh_ui()
+		return
+	gold -= fee
+	staff_hired.append(id)
+	last_event = "%s entrou no balcão. A taxa foi %d e o salário é %d em toda virada, dentro da conta da casa." % [
+		str(seat["name"]), fee, int(seat["wage"])]
+	audio.play("levelup")
+	_show_feedback("✦ %s contratada." % str(seat["name"]), Color(1.0, 0.78, 0.62))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
 
 ## ── Pedidos de facção ──────────────────────────────────────────────────────────
 
@@ -6165,10 +6327,12 @@ func _show_ending(ending: Dictionary = {}, ruined := false) -> void:
 	var ledger := "Nesta vida, quem mais usou o balcão: %s\n\n" % _life_standing_text()
 	var closing := "O balcão continua aberto: dá para fechar o álbum, subir no placar e esticar o império até onde a sorte deixar."
 	if ruined:
-		ledger = "A vida afundou no dia em que a casa cobrava %d e a dívida passou de %d. O fundo do poço desta vida foi %d.%s\n\n" % [
+		ledger = "A vida afundou no dia em que a casa cobrava %d e a dívida passou de %d. O fundo do poço desta vida foi %d.%s%s\n\n" % [
 			_daily_upkeep(), _debt_limit(), debt_peak,
 			(" E a loja ainda mantinha %d filial(is) aberta(s), custando %d por virada." % [
-				branches.size(), Branches.total_upkeep(branches)]) if not branches.is_empty() else ""]
+				branches.size(), Branches.total_upkeep(branches)]) if not branches.is_empty() else "",
+			(" O balcão tinha %d funcionário(s) na folha, %d por virada." % [
+				staff_hired.size(), Staff.total_wage(staff_hired)]) if not staff_hired.is_empty() else ""]
 		closing = "O balcão reabre no mesmo lugar, com a freguesia lembrando da loja e o cofre vazio: quem fecha no vermelho recomeça sem aura nenhuma."
 	body_text.text = Endings.text(ending) + "\n\n" \
 		+ "Dia %d • %d de ouro em caixa • reputação %d • nível %d\n" % [shop_day, gold, reputation, player_level] \
@@ -6520,6 +6684,10 @@ func _reset_run() -> void:
 	debt_peak = 0
 	# Filial é patrimônio da vida, não da família: reencarnar fecha as portas todas.
 	branches.clear()
+	# O quadro também é da vida: a folha sai com a loja velha, e a vida nova contrata
+	# quem quiser do zero.
+	staff_hired.clear()
+	theft_blocked = 0
 	day_report = ""
 	reputation = 0
 	customers_served = 0
