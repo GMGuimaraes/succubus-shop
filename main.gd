@@ -20,6 +20,7 @@ const Rivals = preload("res://rivals.gd")
 const FactionArcs = preload("res://faction_arcs.gd")
 const TalentSpecs = preload("res://talent_specs.gd")
 const Staff = preload("res://staff.gd")
+const Locales = preload("res://locales.gd")
 const SteamBridge = preload("res://steam_bridge.gd")
 const Diagnostics = preload("res://diagnostics.gd")
 
@@ -301,6 +302,21 @@ var world_timer: Timer
 var offline_dialog: AcceptDialog
 var _offline_elapsed_seconds: float = 0.0
 var _offline_branch_fraction: float = 0.0
+## Idioma e menu do ESC. A língua é preferência da pessoa, não da vida: ela não é
+## apagada por reencarnar nem por `_reset_run()`, e mora tanto no arquivo de
+## preferências (`user://locale_settings.cfg`) quanto no save, para um save exportado
+## levar o idioma junto. `locale_confirmed` marca que alguém escolheu de verdade — é
+## ela que decide se a loja abre direto ou com o seletor de idioma na frente.
+var locale: String = Locales.DEFAULT
+var locale_confirmed: bool = false
+var menu_layer: Control
+var menu_start_mode: bool = false
+var menu_was_running: bool = false
+var menu_language_buttons: Array[Button] = []
+var menu_status_label: Label
+## O arquivo de preferências respondeu? Se sim, ele manda sobre o save: o save é a conta
+## da loja, e a loja pode ser exportada para outra máquina sem arrastar o idioma dela.
+var _locale_from_settings: bool = false
 var speed_label: Label
 var speed_button: Button
 var forge_status_label: Label
@@ -1069,7 +1085,10 @@ func _ready() -> void:
 	add_child(steam)
 	steam.boot(_achievement_ids())
 	steam.connect("leaderboard_ready", _on_leaderboard_ready)
+	Locales.register()
+	_load_locale_settings()
 	_load_game()
+	TranslationServer.set_locale(locale)
 	_mark_day_start()
 	_sync_quality_stock()
 	_build_ui()
@@ -1086,6 +1105,12 @@ func _ready() -> void:
 	timer.timeout.connect(_on_customer_tick)
 	add_child(timer)
 	_apply_offline_progress()
+	# Ninguém escolheu idioma ainda: a loja abre com o seletor na frente, como em jogo
+	# moderno. Em headless não existe quem clique, e uma janela que para a rua sem poder
+	# ser fechada seria um beco sem saída — ali a loja abre direto e a sonda chama o menu
+	# sozinha.
+	if not locale_confirmed and DisplayServer.get_name() != "headless":
+		_open_menu(true)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and is_inside_tree():
@@ -1198,6 +1223,201 @@ func _close_offline_report() -> void:
 	if is_instance_valid(world_timer) and not is_instance_valid(day_layer) \
 			and not is_instance_valid(origin_layer) and not is_instance_valid(ending_layer):
 		world_timer.start()
+
+# ── Idioma e menu do ESC ──
+
+## ESC abre e fecha o menu, como em jogo moderno, e a janela para a rua: enquanto a
+## chefe está no menu, nenhum cliente bate na porta. O diálogo de escolha de idioma da
+## primeira abertura é o mesmo menu com menu_start_mode ligado — uma janela, dois papéis.
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.echo or key.keycode != KEY_ESCAPE:
+		return
+	if is_instance_valid(menu_layer):
+		_close_menu()
+	else:
+		_open_menu(false)
+	get_viewport().set_input_as_handled()
+
+## Toda janela que já parou o relógio por conta própria. O menu por cima delas não pode
+## prometer "retomar" o que estava parado antes de elas existirem.
+func _overlay_blocks_clock() -> bool:
+	return is_instance_valid(day_layer) or is_instance_valid(origin_layer) \
+			or is_instance_valid(ending_layer)
+
+func _open_menu(start_mode: bool) -> void:
+	menu_start_mode = start_mode
+	# A foto do relógio só é tirada quando não há janela aberta: com o balanço do dia na
+	# tela o timer já está parado, e "retomar" acordaria a rua ao fechar o menu.
+	if not is_instance_valid(menu_layer):
+		menu_was_running = is_instance_valid(world_timer) and not world_timer.is_stopped()
+	_build_menu_layer()
+	if is_instance_valid(world_timer):
+		world_timer.stop()
+
+func _close_menu() -> void:
+	var was_start := menu_start_mode
+	_free_menu_layer()
+	menu_start_mode = false
+	if was_start and not locale_confirmed:
+		# Fechar o seletor sem escolher também é resposta: a loja fica no idioma que já
+		# tinha, e o seletor não volta a cada abertura do jogo.
+		locale_confirmed = true
+		_save_locale_settings()
+	_save_game()
+	if menu_was_running and is_instance_valid(world_timer) and not _overlay_blocks_clock():
+		world_timer.start()
+
+func _free_menu_layer() -> void:
+	if is_instance_valid(menu_layer):
+		menu_layer.queue_free()
+	menu_layer = null
+	menu_language_buttons.clear()
+	menu_status_label = null
+
+## A janela em si: título, nota de cobertura por idioma, um botão por língua e a saída.
+## Os textos são literais em português porque o catálogo traduz o rótulo pronto — é por
+## isso que dar mais idioma ao jogo não pede tocar nesta função.
+func _build_menu_layer() -> void:
+	_free_menu_layer()
+	var dim := ColorRect.new()
+	dim.color = Color(0.03, 0.01, 0.05, 0.88)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(dim)
+	menu_layer = dim
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.add_child(center)
+
+	var panel := PanelContainer.new()
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.08, 0.03, 0.11, 0.99)
+	panel_style.border_color = Color(0.85, 0.62, 1.0, 0.95)
+	panel_style.set_border_width_all(2)
+	panel_style.set_corner_radius_all(14)
+	panel_style.content_margin_left = 30
+	panel_style.content_margin_right = 30
+	panel_style.content_margin_top = 24
+	panel_style.content_margin_bottom = 24
+	panel.add_theme_stylebox_override("panel", panel_style)
+	center.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(560, 0)
+	box.add_theme_constant_override("separation", 10)
+	panel.add_child(box)
+
+	var title := Label.new()
+	title.text = "ESCOLHA O IDIOMA" if menu_start_mode else "MENU"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color(0.85, 0.62, 1.0))
+	box.add_child(title)
+
+	if menu_start_mode:
+		var note := Label.new()
+		note.text = "O jogo abre em português, sua língua de origem. Trocar de idioma não muda nenhuma conta da loja: nem a porta, nem o bolso, nem o placar."
+		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		note.add_theme_font_size_override("font_size", 13)
+		note.add_theme_color_override("font_color", Color(0.78, 0.72, 0.86))
+		box.add_child(note)
+
+	var header := Label.new()
+	header.text = "Idioma"
+	header.add_theme_font_size_override("font_size", 16)
+	header.add_theme_color_override("font_color", Color(0.78, 0.62, 0.92))
+	box.add_child(header)
+
+	for supported in Locales.SUPPORTED:
+		var id := str(supported["id"])
+		var button := Button.new()
+		button.text = _locale_button_text(id)
+		button.custom_minimum_size = Vector2(0, 44)
+		button.pressed.connect(_pick_locale.bind(id))
+		box.add_child(button)
+		menu_language_buttons.append(button)
+
+	var enter := Button.new()
+	enter.text = "Entrar na loja" if menu_start_mode else "Continuar a loja"
+	enter.custom_minimum_size = Vector2(240, 46)
+	enter.pressed.connect(_close_menu)
+	box.add_child(enter)
+
+	if not menu_start_mode:
+		var save_button := Button.new()
+		save_button.text = "Salvar agora"
+		save_button.custom_minimum_size = Vector2(240, 40)
+		save_button.pressed.connect(_menu_save_now)
+		box.add_child(save_button)
+
+		menu_status_label = Label.new()
+		menu_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		menu_status_label.add_theme_font_size_override("font_size", 13)
+		menu_status_label.add_theme_color_override("font_color", Color(0.62, 1.0, 0.72))
+		box.add_child(menu_status_label)
+
+		var hint := Label.new()
+		hint.text = "Fechar menu (ESC)"
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hint.add_theme_font_size_override("font_size", 12)
+		hint.add_theme_color_override("font_color", Color(0.62, 0.56, 0.74))
+		box.add_child(hint)
+
+func _locale_button_text(id: String) -> String:
+	var line := Locales.display_name(id)
+	var note := Locales.coverage(id)
+	if note != "":
+		line = "%s — %s" % [line, note]
+	if id == Locales.DEFAULT:
+		line = "%s (%s)" % [line, tr("idioma original")]
+	if id == locale:
+		line = "%s  ✓" % line
+	return line
+
+func _menu_save_now() -> void:
+	_save_game()
+	audio.play("coin")
+	if is_instance_valid(menu_status_label):
+		menu_status_label.text = tr("progresso salvo")
+
+## Troca de idioma no vivo. O menu se redesenha porque as legendas dele são literais, e
+## o resto da loja passa pelo refresh: trocar a língua e ver meia tela traduzida é o bug
+## que este botão existe para não ter.
+func _pick_locale(id: String) -> void:
+	if not Locales.knows(id):
+		return
+	locale = id
+	locale_confirmed = true
+	TranslationServer.set_locale(locale)
+	_save_locale_settings()
+	_save_game()
+	_build_menu_layer()
+	if is_instance_valid(world_timer):
+		world_timer.stop()
+	_refresh_ui()
+	audio.play("click")
+
+## A preferência mora fora do save de propósito: reencarnar, resetar a vida e até apagar
+## o progresso são contas da loja, e o idioma é da pessoa que joga.
+func _save_locale_settings() -> void:
+	var config := ConfigFile.new()
+	config.set_value("locale", "language", locale)
+	config.set_value("locale", "confirmed", locale_confirmed)
+	config.save(Locales.SETTINGS_PATH)
+
+func _load_locale_settings() -> void:
+	var config := ConfigFile.new()
+	if config.load(Locales.SETTINGS_PATH) != OK:
+		return
+	var saved := str(config.get_value("locale", "language", ""))
+	if not Locales.knows(saved):
+		return
+	locale = saved
+	locale_confirmed = bool(config.get_value("locale", "confirmed", false))
+	_locale_from_settings = true
 
 func _refresh_timed_ui() -> void:
 	var elapsed := _world_seconds_since_tick()
@@ -5894,19 +6114,22 @@ func _update_demonic_form() -> void:
 func _refresh_ui() -> void:
 	if not is_instance_valid(gold_label):
 		return
-	gold_label.text = "Ouro: %d" % gold
-	rep_label.text = "Reputação: %d • %s (+%d%%)" % [reputation, _reputation_title(), int(round((_reputation_price_multiplier() - 1.0) * 100.0))]
+	gold_label.text = tr("Ouro: %d") % gold
+	rep_label.text = tr("Reputação: %d • %s (+%d%%)") % [reputation, tr(_reputation_title()), int(round((_reputation_price_multiplier() - 1.0) * 100.0))]
 	# O número do painel é o corpo desenhado no salão agora, e a fila à parte:
 	# contar a vida inteira fazia "Clientes: 12" com três visitas na tela.
-	customers_label.text = "No salão: %d • Fila: %d  ♥%d  ✗%d  •  Atendidos: %d" % [
+	customers_label.text = tr("No salão: %d • Fila: %d  ♥%d  ✗%d  •  Atendidos: %d") % [
 		_bodies_on_stage(), service_queue.size(), happy_customers, disappointed_customers, customers_served]
-	affection_label.text = "Afinidade: %d/100 • Seduções: %d/%d" % [affection, seduction_successes, seduction_attempts]
+	affection_label.text = tr("Afinidade: %d/100 • Seduções: %d/%d") % [affection, seduction_successes, seduction_attempts]
 	if is_instance_valid(fury_label):
-		fury_label.text = "Fúria: %d/5%s%s" % [fury,
-			" • FORMA DEMONÍACA" if demonic_form_active else "",
-			" • etiqueta -%d%%" % (clampi(fury, 0, 5) * 5) if fury > 0 else ""]
+		var fury_line := tr("Fúria: %d/5") % fury
+		if demonic_form_active:
+			fury_line += tr(" • FORMA DEMONÍACA")
+		if fury > 0:
+			fury_line += tr(" • etiqueta -%d%%") % (clampi(fury, 0, 5) * 5)
+		fury_label.text = fury_line
 	if is_instance_valid(speed_label):
-		speed_label.text = "TEMPO DO MUNDO: %.1fx" % world_speed()
+		speed_label.text = tr("TEMPO DO MUNDO: %.1fx") % world_speed()
 	if is_instance_valid(speed_button):
 		speed_button.text = "Acelerar relógio ▶"
 	if is_instance_valid(forge_status_label):
@@ -6662,6 +6885,8 @@ func _save_game() -> void:
 	config.set_value("game", "spec_choice", spec_choice)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "adult_content_confirmed", adult_content_confirmed)
+	config.set_value("game", "locale", locale)
+	config.set_value("game", "locale_confirmed", locale_confirmed)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
 	config.set_value("game", "ad_level", ad_level)
 	config.set_value("game", "imp_hired", imp_hired)
@@ -6978,6 +7203,13 @@ func _load_game() -> void:
 	prestige_goals_paid = int(config.get_value("game", "prestige_goals_paid", prestige_goals_paid))
 	adult_content_confirmed = bool(config.get_value("game", "adult_content_confirmed", false))
 	adult_content_enabled = adult_content_confirmed and bool(config.get_value("game", "adult_content_enabled", false))
+	# O idioma do save só entra em cena quando o arquivo de preferências não falou:
+	# é o caminho do save importado em outra máquina, que traz a língua junto.
+	if not _locale_from_settings:
+		var saved_locale := str(config.get_value("game", "locale", ""))
+		if Locales.knows(saved_locale):
+			locale = saved_locale
+		locale_confirmed = bool(config.get_value("game", "locale_confirmed", false))
 	demonic_form_active = fury >= 4
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
