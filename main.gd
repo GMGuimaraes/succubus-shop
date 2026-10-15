@@ -61,6 +61,14 @@ var season_records: Dictionary = {}
 ## ponteiro de cada facção no instante em que a vida começou — o que a temporada
 ## conquistou acima desse ponteiro é o que decide o capítulo sete dela.
 var season_baseline: Dictionary = {}
+## A casa cobra todo dia, venda ou não. O que o caixa não cobre não perdoa: vira
+## dívida, e dívida acima do teto leva o salão. `debt_peak` é o fundo do poço da
+## vida — sair dele é tão conquistador quanto nunca ter caído.
+var debt: int = 0
+var debt_peak: int = 0
+## Vidas que fecharam no vermelho, e as temporadas marcadas como perdidas no placar.
+var ruined_lives: int = 0
+var ruined_seasons: Array[String] = []
 ## O que abrir quando a lembrança fechar: é como o capítulo final emenda o painel
 ## do império na cena do andar de cima sem empilhar os dois quadros.
 var _origin_next: Callable = Callable()
@@ -336,6 +344,7 @@ var catalyst_button: Button
 var catalyst_label: Label
 var card_summary_label: Label
 var card_bonus_label: Label
+var upkeep_label: Label
 var pack_button: Button
 var card_gallery_labels: Array = []
 var board_label: Label
@@ -1866,6 +1875,11 @@ func _build_ui() -> void:
 	market_label.add_theme_font_size_override("font_size", 14)
 	market_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.62))
 	reception_box.add_child(market_label)
+	upkeep_label = Label.new()
+	upkeep_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	upkeep_label.add_theme_font_size_override("font_size", 14)
+	upkeep_label.add_theme_color_override("font_color", Color(1.0, 0.62, 0.55))
+	reception_box.add_child(upkeep_label)
 
 	reception_box.add_child(_make_section_title("MERCADO DE INGREDIENTES", Color(0.78, 0.95, 1.0)))
 	reception_box.add_child(_make_section_hint("Os preços flutuam com o dia e com o seu movimento. Compre barato, fabrique caro, e revenda o que sobrar."))
@@ -2117,7 +2131,7 @@ func _build_ui() -> void:
 	library_box.add_child(score_button)
 
 	library_box.add_child(_make_section_title("ARQUIVO DE FINAIS", Color(1.0, 0.74, 0.86)))
-	library_box.add_child(_make_section_hint("O capítulo sete fecha com a cara de quem mais usou o balcão nesta vida. Reencarnar zera a corrida e a próxima vida pode fechar de outro jeito."))
+	library_box.add_child(_make_section_hint("O capítulo sete fecha com a cara de quem mais usou o balcão nesta vida. Reencarnar zera a corrida e a próxima vida pode fechar de outro jeito. O sétimo final ninguém sorteia: ele chega no dia em que a dívida da casa passa do teto."))
 	endings_label = Label.new()
 	endings_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	endings_label.add_theme_font_size_override("font_size", 13)
@@ -3308,7 +3322,10 @@ func _on_customer_tick() -> void:
 		# O dia vira uma vez e o recorde nasce nesse instante: sem gravar aqui,
 		# quem fecha o jogo sem mover mais nada perde a virada.
 		_save_game()
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA)]
+		# A casa cobra antes de alguém comemorar o dia novo: quem acorda sem caixa
+		# já acorda devendo, e dívida tem teto.
+		var bill_line := _pay_upkeep()
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s\n%s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA), bill_line]
 		# A encomenda do patrono vence e chega no mesmo instante da virada, e o
 		# resultado é gravado junto: quem fecha o jogo nessa manhã não acorda com o
 		# prazo de um dia que já passou.
@@ -3318,6 +3335,11 @@ func _on_customer_tick() -> void:
 		# seguinte a ter fechado o império, quando a loja já não tem meta nova.
 		if game_completed:
 			_reveal_origin(Origin.chapter_scene(Campaign.size()))
+		# A conta foi paga ou foi para a dívida; o teto é checado depois, para a
+		# conquista de sair do buraco bater antes de a vida fechar no vermelho.
+		_check_achievements()
+		if debt >= DEBT_LIMIT:
+			_claim_ruin()
 	if imp_hired and ticks % 3 == 0:
 		_imp_work()
 
@@ -4254,6 +4276,13 @@ func _refresh_ui() -> void:
 		var hot := _demand_index()
 		var hot_text := " • Em alta: %s" % str(products[hot]["name"]) if hot >= 0 else ""
 		market_label.text = "Dia %d — %s%s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA), hot_text]
+	if is_instance_valid(upkeep_label):
+		# A conta do dia é a única razão para o caixa ter teto: sem ela, loja grande
+		# só cresce e nunca precisa de freguês.
+		upkeep_label.text = "CUSTO DA CASA: %d de ouro a cada virada (biblioteca, santuário, propaganda e diabrete pesam na conta).%s" % [
+			_daily_upkeep(),
+			" Dívida aberta de %d — a casa leva o salão aos %d." % [debt, DEBT_LIMIT] if debt > 0 else "",
+		]
 	for r in range(Sanctum.DATA.size()):
 		var ritual: Dictionary = Sanctum.DATA[r]
 		var ritual_id := str(ritual["id"])
@@ -4473,6 +4502,10 @@ func _save_game() -> void:
 	config.set_value("game", "endings_seen", endings_seen)
 	config.set_value("game", "season_records", season_records)
 	config.set_value("game", "season_baseline", season_baseline)
+	config.set_value("game", "debt", debt)
+	config.set_value("game", "debt_peak", debt_peak)
+	config.set_value("game", "ruined_lives", ruined_lives)
+	config.set_value("game", "ruined_seasons", ruined_seasons)
 	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
@@ -4610,6 +4643,16 @@ func _load_game() -> void:
 	if saved_baseline is Dictionary:
 		for faction_id in saved_baseline.keys():
 			season_baseline[str(faction_id)] = maxi(0, int(saved_baseline[faction_id]))
+	# Save antigo não tem conta da casa: ele acorda devendo nada, porque o aluguel
+	# começa a correr na primeira virada depois de carregar.
+	debt = maxi(0, int(config.get_value("game", "debt", debt)))
+	debt_peak = maxi(0, int(config.get_value("game", "debt_peak", debt_peak)))
+	ruined_lives = maxi(0, int(config.get_value("game", "ruined_lives", ruined_lives)))
+	var saved_ruined = config.get_value("game", "ruined_seasons", [])
+	if saved_ruined is Array:
+		for season in saved_ruined:
+			if str(season).is_valid_int() and int(str(season)) > 0 and not ruined_seasons.has(str(season)):
+				ruined_seasons.append(str(season))
 	prestige_runs = int(config.get_value("game", "prestige_runs", prestige_runs))
 	prestige_aura = int(config.get_value("game", "prestige_aura", prestige_aura))
 	var saved_perks = config.get_value("game", "prestige_perks", {})
@@ -5109,6 +5152,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "ending_faction", "name": "Final com dono (uma facção fechou a loja)", "condition": _has_faction_ending(), "gold": 180, "rep": 8, "pose": "relic"},
 		{"id": "endings_three", "name": "Três despedidas (três finais diferentes)", "condition": endings_seen.size() >= 3, "gold": 300, "rep": 12},
 		{"id": "endings_all", "name": "Todos os finais deste balcão", "condition": endings_seen.size() >= Endings.size(), "gold": 600, "rep": 20, "pose": "vitoria"},
+		{"id": "ruin_first", "name": "Cheiro de mofo no caixa (uma vida fechou em ruína)", "condition": ruined_lives >= 1, "gold": 60, "rep": 2},
+		{"id": "debt_escaped", "name": "Saindo do buraco (quitar 120 de dívida pagando em dia)", "condition": debt == 0 and debt_peak >= 120, "gold": 200, "rep": 8, "pose": "vitoria"},
 		{"id": "card_holo", "name": "Brilho de coleção (primeira carta holográfica)", "condition": Cards.evolved_count(card_counts, 1) >= 1, "gold": 90, "rep": 4},
 		{"id": "card_prism", "name": "Prisma no mural (uma carta em seis cópias)", "condition": Cards.evolved_count(card_counts, 2) >= 1, "gold": 240, "rep": 10, "pose": "vitoria"},
 		{"id": "card_album_working", "name": "Álbum trabalhando (os três conjuntos pagando bônus)", "condition": Cards.luck_bonus(card_counts) >= 1 and Cards.price_bonus(card_counts) >= 0.04 and Cards.pack_discount(card_counts) >= 2, "gold": 150, "rep": 6},
@@ -5235,7 +5280,9 @@ func _season_text() -> String:
 	var lines: Array[String] = ["Temporada %d aberta • recorde da temporada: %d" % [current, _season_best(current)]]
 	lines.append("· o capítulo sete desta vida fecha com: %s" % str(Endings.for_standing(_life_standing())["title"]))
 	for run in range(prestige_runs):
-		lines.append("· temporada %d fechou com %d" % [run + 1, _season_best(run + 1)])
+		# A temporada perdida não some do placar: ela aparece como o que foi.
+		var how := "fechou no vermelho com" if ruined_seasons.has(str(run + 1)) else "fechou com"
+		lines.append("· temporada %d %s %d" % [run + 1, how, _season_best(run + 1)])
 	if prestige_runs == 0:
 		lines.append("· reencarnar o balcão fecha esta temporada e abre a próxima")
 	return "\n".join(lines)
@@ -5276,12 +5323,77 @@ func _endings_text() -> String:
 	return "\n".join(lines)
 
 ## Algum capítulo sete já fechou com o selo de uma facção, em vez de fechar com o
-## selo da própria casa?
+## selo da própria casa ou com o carimbo da ruína?
 func _has_faction_ending() -> bool:
 	for id in endings_seen:
-		if str(id) != Endings.HOUSE:
+		if str(id) != Endings.HOUSE and str(id) != Endings.RUIN:
 			return true
 	return false
+
+## O custo da casa: loja grande custa mais que loja de esquina, e é isso que impede
+## o caixa de ser um número que só sobe.
+const DEBT_LIMIT := 240
+
+func _daily_upkeep() -> int:
+	return 12 + library_upgrade_level * 6 + sanctum_upgrade_level * 6 + ad_level * 5 \
+		+ (18 if imp_hired else 0)
+
+## A virada de dia cobra a conta. Pagar em dia usa o que sobrou de caixa para
+## escavar a dívida; não pagar não perdoa — o faltante entra no vermelho da casa.
+func _pay_upkeep() -> String:
+	var bill := _daily_upkeep()
+	var paid := mini(gold, bill)
+	gold -= paid
+	var short := bill - paid
+	if short > 0:
+		debt += short
+		debt_peak = maxi(debt_peak, debt)
+		if debt >= DEBT_LIMIT:
+			return "A casa cobrou %d e o caixa tinha só %d. Faltaram %d: a dívida estourou em %d e o coletor já está na calçada." % [
+				bill, paid, short, debt]
+		if debt >= DEBT_LIMIT / 2:
+			return "A casa cobrou %d e o caixa tinha só %d. Faltaram %d, e a dívida de %d já passa da metade do teto." % [
+				bill, paid, short, debt]
+		return "A casa cobrou %d e o caixa tinha só %d. A loja foi dormir devendo %d." % [bill, paid, debt]
+	# Ouro que sobra depois da conta é o único que escava: um décimo do caixa.
+	var dig := mini(debt, int(gold * 0.1))
+	debt -= dig
+	if dig > 0:
+		return "A casa cobrou %d, pago em dia — e a loja ainda abateu %d da dívida, que agora é %d." % [bill, dig, debt]
+	if debt > 0:
+		return "A casa cobrou %d, pago em dia. O caixa zerado não abateu a dívida de %d." % [bill, debt]
+	return "A casa cobrou %d de custo do dia, pago em dia." % bill
+
+## A dívida estourou: a vida fecha no vermelho. O painel não oferece saída além de
+## reabrir as portas, porque ruína que se dispensa com um clique não é consequência.
+func _claim_ruin() -> void:
+	ruined_lives += 1
+	var ending := Endings.ruin()
+	var ending_id := str(ending["id"])
+	if not endings_seen.has(ending_id):
+		endings_seen.append(ending_id)
+	audio.play("sad")
+	_show_ending(ending, true)
+	_save_game()
+	_refresh_ui()
+
+## Reabrir é reencarnar sem prêmio: a temporada vai para o placar marcada como
+## perdida e a vida seguinte começa com a banca na calçada e aura nenhuma.
+func _reopen_after_ruin() -> void:
+	var score := business_score()
+	var temporada := Prestige.season(prestige_runs)
+	_bank_season()
+	if not ruined_seasons.has(str(temporada)):
+		ruined_seasons.append(str(temporada))
+	prestige_runs += 1
+	_reset_run()
+	last_event = "REABERTURA: a casa tomou o salão, a chefe botou a banca de volta na calçada e recomeçou do zero. A temporada %d fechou no vermelho com %d pontos e não trouxe aura nenhuma." % [
+		temporada, score]
+	audio.play("levelup")
+	_show_feedback("✦ Portas reabertas.", Color(1.0, 0.62, 0.55))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
 
 func _on_leaderboard_ready(_rows: Array) -> void:
 	_refresh_ui()
@@ -5357,15 +5469,23 @@ func _claim_chapter() -> void:
 	_save_game()
 	_refresh_ui()
 
-func _show_ending() -> void:
-	var ending := _claim_ending()
+func _show_ending(ending: Dictionary = {}, ruined := false) -> void:
+	if ending.is_empty():
+		ending = _claim_ending()
 	if is_instance_valid(ending_layer):
-		ending_layer.visible = true
-		return
+		if bool(ending_layer.get_meta("ruined", false)) == ruined:
+			ending_layer.visible = true
+			return
+		# Fechar o painel só esconde a tela, e o modo livre deixa o dia continuar
+		# rolando: quem fecha o capítulo sete e depois toma o calote do coletor tem
+		# de ver o painel do calote, não o do capítulo com o botão trocado.
+		ending_layer.queue_free()
+		ending_layer = null
 	var dim := ColorRect.new()
 	dim.color = Color(0.02, 0.01, 0.04, 0.9)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	dim.set_meta("ruined", ruined)
 	add_child(dim)
 	ending_layer = dim
 
@@ -5399,20 +5519,28 @@ func _show_ending() -> void:
 	box.add_child(title)
 
 	var who_label := Label.new()
-	who_label.text = "Final de %s" % str(Factions.find(str(ending["faction"])).get("name", "casa inteira")) \
-		if str(ending["faction"]) != "" else "Final da própria casa"
+	who_label.text = "Fim de vida no vermelho" if ruined else ("Final de %s" % str(Factions.find(str(ending["faction"])).get("name", "casa inteira")) \
+		if str(ending["faction"]) != "" else "Final da própria casa")
 	who_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	who_label.add_theme_font_size_override("font_size", 15)
 	who_label.add_theme_color_override("font_color", Color(1.0, 0.74, 0.86))
 	box.add_child(who_label)
 
 	var body_text := Label.new()
+	# A ruína não tem corrida de facção para mostrar: o que afundou a vida foi a
+	# conta da casa, e é a conta que o painel lê em voz alta.
+	var ledger := "Nesta vida, quem mais usou o balcão: %s\n\n" % _life_standing_text()
+	var closing := "O balcão continua aberto: dá para fechar o álbum, subir no placar e esticar o império até onde a sorte deixar."
+	if ruined:
+		ledger = "A vida afundou no dia em que a casa cobrava %d e a dívida passou de %d. O fundo do poço desta vida foi %d.\n\n" % [
+			_daily_upkeep(), DEBT_LIMIT, debt_peak]
+		closing = "O balcão reabre no mesmo lugar, com a freguesia lembrando da loja e o cofre vazio: quem fecha no vermelho recomeça sem aura nenhuma."
 	body_text.text = Endings.text(ending) + "\n\n" \
 		+ "Dia %d • %d de ouro em caixa • reputação %d • nível %d\n" % [shop_day, gold, reputation, player_level] \
 		+ "%d clientes atendidos • %d peças fabricadas • %d expedições\n" % [customers_served, total_crafted, expeditions_done] \
 		+ "%d de %d cards no álbum • pontuação %d\n\n" % [Cards.owned_count(card_counts), Cards.size(), business_score()] \
-		+ "Nesta vida, quem mais usou o balcão: %s\n\n" % _life_standing_text() \
-		+ "O balcão continua aberto: dá para fechar o álbum, subir no placar e esticar o império até onde a sorte deixar." \
+		+ ledger \
+		+ closing \
 		+ "\n\nHá %d finais diferentes neste balcão, e a loja já viu %d deles." % [Endings.size(), endings_seen.size()]
 	body_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -5426,46 +5554,50 @@ func _show_ending() -> void:
 	box.add_child(body_scroll)
 	body_scroll.add_child(body_text)
 
-	var farewell_title := Label.new()
-	farewell_title.text = "A DESPEDIDA DO BALCÃO"
-	farewell_title.add_theme_font_size_override("font_size", 18)
-	farewell_title.add_theme_color_override("font_color", Color(1.0, 0.74, 0.86))
-	box.add_child(farewell_title)
+	# A despedida do elenco pertence ao capítulo sete. Quem quebra no meio da vida
+	# não leva freguês ao balcão: leva o coletor.
+	if not ruined:
+		var farewell_title := Label.new()
+		farewell_title.text = "A DESPEDIDA DO BALCÃO"
+		farewell_title.add_theme_font_size_override("font_size", 18)
+		farewell_title.add_theme_color_override("font_color", Color(1.0, 0.74, 0.86))
+		box.add_child(farewell_title)
 
-	# A lista cresce com o elenco atendido e o painel não pode estourar a tela: o
-	# rolamento fica dentro do próprio quadro do final.
-	var farewell_scroll := ScrollContainer.new()
-	farewell_scroll.custom_minimum_size = Vector2(560, 140)
-	farewell_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(farewell_scroll)
-	var farewell_text := Label.new()
-	farewell_text.text = _epilogue_text()
-	farewell_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	farewell_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	farewell_text.add_theme_font_size_override("font_size", 14)
-	farewell_text.add_theme_color_override("font_color", Color(0.9, 0.84, 0.94))
-	farewell_scroll.add_child(farewell_text)
+		# A lista cresce com o elenco atendido e o painel não pode estourar a tela: o
+		# rolamento fica dentro do próprio quadro do final.
+		var farewell_scroll := ScrollContainer.new()
+		farewell_scroll.custom_minimum_size = Vector2(560, 140)
+		farewell_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		box.add_child(farewell_scroll)
+		var farewell_text := Label.new()
+		farewell_text.text = _epilogue_text()
+		farewell_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		farewell_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		farewell_text.add_theme_font_size_override("font_size", 14)
+		farewell_text.add_theme_color_override("font_color", Color(0.9, 0.84, 0.94))
+		farewell_scroll.add_child(farewell_text)
 
-	var farewell_note := Label.new()
-	farewell_note.text = "Eles ainda passam um por vez no salão para acenar. Pode fechar esta tela e ficar olhando."
-	farewell_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	farewell_note.add_theme_font_size_override("font_size", 13)
-	farewell_note.add_theme_color_override("font_color", Color(0.72, 0.66, 0.8))
-	box.add_child(farewell_note)
+		var farewell_note := Label.new()
+		farewell_note.text = "Eles ainda passam um por vez no salão para acenar. Pode fechar esta tela e ficar olhando."
+		farewell_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		farewell_note.add_theme_font_size_override("font_size", 13)
+		farewell_note.add_theme_color_override("font_color", Color(0.72, 0.66, 0.8))
+		box.add_child(farewell_note)
 
-	# O final é a vitrine do prestígio: é aqui que a loja diz que a vida seguinte
-	# existe e quanto ela paga.
+	# O final é a vitrine do prestígio: é aqui que a loja diz quanto a vida seguinte
+	# paga. A ruína é o momento em que ela diz que não paga nada.
 	var prestige_note := Label.new()
-	prestige_note.text = "Esta vida vale %d de aura na reencarnação. A recepção mostra o que fica e o que volta a zero." % Prestige.aura_for(business_score())
+	prestige_note.text = "Esta vida não deixou aura: reabrir as portas recomeça do zero com o que a loja aprendeu, e o que ela aprendeu não enche caixa." if ruined \
+		else "Esta vida vale %d de aura na reencarnação. A recepção mostra o que fica e o que volta a zero." % Prestige.aura_for(business_score())
 	prestige_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	prestige_note.add_theme_font_size_override("font_size", 13)
-	prestige_note.add_theme_color_override("font_color", Color(0.85, 0.7, 1.0))
+	prestige_note.add_theme_color_override("font_color", Color(1.0, 0.62, 0.55) if ruined else Color(0.85, 0.7, 1.0))
 	box.add_child(prestige_note)
 
 	var close_button := Button.new()
-	close_button.text = "Voltar a administrar"
+	close_button.text = "Reabrir as portas" if ruined else "Voltar a administrar"
 	close_button.custom_minimum_size = Vector2(240, 46)
-	close_button.pressed.connect(_close_ending)
+	close_button.pressed.connect(_reopen_after_ruin if ruined else _close_ending)
 	box.add_child(close_button)
 
 func _close_ending() -> void:
@@ -5748,6 +5880,9 @@ func _reincarnate() -> void:
 ## conquistas, o prestígio e as opções continuam no lugar.
 func _reset_run() -> void:
 	gold = _prestige_start_gold()
+	# A vida nova não herda o vermelho da anterior: a casa recomeça no nome dela.
+	debt = 0
+	debt_peak = 0
 	reputation = 0
 	customers_served = 0
 	happy_customers = 0

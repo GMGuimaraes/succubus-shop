@@ -8,12 +8,18 @@ extends RefCounted
 ##
 ## Quem chama `for_standing()` é o `main.gd`, e com a conta da vida atual — a fama
 ## acumulada entre reencarnações manda no preço, não no desfecho.
+##
+## A ruína mora nesta tabela por um motivo: ela é um final, não um game over com
+## tela própria. Ela nunca sai do sorteio de reputação — só o `main.gd` a reclama,
+## no dia em que a dívida da casa passa do teto.
 
 const Factions := preload("res://factions.gd")
 
 ## O final sem dono: cinco facções empatadas no mesmo ponto ninguém pesou mais
 ## que a loja, e a loja fecha com as próprias pernas.
 const HOUSE := "casa"
+## O final que a reputação não escolhe: o caixa que não fechou.
+const RUIN := "ruina"
 
 const ENDINGS: Array[Dictionary] = [
 	{
@@ -63,6 +69,14 @@ const ENDINGS: Array[Dictionary] = [
 			"A chefe jura que continua independente. Todo mundo finge que acredita, inclusive a chefe. O balcão, esse, continua abrindo na hora de sempre.",
 		],
 	},
+	{
+		"id": "ruina", "faction": "", "title": "As Portas Que Não Abrem Mais",
+		"lines": [
+			"A casa não caiu num dia. Caiu em vinte cobranças pequenas, cada uma paga com a promessa de que amanhã o balcão vende mais. No dia em que a dívida estourou, o coletor não pediu a chave — pediu o salão, e levou o salão.",
+			"O que sobra é inventário e favor. A guilda anota a queda nos estatutos, a coroa manda um pêsame em pergaminho caro, o submundo manda dizer que ainda lembra de quem abriu com ela. Ninguém empresta ouro para loja fechada, e mesmo assim todo mundo passa na calçada para ver se tem prateleira sobrando.",
+			"A chefe fica com as mãos no balcão, que ainda é dela por baixo da dívida. Loja não quebra contrato de conteúdo: as pessoas continuam lembrando de quem as atendeu, o álbum continua na parede, e a porta reabre. O que não reabre é o cofre — quem fecha no vermelho recomeça com o que aprendeu, e aprendizado não enche caixa.",
+		],
+	},
 ]
 
 static func size() -> int:
@@ -76,6 +90,11 @@ static func find(id: String) -> Dictionary:
 
 static func house() -> Dictionary:
 	return find(HOUSE)
+
+## O desfecho de ruína não sai da conta de reputação: quem o chama é o `main.gd`,
+## e só no dia em que a dívida da casa passa do teto.
+static func ruin() -> Dictionary:
+	return find(RUIN)
 
 static func text(ending: Dictionary) -> String:
 	return "\n\n".join(PackedStringArray(ending.get("lines", [])))
