@@ -568,6 +568,7 @@ const STAGE_ROOM_PROPS := {
 const STAGE_ROOM_PROP_DEPTHS := {
 	"res://assets/library_room_scene.png": [0.32, 0.40, 0.40],
 	"res://assets/sanctum_room_scene.png": [0.56, 0.56, 0.39, 0.39],
+	"res://assets/forge_scene.png": [0.38, 0.60, 0.52],
 }
 ## Quantos contornos de móvel o shader aguenta ao mesmo tempo.
 const STAGE_PROP_SLOTS := 8
@@ -4799,6 +4800,11 @@ func _trigger_random_event() -> void:
 		last_event += "\nA súcubo ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui, querido.”"
 
 func _animate_customer_arrival(profile: Dictionary) -> void:
+	# Evita iniciar uma animação de chegada duplicada / sobreposta, que causava
+	# múltiplos loops de caminhada para o mesmo cliente vindo da quarta parede.
+	if is_instance_valid(stage_customer) and stage_customer.visible and float(stage_customer.get_meta("arrive_left", 0.0)) > 0.05:
+		# Já está em processo de chegada; ignorar chamada redundante.
+		return
 	if not is_instance_valid(customer_portrait):
 		return
 	var portrait_index := int(profile.get("portrait", -1))
