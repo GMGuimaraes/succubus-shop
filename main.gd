@@ -9,6 +9,7 @@ const Economy = preload("res://economy.gd")
 const Sanctum = preload("res://sanctum.gd")
 const Expedition = preload("res://expedition.gd")
 const Adventurers = preload("res://adventurers.gd")
+const Invasions = preload("res://invasions.gd")
 const Cards = preload("res://cards.gd")
 const Campaign = preload("res://campaign.gd")
 const Origin = preload("res://origin.gd")
@@ -178,6 +179,35 @@ const VANDAL_NAMES: Array[String] = [
 	"Rufino Meia-Noite", "Boca-Salgada Vera", "Caco Tiracolo",
 	"Nino do Beco Sem Nome", "Zeca Pé-de-Ferro", "Amparo Mão-Leve",
 ]
+## O que a casa responde quando o vigário bate na porta com a lista de cobrança na
+## mão: "" é silêncio, "pago" é o dízimo em dia, "subornado" é o endereço apagado da
+## listagem por um tempo, "recusado" é a porta na cara dele — sobe a reputação hoje e
+## a visita da rua no mês seguinte. `tithe_until` é o último dia em que a resposta
+## ainda vale, porque escudo que não vence não é decisão.
+var tithe_stance: String = ""
+var tithe_until: int = 0
+var tithe_demands: int = 0
+var tithe_paid_total: int = 0
+var vicar_refusals: int = 0
+## Quantas vezes a casa pagou para apagar o próprio endereço da lista. É história da
+## família com a paróquia, não da vida: reencarnar não lava o suborno.
+var vicar_bribes: int = 0
+## Quantas portas a casa segurou e quantas arrombaram. Carimbo de porta segurada é a
+## régua da campanha de defesa (`Invasions.PRIVILEGES`) e o número que a rua lê para
+## mandar visita mais forte — segurar demais também custa.
+var invasions_repelled: int = 0
+var invasions_lost: int = 0
+## Os privilégios que a campanha já pagou. Diferente da folha e da filial, eles são
+## da família: reencarnar não arranca a dobradiça nova nem o sino do caixilho.
+var defense_privileges: Array[String] = []
+## A última visita escrita por extenso, para o painel não precisar de prosa solta.
+var last_invasion: String = ""
+## Até que dia de loja o alarme da última porta (segurada ou arrombada) ainda pesa na
+## trilha: a mesma faixa, afinada pelo que a rua acabou de fazer com a maçaneta.
+var music_alarm_until: int = 0
+## O dia em que a cobrança do vigário foi escrita no mural. Sem essa trava, a mesma
+## visita bateria na porta duas manhãs seguidas enquanto espera a resposta.
+var vicar_announced_day: int = 0
 ## Faixas de progresso que mudam a cara do salão. A régua é o mesmo placar que o
 ## painel já mostra (`business_score`), então a loja não ganha meta nova: ela ganha
 ## consequência visível do que já é.
@@ -527,6 +557,13 @@ var deliver_button: Button
 var banish_button: Button
 var staff_labels: Array = []
 var staff_buttons: Array = []
+var defense_label: Label
+var defense_lines_label: Label
+var invasion_label: Label
+var vicar_label: Label
+var tithe_button: Button
+var bribe_button: Button
+var refuse_button: Button
 var arc_summary_label: Label
 var arc_labels: Array = []
 var arc_desc_labels: Array = []
@@ -889,6 +926,9 @@ var theft_recovery_available: bool = false
 var seduction_peak_triggered: bool = false
 var ambient_particles: CPUParticles2D
 var music_player: AudioStreamPlayer
+## O volume da trilha antes do ajuste mestre, em dB. A faixa é uma só, mas a situação
+## afina esse número (`_music_situation`) e a config geral continua por cima dele.
+var music_base_db: float = -13.0
 const GameAudio = preload("res://audio.gd")
 var audio: Node
 var mute_button: Button
@@ -2888,6 +2928,48 @@ func _build_ui() -> void:
 		staff_row.add_child(staff_button)
 		staff_buttons.append(staff_button)
 
+	reception_box.add_child(_make_section_title("A PORTA DA CASA", Color(0.62, 0.86, 1.0)))
+	reception_box.add_child(_make_section_hint("Loja que dá lucro tem alvo na porta. Cada visita é resolvida com a mão que a casa já tem: a ronda da folha, os servos do salão, os batedores do cadastro, o santuário reformado e a Administração. O vigário passa na frente para cobrar — dízimo, suborno ou porta na cara dele, e as três respostas têm preço."))
+	defense_label = Label.new()
+	defense_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	defense_label.add_theme_font_size_override("font_size", 14)
+	defense_label.add_theme_color_override("font_color", Color(0.82, 0.92, 1.0))
+	reception_box.add_child(defense_label)
+	var vicar_row := HBoxContainer.new()
+	vicar_row.add_theme_constant_override("separation", 12)
+	reception_box.add_child(vicar_row)
+	vicar_label = Label.new()
+	vicar_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vicar_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vicar_label.add_theme_font_size_override("font_size", 13)
+	vicar_label.add_theme_color_override("font_color", Color(0.90, 0.84, 0.70))
+	vicar_row.add_child(vicar_label)
+	tithe_button = Button.new()
+	tithe_button.custom_minimum_size = Vector2(148, 40)
+	tithe_button.add_theme_font_size_override("font_size", 13)
+	tithe_button.pressed.connect(_answer_vicar.bind("dizimo"))
+	vicar_row.add_child(tithe_button)
+	bribe_button = Button.new()
+	bribe_button.custom_minimum_size = Vector2(148, 40)
+	bribe_button.add_theme_font_size_override("font_size", 13)
+	bribe_button.pressed.connect(_answer_vicar.bind("suborno"))
+	vicar_row.add_child(bribe_button)
+	refuse_button = Button.new()
+	refuse_button.custom_minimum_size = Vector2(148, 40)
+	refuse_button.add_theme_font_size_override("font_size", 13)
+	refuse_button.pressed.connect(_answer_vicar.bind("recusa"))
+	vicar_row.add_child(refuse_button)
+	invasion_label = Label.new()
+	invasion_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	invasion_label.add_theme_font_size_override("font_size", 12)
+	invasion_label.add_theme_color_override("font_color", Color(0.78, 0.80, 0.90))
+	reception_box.add_child(invasion_label)
+	defense_lines_label = Label.new()
+	defense_lines_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	defense_lines_label.add_theme_font_size_override("font_size", 12)
+	defense_lines_label.add_theme_color_override("font_color", Color(0.70, 0.78, 0.88))
+	reception_box.add_child(defense_lines_label)
+
 	reception_box.add_child(_make_section_title("PEDIDOS DAS FACÇÕES", Color(1.0, 0.86, 0.45)))
 	reception_box.add_child(_make_section_hint("Cada facção tem três pedidos escritos, e eles só abrem na medida em que a loja vira gente conhecida. Fechar os três deixa um privilégio permanente — nome não apaga com reencarnação."))
 	arc_summary_label = Label.new()
@@ -3718,6 +3800,9 @@ func _set_sector(sector: String) -> void:
 		sector_hint_label.text = "Compre ingredientes e venda itens no balcão. Os clientes chegam sozinhos para negociar." if is_reception else "Aqui apenas se fabrica: o ferreiro transforma ingredientes e ouro em mercadorias." if is_forge else "Aperfeiçoe talentos e adiante receitas presas ao nível." if is_library else "Nem tudo tem fornecedor. Mande o batedor buscar e torça pelo caminho de volta." if is_expedition else "Relíquias carregadas de magia aguardam uma negociação cuidadosa."
 	if is_instance_valid(market_toggle_button):
 		market_toggle_button.text = "☰ Ocultar" if is_instance_valid(market_panel) and market_panel.visible else "☰ Abrir"
+	# A trilha segue a sala e a rua: a mesma gravação, afinada pelo setor, pela visita
+	# que acabou de bater na porta e pela conta que a casa deve.
+	_apply_situation_music()
 	if is_instance_valid(right_title_label):
 		var sector_word := "SANTUÁRIO"
 		if is_reception:
@@ -3810,16 +3895,17 @@ func _setup_background_music() -> void:
 		return
 	music_stream.loop = true
 	music_player.stream = music_stream
-	music_player.volume_db = -13.0
+	music_player.volume_db = music_base_db
 	add_child(music_player)
 	music_player.play()
+	_apply_situation_music()
 
 func _apply_music_settings() -> void:
 	if is_instance_valid(mute_button):
 		mute_button.text = "🔇" if audio.muted else "🔊"
 	if is_instance_valid(music_player):
 		music_player.stream_paused = audio.muted
-		music_player.volume_db = -13.0 + linear_to_db(maxf(audio.volume, 0.0001))
+		music_player.volume_db = music_base_db + linear_to_db(maxf(audio.volume, 0.0001))
 
 func _show_feedback(message: String, color: Color = Color(1.0, 0.78, 0.9)) -> void:
 	if not is_instance_valid(toast_label):
@@ -4834,15 +4920,33 @@ func _on_customer_tick() -> void:
 		if randi() % 100 < _vandal_chance():
 			_trigger_vandal()
 			vandal_line = "\n" + last_event
+		# Vândalo é o beco testando a vitrine; visita em bando é a rua batendo no caixa
+		# inteiro, com lista na mão. Uma desgraça por manhã, para o balanço ter leitura:
+		# se o barro já chamou vândalo nesta virada, a porta grande fica para amanhã.
+		var invasion_line := ""
+		if vandal_line == "":
+			if randi() % 100 < _invasion_chance():
+				invasion_line = "\n" + _roll_invasion()
+		# O vigário cobra na virada, não no meio do balcão: resposta de dízimo é decisão
+		# de chefe com painel aberto, não sorteio de fila. A mensagem aparece uma vez por
+		# dia de loja e o botão fica esperando até ela ser dada.
+		var vicar_line := ""
+		if _vicar_waiting() and vicar_announced_day != shop_day:
+			vicar_announced_day = shop_day
+			vicar_line = "\n✝ %s bate na porta com a lista da paróquia: %d de dízimo, ou %d para apagar este endereço da lista por um tempo. A resposta fica no painel até ele sair." % [
+				Invasions.vicar_name(), _vicar_demand(), _vicar_bribe()]
 		# A fila que desistiu também fecha o dia: é o número que o balanço da manhã
 		# precisa mostrar para a fama ter preço visível.
 		var lost_line := ""
 		if day_walkouts > 0:
 			lost_line = " %d saíram da fila sem comprar." % day_walkouts
-		day_report = bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s\n%s%s%s" % [
+		day_report = bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s\n%s%s%s%s%s" % [
 			shop_day, Economy.report(economy_state, products, Ingredients.DATA), bill_line,
-			("\n" + branch_line) if branch_line != "" else "", vandal_line]
+			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line]
+		# A manhã também afina a faixa: alarme novo, vigário na porta ou ruína velha
+		# mudam o tom da mesma gravação antes de a chefe abrir o balcão.
+		_apply_situation_music()
 		# A encomenda do patrono vence e chega no mesmo instante da virada, e o
 		# resultado é gravado junto: quem fecha o jogo nessa manhã não acorda com o
 		# prazo de um dia que já passou.
@@ -5879,6 +5983,41 @@ func _refresh_ui() -> void:
 			staff_button.text = "Demitir • corta %d/dia" % int(seat["wage"]) if hired else (
 				"Contratar por %d • %d por virada" % [hire_fee, int(seat["wage"])]
 				if blocked_by == "" else "Sem vaga: %s" % blocked_by)
+	if is_instance_valid(defense_label):
+		var snapshot := _defense_snapshot()
+		var wave := _next_wave()
+		var chance := _invasion_chance()
+		if wave.is_empty():
+			defense_label.text = "MÃO NA PORTA: %d. A rua ainda não tem alvo aqui — loja com vitrine vazia não recebe visita (%d%% de chance por virada). %s" % [
+				Invasions.defense_power(snapshot), chance, Invasions.campaign_line(invasions_repelled)]
+		else:
+			defense_label.text = "MÃO NA PORTA: %d • a rua bate em %d%% das viradas • %s (%s) pede %d, e a casa segura em %d%%. %s" % [
+				Invasions.defense_power(snapshot), chance, str(wave["name"]), str(wave["leader"]),
+				int(wave["power"]), Invasions.repel_chance(snapshot, wave),
+				Invasions.campaign_line(invasions_repelled)]
+	if is_instance_valid(defense_lines_label):
+		defense_lines_label.text = _defense_breakdown_line()
+	if is_instance_valid(vicar_label):
+		vicar_label.text = _vicar_panel_line()
+	if is_instance_valid(invasion_label):
+		invasion_label.text = last_invasion
+	for answer_button in [[tithe_button, "dizimo"], [bribe_button, "suborno"], [refuse_button, "recusa"]]:
+		var vicar_button := answer_button[0] as Button
+		if not is_instance_valid(vicar_button):
+			continue
+		var waiting := _vicar_waiting()
+		match str(answer_button[1]):
+			"dizimo":
+				var tithe := _vicar_demand()
+				vicar_button.text = "✝ Dízimo (%d)" % tithe
+				vicar_button.disabled = not waiting or gold < tithe
+			"suborno":
+				var bribe := _vicar_bribe()
+				vicar_button.text = "🤝 Suborno (%d)" % bribe
+				vicar_button.disabled = not waiting or gold < bribe
+			"recusa":
+				vicar_button.text = "🚪 Recusar (0)"
+				vicar_button.disabled = not waiting
 	if is_instance_valid(arc_summary_label):
 		arc_summary_label.text = "PEDIDOS ENTREGUES: %d de %d • arcos fechados %d de %d.%s" % [
 			_faction_asks_delivered(), FactionArcs.total(), _faction_arcs_closed(), Factions.DATA.size(),
@@ -6375,6 +6514,16 @@ func _save_game() -> void:
 	config.set_value("game", "route_pick", route_pick)
 	config.set_value("game", "pack_gear", pack_gear)
 	config.set_value("game", "gear_packed", gear_packed)
+	config.set_value("game", "tithe_stance", tithe_stance)
+	config.set_value("game", "tithe_until", tithe_until)
+	config.set_value("game", "tithe_demands", tithe_demands)
+	config.set_value("game", "tithe_paid_total", tithe_paid_total)
+	config.set_value("game", "vicar_refusals", vicar_refusals)
+	config.set_value("game", "vicar_bribes", vicar_bribes)
+	config.set_value("game", "invasions_repelled", invasions_repelled)
+	config.set_value("game", "invasions_lost", invasions_lost)
+	config.set_value("game", "defense_privileges", defense_privileges)
+	config.set_value("game", "last_invasion", last_invasion)
 	config.set_value("game", "last_save_unix", int(Time.get_unix_time_from_system()))
 	config.set_value("game", "offline_branch_fraction", _offline_branch_fraction)
 	config.save(SAVE_PATH)
@@ -6533,6 +6682,26 @@ func _load_game() -> void:
 				route_pick[route] = picked
 	pack_gear = bool(config.get_value("game", "pack_gear", pack_gear))
 	gear_packed = maxi(0, int(config.get_value("game", "gear_packed", gear_packed)))
+	# A porta é da casa, então a resposta dada ao vigário atravessa o save — mas só
+	# quando ainda faz sentido: postura que não está na lista é silêncio, e dia vencido
+	# não ganha escudo eterno por um número adulterado. Carimbo e privilégio vêm
+	# clampados na tabela, porque save antigo acorda sem campanha nenhuma.
+	var saved_stance := str(config.get_value("game", "tithe_stance", ""))
+	tithe_stance = saved_stance if saved_stance in ["", "pago", "subornado", "recusado"] else ""
+	tithe_until = maxi(0, int(config.get_value("game", "tithe_until", 0)))
+	tithe_demands = maxi(0, int(config.get_value("game", "tithe_demands", 0)))
+	tithe_paid_total = maxi(0, int(config.get_value("game", "tithe_paid_total", 0)))
+	vicar_refusals = maxi(0, int(config.get_value("game", "vicar_refusals", 0)))
+	vicar_bribes = maxi(0, int(config.get_value("game", "vicar_bribes", 0)))
+	invasions_repelled = maxi(0, int(config.get_value("game", "invasions_repelled", 0)))
+	invasions_lost = maxi(0, int(config.get_value("game", "invasions_lost", 0)))
+	var saved_privileges = config.get_value("game", "defense_privileges", [])
+	defense_privileges.clear()
+	if saved_privileges is Array:
+		for privilege_id in saved_privileges:
+			if Invasions.knows_privilege(str(privilege_id)) and not defense_privileges.has(str(privilege_id)):
+				defense_privileges.append(str(privilege_id))
+	last_invasion = str(config.get_value("game", "last_invasion", ""))
 	# O afeto atravessa a vida, mas só com nome que ainda existe na lista: um save
 	# de antes da mecânica acorda sem servo nenhum, e um nome raspado de Regulars
 	# não pode continuar trabalhando de graça.
@@ -7101,6 +7270,13 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "adventurer_maxed", "name": "Teto da estrada (um batedor no nível máximo)", "condition": _adventurer_top_level() >= Adventurers.max_level(), "gold": 320, "rep": 11, "pose": "vitoria"},
 		{"id": "adventurer_roster", "name": "Cadastro cheio (os cinco nomes com bota amarrada)", "condition": adventurers_hired.size() >= Adventurers.size(), "gold": 460, "rep": 15, "pose": "aplausos"},
 		{"id": "gear_three", "name": "Três peças na estrada (estoque virou mochila)", "condition": gear_packed >= 3, "gold": 200, "rep": 6, "pose": "desconfianca"},
+		{"id": "first_door", "name": "Porta de madeira (primeira visita barrada)", "condition": invasions_repelled >= 1, "gold": 90, "rep": 3},
+		{"id": "door_three", "name": "Três portas seguradas (o beco já decorou o endereço)", "condition": invasions_repelled >= 3, "gold": 200, "rep": 6, "pose": "vitoria"},
+		{"id": "defense_campaign", "name": "A casa tem milícia (os três degraus da defesa)", "condition": defense_privileges.size() >= Invasions.PRIVILEGES.size(), "gold": 520, "rep": 16, "pose": "aplausos"},
+		{"id": "door_breach", "name": "Piso molhado (a porta já cedeu)", "condition": invasions_lost >= 1, "gold": 40, "rep": 1},
+		{"id": "tithe_paid", "name": "Dízimo em dia (a paróquia cita o balcão)", "condition": tithe_paid_total > 0, "gold": 60, "rep": 2},
+		{"id": "vicar_bribed", "name": "Pastoral, não simonia (o vigário no bolso)", "condition": vicar_bribes >= 1, "gold": 130, "rep": 4, "pose": "ousadia"},
+		{"id": "vicar_refused", "name": "Porta na cara do céu (uma recusa)", "condition": vicar_refusals >= 1, "gold": 75, "rep": 3},
 		{"id": "rare_hoarder", "name": "Vitrine de Raridades (3 raridades no estoque)", "condition": rare_found >= 3, "gold": 70, "rep": 3},
 		{"id": "catalyst_touch", "name": "Toque de Catalisador (peça rara na forja)", "condition": catalyst_crafted >= 1, "gold": 60, "rep": 3, "pose": "relic"},
 		{"id": "library_master", "name": "Bibliotecária do Submundo (Biblioteca Nv.3)", "condition": library_upgrade_level >= 3, "gold": 80, "rep": 4, "pose": "book"},
@@ -7247,6 +7423,7 @@ func business_score() -> int:
 		+ legendary_crafted * 60 + exclusive_finished * 120 + endings_seen.size() * 30 \
 		+ branches.size() * 90 + staff_hired.size() * 30 + servants.size() * 55 \
 		+ _adventurer_score() \
+		+ invasions_repelled * 45 + defense_privileges.size() * 70 \
 		+ prisoners.size() * 10 + (MESS_LIMIT - mess) / 5 \
 		+ prestige_runs * 150 + _perk_levels_total() * 20 + prestige_goals_paid * 40
 
@@ -8288,6 +8465,14 @@ func _reset_run() -> void:
 	blood_harvested = 0
 	prisoners.clear()
 	banned_regulars.clear()
+	# A resposta dada ao vigário é da loja que fecha: a vida nova recebe a cobrança na
+	# primeira semana e decide de novo. Os carimbos não — porta segurada é história do
+	# beco com esta família, e a dobradiça, o sino e a milícia continuam no caixilho.
+	tithe_stance = ""
+	tithe_until = 0
+	vicar_announced_day = 0
+	last_invasion = ""
+	music_alarm_until = 0
 	# A fila é da loja velha: reencarnar abre a porta vazia, e o corpo que esperava
 	# sai de cena junto com o balcão anterior.
 	for waiting in _stage_waiters.duplicate():
@@ -8621,6 +8806,265 @@ func _trigger_vandal() -> void:
 	_show_feedback("🪣 Vândalos na loja.", Color(1.0, 0.55, 0.45))
 	_show_stage_emotion(stage_seller_body, "espanto")
 	audio.play("sad")
+
+## A casa vista de fora: todas as mãos que ela tem para fechar a porta, linha por
+## linha. Cada fonte é uma conta que o jogo já media — a ronda da folha, o servo que
+## dorme no salão, o batedor que voltou da estrada, a reforma do santuário, o degrau
+## da Administração e o que a própria campanha de defesa já pagou.
+func _defense_snapshot() -> Dictionary:
+	return {
+		"ronda": Staff.block_chance(staff_hired),
+		"servants": servants.size(),
+		"adventurers": adventurers_hired.size(),
+		"sanctum": sanctum_upgrade_level,
+		"rank": house_rank,
+		"privileges": defense_privileges,
+	}
+
+func _defense_power() -> int:
+	return Invasions.defense_power(_defense_snapshot())
+
+## A mão na porta escrita por extenso, na ordem em que a casa a contratou. Sem linha
+## nenhuma é a loja com a maçaneta e nada mais — e o painel diz isso em vez de mostrar
+## um número órfão.
+func _defense_breakdown_line() -> String:
+	var parts: Array[String] = []
+	for line in Invasions.defense_lines(_defense_snapshot()):
+		parts.append("%s +%d" % [str(line["name"]), int(line["value"])])
+	if parts.is_empty():
+		return "Nenhuma mão além da chefe na porta: %d de defesa e a rua sabe medir vitrine." % _defense_power()
+	return "Quem fecha a porta: %s." % [" • ".join(parts)]
+
+## A linha do vigário: quem ele é, o que quer, há quanto tempo a casa responde e o que
+## as recusas já acumularam contra a porta.
+func _vicar_panel_line() -> String:
+	if shop_day < Invasions.first_visit_day():
+		return "%s ainda não passou por este quarteirão. A lista da paróquia chega no dia %d." % [
+			Invasions.vicar_name(), Invasions.first_visit_day()]
+	if _vicar_waiting():
+		return "%s está na calçada com a lista: %d de dízimo (%d dia(s) de escudo) ou %d para apagar o endereço por %d dia(s). Recusar não custa ouro e custa visita." % [
+			Invasions.vicar_name(), _vicar_demand(), Invasions.TITHE_WEEK, _vicar_bribe(), Invasions.BRIBE_DAYS]
+	return "%s: %s. Cobranças respondidas: %d, ouro pago à paróquia: %d.%s" % [
+		Invasions.vicar_name(), Invasions.stance_line(tithe_stance, tithe_until, shop_day),
+		tithe_demands, tithe_paid_total,
+		" %d recusa(s) na conta da rua (+%d%% de visita)." % [vicar_refusals,
+			vicar_refusals * Invasions.INVASION_REFUSAL_STING] if vicar_refusals > 0 else ""]
+
+## Chance de a rua testar a porta numa virada: o alvo é o placar que a vitrine mostra,
+## o escudo é a resposta dada ao vigário e o sino da campanha.
+func _invasion_chance() -> int:
+	return Invasions.invasion_chance(business_score(), tithe_stance, tithe_until, shop_day,
+		vicar_refusals, _defense_snapshot())
+
+## A visita que o calendário da loja já permite, com o poder escalado pelos carimbos de
+## porta segurada. Vazio quer dizer "loja nova demais para ter alvo na porta".
+func _next_wave() -> Dictionary:
+	return Invasions.wave_for(shop_day, invasions_repelled)
+
+## A virada testa a maçaneta. Devolve a linha para o balanço da manhã, ou "" quando a
+## rua não bateu — por isso o painel mostra a chance antes, em vez de só o susto.
+func _roll_invasion() -> String:
+	var wave := _next_wave()
+	if wave.is_empty():
+		return ""
+	if randi() % 100 < Invasions.repel_chance(_defense_snapshot(), wave):
+		return _repel_invasion(wave)
+	return _breach_invasion(wave)
+
+## Porta segurada: a visita bate, encontra mão na madeira e volta com o recibo de que
+## a casa tem quem a defenda. O bairro anota, a campanha carimba, e com a milícia o
+## saco volta para o balcão.
+func _repel_invasion(wave: Dictionary) -> String:
+	invasions_repelled += 1
+	var snapshot := _defense_snapshot()
+	var gain := 2 if Invasions.has_militia(snapshot) else 1
+	reputation += gain
+	music_alarm_until = shop_day + 2
+	var parts: Array[String] = []
+	parts.append("🛡 %s (%s) veio buscar o que a vitrine mostra e encontrou %d de mão na porta; a visita pedia %d. Ninguém passou." % [
+		str(wave["name"]), str(wave["leader"]), Invasions.defense_power(snapshot), int(wave["power"])])
+	if gain == 2:
+		var reclaim := Invasions.militia_reclaim(wave, gold)
+		gold += reclaim
+		parts.append(" A milícia do beco tomou o saco de volta: +%d ouro." % reclaim)
+	if prisoners.size() < _cell_capacity() and randi() % 100 < 45:
+		_catch_culprit(str(wave["leader"]), "")
+		parts.append(" " + last_event)
+	parts.append(" %s O bairro anota a porta dura (+%d reputação). %s" % [
+		str(wave["quote"]), gain, Invasions.campaign_line(invasions_repelled)])
+	parts.append(_claim_defense_privilege())
+	last_invasion = "".join(parts)
+	_show_feedback("🛡 Porta segurada.", Color(0.72, 1.0, 0.86))
+	_show_stage_emotion(stage_seller_body, "aprovacao")
+	_apply_situation_music()
+	_check_achievements()
+	return last_invasion
+
+## O degrau da campanha que os carimbos acabaram de pagar. Privilégio de defesa é da
+## família, não da vida: reencarnar não arranca a dobradiça nova nem o sino do caixilho.
+func _claim_defense_privilege() -> String:
+	var privilege := Invasions.privilege_for(invasions_repelled)
+	if privilege.is_empty() or defense_privileges.has(str(privilege["id"])):
+		return ""
+	defense_privileges.append(str(privilege["id"]))
+	audio.play("levelup")
+	_show_feedback("🔔 %s" % str(privilege["name"]), Color(0.72, 1.0, 0.86))
+	return " CAMPANHA DE DEFESA (%d portas): \"%s\" — %s" % [
+		invasions_repelled, str(privilege["name"]), str(privilege["does"])]
+
+## Porta arrombada: o caixa, o chão, a fúria, a fama e a prateleira pagam juntos. É a
+## primeira visita da rua que mexe no inventário, e mexe no mesmo estoque que o furto e
+## a expedição já mexiam — a melhor peça do produto sorteado sai pela porta e não volta.
+func _breach_invasion(wave: Dictionary) -> String:
+	invasions_lost += 1
+	var taken := Invasions.plunder_for(wave, gold)
+	gold = maxi(0, gold - taken)
+	_add_mess(int(wave["mess"]))
+	fury = mini(5, fury + 1)
+	_update_demonic_form()
+	reputation = maxi(0, reputation - int(wave["rep"]))
+	music_alarm_until = shop_day + 3
+	var stolen := _steal_stock(int(wave["pieces"]))
+	last_invasion = "💥 %s (%s) arrombou a porta: %d de barro no salão, %d ouro no saco, %d de reputação no boca-a-boca e um ponto de fúria no balcão.%s %s A casa tinha %d de mão na porta e a visita pedia %d." % [
+		str(wave["name"]), str(wave["leader"]), int(wave["mess"]), taken, int(wave["rep"]),
+		stolen, str(wave["quote"]), _defense_power(), int(wave["power"])]
+	audio.play("sad")
+	_show_feedback("💥 Porta arrombada.", Color(1.0, 0.5, 0.44))
+	_show_stage_emotion(stage_seller_body, "medo")
+	_apply_situation_music()
+	_check_achievements()
+	return last_invasion
+
+## Peças que somem quando a porta cede: cada uma sai do mesmo estoque que a venda
+## consome, na mesma ordem de qualidade (a melhor primeiro).
+func _steal_stock(count: int) -> String:
+	var taken: Array[String] = []
+	for i in range(count):
+		var options: Array[int] = []
+		for p in range(products.size()):
+			if int(products[p]["stock"]) > 0:
+				options.append(p)
+		if options.is_empty():
+			break
+		var pick := options[randi() % options.size()]
+		var tier := _take_piece(pick, Quality.BEST)
+		taken.append("%s (%s)" % [str(products[pick]["name"]), str(Quality.tier(tier)["name"])])
+	if taken.is_empty():
+		return ""
+	return " Levaram da prateleira: %s." % ", ".join(taken)
+
+## O vigário não abençoa de graça nem condena por decreto: ele cobra para escrever o
+## endereço numa coluna menor da lista. Bate na porta a partir do dia 9 e a resposta
+## vale por dias contados — escudo que não vence não é escolha, é decoração.
+func _vicar_waiting() -> bool:
+	if shop_day < Invasions.first_visit_day():
+		return false
+	return tithe_stance.is_empty() or shop_day > tithe_until
+
+func _vicar_demand() -> int:
+	return Invasions.tithe_for(shop_day, reputation)
+
+func _vicar_bribe() -> int:
+	return Invasions.bribe_for(shop_day, reputation)
+
+## As três respostas possíveis, todas com preço: o dízimo come o caixa, o suborno come
+## o dobro e compra silêncio longo, e a recusa não custa ouro — custa visita.
+func _answer_vicar(answer: String) -> void:
+	if not _vicar_waiting():
+		last_event = "%s já tem resposta valendo até o dia %d. Ele volta quando o papel vencer." % [
+			Invasions.vicar_name(), tithe_until]
+		audio.play("click")
+		_refresh_ui()
+		return
+	var paid := 0
+	if answer == "dizimo":
+		paid = _vicar_demand()
+		if gold < paid:
+			_vicar_no_cash("o dízimo", paid)
+			return
+		tithe_stance = "pago"
+		tithe_until = shop_day + Invasions.TITHE_WEEK - 1
+		vicar_refusals = maxi(0, vicar_refusals - 1)
+		reputation += 1
+		last_event = "✝ %s recebe %d de dízimo e escreve a casa na coluna de \"paga em dia\": -%d%% de visita na porta por %d dia(s), e o sermão de domingo cita o balcão (+1 reputação)." % [
+			Invasions.vicar_name(), paid, Invasions.INVASION_TITHE_SHIELD, Invasions.TITHE_WEEK]
+	elif answer == "suborno":
+		paid = _vicar_bribe()
+		if gold < paid:
+			_vicar_no_cash("o suborno", paid)
+			return
+		tithe_stance = "subornado"
+		tithe_until = shop_day + Invasions.BRIBE_DAYS - 1
+		vicar_refusals = 0
+		vicar_bribes += 1
+		_gain_standing("submundo", 1)
+		last_event = "🤝 %d na mão de %s, e a paróquia perde este endereço por %d dia(s): -%d%% de visita na porta, +1 de fama com o Submundo, que acha o capricho bonito. Ele sai dizendo que \"não é simonia, é pastoral\"." % [
+			paid, Invasions.vicar_name(), Invasions.BRIBE_DAYS, Invasions.INVASION_BRIBE_SHIELD]
+	else:
+		tithe_stance = "recusado"
+		tithe_until = shop_day + Invasions.REFUSAL_RETRY - 1
+		vicar_refusals += 1
+		reputation += 2
+		last_event = "🚪 %s ouve \"não\" no balcão e dobra a lista: o bairro aplaude a porta dura (+2 reputação) e o papel vale %d dia(s), mas recusa é tinta — cada \"não\" soma +%d%% na chance de visita." % [
+			Invasions.vicar_name(), Invasions.REFUSAL_RETRY, Invasions.INVASION_REFUSAL_STING]
+	if paid > 0:
+		gold = maxi(0, gold - paid)
+		tithe_paid_total += paid
+		audio.play("coin")
+	else:
+		audio.play("sad")
+	tithe_demands += 1
+	_show_feedback("✝ Resposta dada ao vigário.", Color(0.86, 0.92, 1.0))
+	_apply_situation_music()
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Resposta honesta quando a bolsa não alcança a resposta: o vigário anota o número e
+## vai embora, e a cobrança volta na semana seguinte sem mudar de valor por isso.
+func _vicar_no_cash(what: String, cost: int) -> void:
+	last_event = "%s veio cobrar %s de %d e a casa tem %d no caixa. Ele anota na manga do hábito e volta quando a loja puder pagar — a rua inteira vê a conta." % [
+		Invasions.vicar_name(), what, cost, gold]
+	audio.play("sad")
+	_show_feedback("💸 Sem caixa para %s." % what, Color(1.0, 0.6, 0.5))
+	_refresh_ui()
+
+## Fama de facção ganha fora do balcão. Suborno é serviço que o Submundo reconhece, e a
+## fama que sobe é a mesma que já barateia o dia ruim das filiais.
+func _gain_standing(faction_id: String, amount: int) -> void:
+	if Factions.find(faction_id).is_empty():
+		return
+	faction_standing[faction_id] = maxi(0, int(faction_standing.get(faction_id, 0)) + amount)
+
+## Trilha situacional com a única faixa gravada que a casa tem: a mesma gravação,
+## afinada pelo que está acontecendo no salão. Alarme de porta acelera, ruína arrasta,
+## vigário na porta puxa para o grave e cada setor tem o próprio tom. `_music_situation`
+## é a resposta pura, medida na sonda; `_apply_situation_music` é quem move o player.
+func _music_situation() -> Dictionary:
+	if music_alarm_until > 0 and shop_day <= music_alarm_until:
+		return {"name": "alarme na porta", "pitch": 1.12, "db": -8.0}
+	if debt >= _debt_limit():
+		return {"name": "casa na ruína", "pitch": 0.84, "db": -18.0}
+	if _vicar_waiting() and vicar_announced_day == shop_day:
+		return {"name": "vigário na porta", "pitch": 0.92, "db": -14.0}
+	match current_sector:
+		"forge":
+			return {"name": "forja", "pitch": 1.06, "db": -11.0}
+		"library":
+			return {"name": "biblioteca", "pitch": 0.95, "db": -15.0}
+		"sanctum":
+			return {"name": "santuário", "pitch": 0.88, "db": -17.0}
+		"expedition":
+			return {"name": "estrada", "pitch": 1.02, "db": -12.0}
+	return {"name": "salão", "pitch": 1.0, "db": -13.0}
+
+func _apply_situation_music() -> void:
+	if not is_instance_valid(music_player):
+		return
+	var tune := _music_situation()
+	music_player.pitch_scale = float(tune["pitch"])
+	music_base_db = float(tune["db"])
+	_apply_music_settings()
 
 ## A cela gota no frasco e come na cozinha: cada preso é insumo e conta ao mesmo
 ## tempo, e é por isso que a casa pensa duas vezes antes de prender quem conhece.
