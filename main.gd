@@ -14,6 +14,7 @@ const Origin = preload("res://origin.gd")
 const Prestige = preload("res://prestige.gd")
 const Endings = preload("res://endings.gd")
 const Branches = preload("res://branches.gd")
+const FactionArcs = preload("res://faction_arcs.gd")
 const SteamBridge = preload("res://steam_bridge.gd")
 
 ## Caixa e despensa com que a loja abre a primeira vida — e cada vida seguinte.
@@ -77,6 +78,13 @@ var day_report: String = ""
 ## Filiais abertas nesta vida. Cada uma paga um lucro por virada e engrossa a conta
 ## da casa; a mais rentável é também a que mais afunda quando o dia vira.
 var branches: Array[String] = []
+## Pedidos de facção já entregues (facção → quantos). É nome, não ouro: fica na
+## conta salva depois da ruína e da reencarnação, e o privilégio do arco fechado
+## continua valendo na vida seguinte.
+var faction_arc_step: Dictionary = {}
+## Clientes deste tipo atendidos nesta vida. É o único número novo que o arco
+## precisa medir, e ele morre com a vida como o resto do caixa.
+var faction_customers: Dictionary = {}
 ## O que abrir quando a lembrança fechar: é como o capítulo final emenda o painel
 ## do império na cena do andar de cima sem empilhar os dois quadros.
 var _origin_next: Callable = Callable()
@@ -360,6 +368,10 @@ var day_report_label: Label
 var branch_summary_label: Label
 var branch_labels: Array = []
 var branch_buttons: Array = []
+var arc_summary_label: Label
+var arc_labels: Array = []
+var arc_desc_labels: Array = []
+var arc_buttons: Array = []
 var pack_button: Button
 var card_gallery_labels: Array = []
 var board_label: Label
@@ -1939,6 +1951,43 @@ func _build_ui() -> void:
 		branch_row.add_child(branch_button)
 		branch_buttons.append(branch_button)
 
+	reception_box.add_child(_make_section_title("PEDIDOS DAS FACÇÕES", Color(1.0, 0.86, 0.45)))
+	reception_box.add_child(_make_section_hint("Cada facção tem três pedidos escritos, e eles só abrem na medida em que a loja vira gente conhecida. Fechar os três deixa um privilégio permanente — nome não apaga com reencarnação."))
+	arc_summary_label = Label.new()
+	arc_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	arc_summary_label.add_theme_font_size_override("font_size", 14)
+	arc_summary_label.add_theme_color_override("font_color", Color(0.98, 0.92, 0.80))
+	reception_box.add_child(arc_summary_label)
+	for faction in Factions.DATA:
+		var arc_card := _make_sector_card(
+			Color(0.05, 0.06, 0.09, 0.94),
+			Color.from_string(str(faction["color"]), Color(0.7, 0.8, 1.0)).darkened(0.32))
+		reception_box.add_child(arc_card)
+		var arc_row := HBoxContainer.new()
+		arc_row.add_theme_constant_override("separation", 12)
+		arc_card.add_child(arc_row)
+		var arc_info := VBoxContainer.new()
+		arc_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		arc_row.add_child(arc_info)
+		var arc_label := Label.new()
+		arc_label.add_theme_font_size_override("font_size", 15)
+		arc_label.add_theme_color_override("font_color", Color(str(faction["color"])))
+		arc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		arc_info.add_child(arc_label)
+		arc_labels.append(arc_label)
+		var arc_desc := Label.new()
+		arc_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		arc_desc.add_theme_font_size_override("font_size", 12)
+		arc_desc.add_theme_color_override("font_color", Color(0.74, 0.76, 0.86))
+		arc_info.add_child(arc_desc)
+		arc_desc_labels.append(arc_desc)
+		var arc_button := Button.new()
+		arc_button.custom_minimum_size = Vector2(170, 40)
+		arc_button.add_theme_font_size_override("font_size", 14)
+		arc_button.pressed.connect(_deliver_faction_arc.bind(str(faction["id"])))
+		arc_row.add_child(arc_button)
+		arc_buttons.append(arc_button)
+
 	reception_box.add_child(_make_section_title("MERCADO DE INGREDIENTES", Color(0.78, 0.95, 1.0)))
 	reception_box.add_child(_make_section_hint("Os preços flutuam com o dia e com o seu movimento. Compre barato, fabrique caro, e revenda o que sobrar."))
 
@@ -2769,7 +2818,7 @@ func _craft_product(index: int) -> void:
 		last_event = "Essa receita ainda está bloqueada. Suba de nível ou pague a leitura na biblioteca."
 		_refresh_ui()
 		return
-	var cost: int = maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
+	var cost: int = maxi(1, int(round(float(item["cost"]) * _craft_cost_factor())))
 	if gold < cost:
 		last_event = "A caixa registradora está tão vazia que até o eco pediu demissão. Falta ouro."
 		_refresh_ui()
@@ -2855,12 +2904,34 @@ func _consume_ingredients(item: Dictionary) -> void:
 	for ingredient_id in recipe.keys():
 		ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) - int(recipe[ingredient_id])
 
+## Quanto pesa hoje o custo de fabricação: a trilha de Alquimia derruba 5% por
+## nível, e o selo das Guildas derruba mais 10% em cima do que sobrou. A conta é
+## uma só para a forja, para a margem estimada e para o painel não prometerem
+## números diferentes.
+func _craft_cost_factor() -> float:
+	var factor := 1.0 - 0.05 * float(alchemy_rank)
+	if _faction_arc_closed("guildas"):
+		factor *= 0.9
+	return maxf(0.3, factor)
+
+## A carta que a corte deixou na parede: a etiqueta inteira sobe 6%, porque agora a
+## loja tem quem responda pelo seu nome. Multiplica a mesma conta do balcão, não uma
+## linha nova — o painel, a margem e o recibo continuam lendo o mesmo número.
+func _recommendation_price_factor() -> float:
+	return 1.06 if _faction_arc_closed("nobres") else 1.0
+
+## O pacto de estrada dos aventureiros: +1 de sorte em todo sorteio da casa. Entra
+## pela mesma porta da sorte do álbum, para a forja, a estrada e o pacote subirem
+## juntos em vez de cada um ter o seu privilégio secreto.
+func _road_pact_luck() -> int:
+	return 1 if _faction_arc_closed("aventureiros") else 0
+
 ## Vagas de batedor na folha de pagamento. Logística 2 paga o segundo de estrada.
 func _expedition_slots() -> int:
 	return 2 if logistics_rank >= 2 else 1
 
 func _expedition_luck() -> int:
-	return alchemy_rank + logistics_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck() + _card_luck()
+	return alchemy_rank + logistics_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck() + _card_luck() + _road_pact_luck()
 
 ## Sorte que o álbum paga: a coleção da chefa entra na forja, na estrada e no
 ## próprio pacote — e cresce com cada carta evoluída.
@@ -2870,7 +2941,7 @@ func _card_luck() -> int:
 ## Sorte da bigorna sem catalisador na mão: a mesma que rola a peça, menos o pó da
 ## raridade do momento. Serve para o painel prometer uma chance honesta.
 func _forge_luck() -> int:
-	return alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + _prestige_luck() + _card_luck()
+	return alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + _prestige_luck() + _card_luck() + _road_pact_luck()
 
 ## Mestria da forja: os degraus que a casa já subiu nas duas trilhas que mexem na
 ## bigorna, mais a memória das vidas anteriores. É ela que destrava o Lendário —
@@ -3116,7 +3187,7 @@ func _market_product_factor(item: Dictionary) -> float:
 ## Estimativa conservadora: etiqueta de uma peça Honesta no mercado de hoje,
 ## menos custo de fabricação e preço atual de reposição dos ingredientes.
 func _estimated_margin(item: Dictionary) -> int:
-	var craft_cost := maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
+	var craft_cost := maxi(1, int(round(float(item["cost"]) * _craft_cost_factor())))
 	var ingredient_cost := 0
 	var recipe: Dictionary = item.get("ingredients", {})
 	for ingredient_id in recipe.keys():
@@ -3127,6 +3198,9 @@ func _ingredient_price(ingredient_id: String) -> int:
 	var base := float(Ingredients.price_for_day(ingredient_id, shop_day))
 	base *= Economy.factor(economy_state, "ingredient", ingredient_id)
 	base *= (1.0 - 0.05 * float(logistics_rank))
+	# O caderno do Sabet aberto: fornecedor fiel cobra menos por confiar no volume.
+	if _faction_arc_closed("mercadores"):
+		base *= 0.88
 	return maxi(1, int(round(base)))
 
 func _buy_ingredient(ingredient_id: String) -> void:
@@ -3563,7 +3637,7 @@ func _on_customer_tick() -> void:
 			# Saiu torto da forja e o cliente viu: ninguém esconde a careta.
 			_show_stage_emotion(stage_customer, "nojo")
 		var base_label := _piece_price(item, piece_tier)
-		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor()
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor() * _recommendation_price_factor()
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
 			preference_bonus = maxi(2, int(round(base_label * 0.25)))
@@ -3588,6 +3662,7 @@ func _on_customer_tick() -> void:
 			var faction_tier := Factions.tier_for(int(faction_standing.get(faction_id, 0)))
 			faction_bonus = int(round(base_label * Factions.price_bonus(faction_tier)))
 			sale_price += faction_bonus
+			faction_customers[faction_id] = int(faction_customers.get(faction_id, 0)) + 1
 		# O mural da loja também pesa na etiqueta. É bônus de balcão, não de conversa:
 		# a máquina de cartas mostra a porcentagem, o cliente não precisa ler rodapé.
 		sale_price += int(round(base_label * Cards.price_bonus(card_counts)))
@@ -4308,7 +4383,7 @@ func _refresh_ui() -> void:
 			product_labels[i].text = "🔒 %s  •  Desbloqueia no nível %d" % [item["name"], required_level]
 			product_margin_labels[i].text = "Receita bloqueada — evolua ou pague a leitura na biblioteca"
 			product_margin_labels[i].add_theme_color_override("font_color", Color(0.67, 0.62, 0.73))
-		var craft_cost := maxi(1, int(round(float(item["cost"]) * (1.0 - 0.05 * alchemy_rank))))
+		var craft_cost := maxi(1, int(round(float(item["cost"]) * _craft_cost_factor())))
 		var missing_ingredients: Array[String] = []
 		if unlocked:
 			missing_ingredients = _missing_ingredients(item)
@@ -4364,9 +4439,16 @@ func _refresh_ui() -> void:
 		else:
 			var expected := Branches.expected_profit(branches, _branch_care())
 			var extra := Branches.total_upkeep(branches)
+			var zelo_beco := 3 if _faction_arc_closed("submundo") else 0
+			var de_onde: Array[String] = []
+			if _branch_care() - zelo_beco > 0:
+				de_onde.append("%d da casa" % (_branch_care() - zelo_beco))
+			if zelo_beco > 0:
+				de_onde.append("%d do beco" % zelo_beco)
 			branch_summary_label.text = "CASAS ABERTAS: %d de %d • lucro esperado %+d por virada • custo extra %d • saldo médio %+d.%s" % [
 				branches.size(), Branches.size(), expected, extra, expected - extra,
-				" Cuidado da casa: -%d%% de dia ruim." % _branch_care() if _branch_care() > 0 else ""]
+				" Cuidado com as filiais: -%d%% de dia ruim (%s)." % [
+					_branch_care(), " + ".join(de_onde)] if _branch_care() > 0 else ""]
 	for i in range(Branches.DATA.size()):
 		var branch: Dictionary = Branches.DATA[i]
 		var branch_id := str(branch["id"])
@@ -4385,6 +4467,41 @@ func _refresh_ui() -> void:
 			branch_button.disabled = opened or blocked != "" or gold < branch_cost
 			branch_button.text = "ABERTA" if opened else (
 				"Abrir por %d" % branch_cost if blocked == "" else "Trancada: %s" % blocked)
+	if is_instance_valid(arc_summary_label):
+		arc_summary_label.text = "PEDIDOS ENTREGUES: %d de %d • arcos fechados %d de %d.%s" % [
+			_faction_asks_delivered(), FactionArcs.total(), _faction_arcs_closed(), Factions.DATA.size(),
+			" " + _faction_perks_text() if _faction_arcs_closed() > 0 else ""]
+	for i in range(Factions.DATA.size()):
+		var faction: Dictionary = Factions.DATA[i]
+		var faction_id := str(faction["id"])
+		var arc_progress := int(faction_arc_step.get(faction_id, 0))
+		var ask_step := FactionArcs.step(faction_id, arc_progress)
+		var closed_arc := ask_step.is_empty()
+		var why := "" if closed_arc else FactionArcs.reason(
+			_faction_arc_stats(faction_id), ask_step, int(faction_standing.get(faction_id, 0)), campaign_step)
+		if i < arc_labels.size():
+			var arc_label := arc_labels[i] as Label
+			var arc_desc := arc_desc_labels[i] as Label
+			if closed_arc:
+				var perk := FactionArcs.perk(faction_id)
+				arc_label.text = "%s — ARCO FECHADO: %s" % [str(faction["name"]), str(perk.get("name", ""))]
+				arc_desc.text = "%s • a parede da loja guarda o nome de quem fez isso." % str(perk.get("desc", ""))
+			else:
+				arc_label.text = "%s — pedido %d de %d: %s" % [
+					str(faction["name"]), arc_progress + 1, FactionArcs.size(faction_id), str(ask_step["title"])]
+				var reward: Dictionary = ask_step["reward"]
+				arc_desc.text = "%s\nCobra: %s (%s) • exige %s e %s • paga %d de ouro, +%d de fama, +%d XP, +%d de facção" % [
+					str(ask_step["ask"]), FactionArcs.goal_text(ask_step),
+					"%d/%d" % [FactionArcs.progress(_faction_arc_stats(faction_id), ask_step), int(ask_step["amount"])],
+					"%s (%d de fama)" % [
+						Factions.TIER_NAMES[Factions.tier_for(int(ask_step["standing"]))], int(ask_step["standing"])],
+					"capítulo %d" % int(ask_step["chapter"]),
+					int(reward["gold"]), int(reward["rep"]), int(reward["xp"]), int(reward["standing"])]
+		if i < arc_buttons.size():
+			var arc_button := arc_buttons[i] as Button
+			arc_button.disabled = closed_arc or why != ""
+			arc_button.text = "Fechado ✓" if closed_arc else (
+				"Entregar pedido" if why == "" else "Trancado: %s" % why)
 	for r in range(Sanctum.DATA.size()):
 		var ritual: Dictionary = Sanctum.DATA[r]
 		var ritual_id := str(ritual["id"])
@@ -4611,6 +4728,8 @@ func _save_game() -> void:
 	config.set_value("game", "branches", branches)
 	config.set_value("game", "day_report", day_report)
 	config.set_value("game", "faction_standing", faction_standing)
+	config.set_value("game", "faction_arc_step", faction_arc_step)
+	config.set_value("game", "faction_customers", faction_customers)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
 	config.set_value("game", "ad_level", ad_level)
@@ -4706,6 +4825,20 @@ func _load_game() -> void:
 	var saved_factions = config.get_value("game", "faction_standing", {})
 	if saved_factions is Dictionary:
 		faction_standing = saved_factions.duplicate(true)
+	# O caderno de pedidos é da família, não da vida: reencarnar não apaga nome
+	# nenhum na parede. Vem clampado — save antigo ou adulterado não ganha arco
+	# pronto nem passo fora da tabela.
+	var saved_arc_steps = config.get_value("game", "faction_arc_step", {})
+	if saved_arc_steps is Dictionary:
+		for step_id in saved_arc_steps.keys():
+			var step_faction := str(step_id)
+			var total := FactionArcs.size(step_faction)
+			if total > 0:
+				faction_arc_step[step_faction] = clampi(int(saved_arc_steps[step_id]), 0, total)
+	var saved_customers = config.get_value("game", "faction_customers", {})
+	if saved_customers is Dictionary:
+		for customer_id in saved_customers.keys():
+			faction_customers[str(customer_id)] = maxi(0, int(saved_customers[customer_id]))
 	var saved_romance = config.get_value("game", "romance_stage", {})
 	if saved_romance is Dictionary:
 		for saved_id in saved_romance.keys():
@@ -5288,6 +5421,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "branch_self_made", "name": "A casa se paga (filiais cobrem a conta da casa)", "condition": not branches.is_empty() and Branches.expected_profit(branches, _branch_care()) >= _daily_upkeep(), "gold": 300, "rep": 10, "pose": "book"},
 		{"id": "branch_all", "name": "Império de esquina a beco (todas as filiais abertas)", "condition": branches.size() >= Branches.size(), "gold": 500, "rep": 15, "pose": "danca"},
 		{"id": "house_talent_max", "name": "A casa no cabresto (Administração da Casa no nível máximo)", "condition": house_rank >= 5, "gold": 260, "rep": 9, "pose": "book"},
+		{"id": "faction_arc_first", "name": "Primeira assinatura no caderno (um pedido de facção entregue)", "condition": _faction_asks_delivered() >= 1, "gold": 100, "rep": 3},
+		{"id": "faction_arc_all", "name": "As cinco fachadas assinadas (todas as facções com arco fechado)", "condition": _faction_arcs_closed() >= Factions.DATA.size(), "gold": 700, "rep": 22, "pose": "vitoria"},
 		{"id": "card_holo", "name": "Brilho de coleção (primeira carta holográfica)", "condition": Cards.evolved_count(card_counts, 1) >= 1, "gold": 90, "rep": 4},
 		{"id": "card_prism", "name": "Prisma no mural (uma carta em seis cópias)", "condition": Cards.evolved_count(card_counts, 2) >= 1, "gold": 240, "rep": 10, "pose": "vitoria"},
 		{"id": "card_album_working", "name": "Álbum trabalhando (os três conjuntos pagando bônus)", "condition": Cards.luck_bonus(card_counts) >= 1 and Cards.price_bonus(card_counts) >= 0.04 and Cards.pack_discount(card_counts) >= 2, "gold": 150, "rep": 6},
@@ -5326,7 +5461,7 @@ func _grant_pack(free: bool) -> void:
 			_refresh_ui()
 			return
 		gold -= price
-	var opened: Dictionary = Cards.open_pack(card_counts, alchemy_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck() + _card_luck())
+	var opened: Dictionary = Cards.open_pack(card_counts, alchemy_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck() + _card_luck() + _road_pact_luck())
 	packs_opened += 1
 	var card: Dictionary = opened["card"]
 	var card_id := str(card["id"])
@@ -5475,9 +5610,10 @@ func _debt_limit() -> int:
 	return DEBT_LIMIT + (60 if house_rank >= 5 else 0)
 
 ## Da segunda marcha para cima, a administração acompanha as filiais de perto e
-## cada ponto derruba um ponto percentual da chance de dia ruim.
+## cada ponto derruba um ponto percentual da chance de dia ruim. A porta sem placa
+## do beco vale mais três pontos na mesma conta: proteção de rua também é zelo.
 func _branch_care() -> int:
-	return maxi(0, house_rank - 1)
+	return maxi(0, house_rank - 1) + (3 if _faction_arc_closed("submundo") else 0)
 
 func _daily_upkeep() -> int:
 	var bill := 12 + library_upgrade_level * 6 + sanctum_upgrade_level * 6 + ad_level * 5 \
@@ -5571,6 +5707,105 @@ func _branch_faction_label(branch: Dictionary) -> String:
 	if faction_id == "":
 		return "qualquer loja de bairro dá o endereço"
 	return "padrinho: %s, %d de fama" % [str(Factions.find(faction_id).get("name", faction_id)), int(branch["standing"])]
+
+## ── Pedidos de facção ──────────────────────────────────────────────────────────
+
+## Os números que um pedido lê. Tudo aqui é coisa que a loja já faz por outro
+## motivo: o arco cobra caminho percorrido, não tarefa nova de sentar e clicar.
+func _faction_arc_stats(faction_id: String) -> Dictionary:
+	return {
+		"pecas": total_crafted,
+		"primas": premium_crafted,
+		"encomendas": commissions_finished,
+		"expedicoes": expeditions_done,
+		"raridades": rare_found,
+		"eventos": rare_events_found,
+		"fama": reputation,
+		"caixa": gold,
+		"compras": total_ingredients_bought,
+		"casa": house_rank,
+		"quites": 1 if debt == 0 and debt_peak >= 120 else 0,
+		"filial_corte": 1 if branches.has("corte") else 0,
+		"clientes": int(faction_customers.get(faction_id, 0)),
+	}
+
+## O caderno da facção: quantos dos três pedidos ela já viu serem entregues.
+func _faction_arc_progress(faction_id: String) -> int:
+	return int(faction_arc_step.get(faction_id, 0))
+
+## Arco fechado quer dizer privilégio permanente na conta da loja — é por isso que
+## as fórmulas de custo, etiqueta, sorte e filial perguntam isto antes de rolar.
+func _faction_arc_closed(faction_id: String) -> bool:
+	return FactionArcs.closed(faction_id, _faction_arc_progress(faction_id))
+
+func _faction_arcs_closed() -> int:
+	var sum := 0
+	for faction in Factions.DATA:
+		if _faction_arc_closed(str(faction["id"])):
+			sum += 1
+	return sum
+
+## Quantos pedidos o caderno já registrou, somando as cinco facções. Serve de
+## régua para a primeira conquista e para o resumo do painel.
+func _faction_asks_delivered() -> int:
+	var sum := 0
+	for faction in Factions.DATA:
+		sum += _faction_arc_progress(str(faction["id"]))
+	return sum
+
+func _faction_perks_text() -> String:
+	var names: Array[String] = []
+	for faction in Factions.DATA:
+		var faction_id := str(faction["id"])
+		if _faction_arc_closed(faction_id):
+			names.append(str(FactionArcs.perk(faction_id).get("name", "")))
+	if names.is_empty():
+		return ""
+	return "Privilégios da casa: %s." % ", ".join(names)
+
+## Entregar um pedido é a única forma de fechar um capítulo de facção: o botão só
+## libera quando a fama, o capítulo da campanha e o número cobrado batem juntos.
+func _deliver_faction_arc(faction_id: String) -> void:
+	var progress := _faction_arc_progress(faction_id)
+	var ask_step := FactionArcs.step(faction_id, progress)
+	if ask_step.is_empty():
+		return
+	var faction := Factions.find(faction_id)
+	var standing_antes := int(faction_standing.get(faction_id, 0))
+	var why := FactionArcs.reason(_faction_arc_stats(faction_id), ask_step, standing_antes, campaign_step)
+	if why != "":
+		last_event = "Ainda não: %s quer %s antes de assinar. Falta %s." % [
+			str(faction.get("name", faction_id)), str(ask_step["title"]), why]
+		_refresh_ui()
+		return
+	var reward: Dictionary = ask_step["reward"]
+	gold += int(reward["gold"])
+	reputation += int(reward["rep"])
+	faction_arc_step[faction_id] = progress + 1
+	faction_standing[faction_id] = standing_antes + int(reward["standing"])
+	_add_xp(int(reward["xp"]))
+	last_event = "PEDIDO DE %s ENTREGADO (%d/%d): %s %s" % [
+		str(faction.get("name", faction_id)).to_upper(), progress + 1, FactionArcs.size(faction_id),
+		str(ask_step["done"]), str(ask_step["voice"])]
+	if Factions.tier_for(int(faction_standing[faction_id])) > Factions.tier_for(standing_antes):
+		last_event += "\nA loja subiu de patamar na facção: %s." % Factions.TIER_NAMES[
+			Factions.tier_for(int(faction_standing[faction_id]))]
+	if is_instance_valid(seller_speech_label):
+		seller_speech_label.text = "CHEFE: %s" % str(ask_step["voice"])
+	if not demonic_form_active:
+		_set_seller_mood("happy")
+	audio.play("levelup")
+	_show_feedback("✦ %s" % str(ask_step["title"]), Color(1.0, 0.86, 0.45))
+	# O terceiro pedido não paga só ouro: paga o nome na parede, para sempre, e um
+	# pacote de cartas para a coleção acompanhar a história.
+	if _faction_arc_closed(faction_id):
+		var perk := FactionArcs.perk(faction_id)
+		last_event += "\nPRIVILÉGIO PERMANENTE — %s: %s" % [
+			str(perk.get("name", "")), str(perk.get("desc", ""))]
+		_grant_pack(true)
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
 
 ## A dívida estourou: a vida fecha no vermelho. O painel não oferece saída além de
 ## reabrir as portas, porque ruína que se dispensa com um clique não é consequência.
@@ -6173,6 +6408,9 @@ func _reset_run() -> void:
 	# A fama das facções atravessa a vida, mas o placar dela recomeça do zero: o
 	# ponteiro de agora é o chão contra o qual o próximo capítulo sete é medido.
 	season_baseline = faction_standing.duplicate(true)
+	# Quem encheu o balcão na vida anterior não está na fila desta: a contagem de
+	# clientes por facção é da temporada, o pedido já entregue no caderno não é.
+	faction_customers.clear()
 
 func _board_text() -> String:
 	if steam == null:
