@@ -113,6 +113,57 @@ const SERVANT_GUARD_CHANCE := 6
 const SERVANT_LADDER := [4, 10, 18, 30]
 ## Furtos barrados pela ronda nesta vida — o número que a conquista do beco lê.
 var theft_blocked: int = 0
+## Sujeira do salão, de 0 a MESS_LIMIT. Cada visita que sai pela porta leva sola
+## um pouco de barro, e cada barro deixado no chão é um cliente que espera menos,
+## paga menos e um vândalo que acha a casa fácil. Não é enfeite de painel: é a
+## conta que a chefe paga em varrição ou em reputação.
+var mess: int = 0
+## Quantas varridas a própria chefe fez nesta vida — o número que a conquista da
+## vassoura lê, e a única defesa contra a sujeira que custa ouro em vez de salário.
+var sweeps_done: int = 0
+## Quem está na cela do santuário: nome e, quando for freguês de casa, o id. Entra
+## por furto e vandalismo, rende um frasco de sangue por virada e comida na conta.
+var prisoners: Array[Dictionary] = []
+## Fregueses expulsos do bairro. Quem sai pela porta dos fundos some do sorteio de
+## visitas para sempre — e leva junto o vínculo que a casa já tinha nele.
+var banned_regulars: Array[String] = []
+## Frascos de sangue colhidos na cela nesta vida, só para a conquista contar.
+var blood_harvested: int = 0
+## Conserva da casa: cada visita pisa barro, a vassoura custa ouro, e a etiqueta
+## despenca no salão imundo. Os números são a única novidade; todos caem em
+## fórmulas que o jogo já usava (paciência de fila, multiplicador de preço, conta
+## da virada).
+const MESS_LIMIT := 100
+const MESS_PER_VISIT := 2
+const MESS_PER_WALKOUT := 3
+const MESS_VANDAL := 18
+## Custo de um balde e uma tarde de trabalho: sobe com a marcha da Administração,
+## porque casa grande suja mais e a chefe não varre de graça.
+const MOP_COST := 18
+## A cada MESS_PATIENCE_STEP de barro a fila perde um tique de paciência, e a
+## etiqueta perde MESS_PRICE_PENALTY por ponto até o teto.
+const MESS_PATIENCE_STEP := 34
+const MESS_PRICE_PENALTY := 0.0015
+## O que limpa sozinho: a criada da folha varre SWEEP do quadro, e cada servo da
+## casa dá uma mão por afeto.
+const SERVANT_SWEEP := 4
+## Cela do santuário: sangue no frasco e prato na conta. O teto é a reforma do
+## santuário — ninguém guarda vândalo em loja que não tem porta trancada.
+const CELL_BLOOD := 1
+const CELL_FOOD := 3
+## Rodada de vândalos na virada: a chance cresce com o salão imundo e cai com a
+## fama que já pagou alguém do beco.
+const VANDAL_CHANCE_PER_MESS := 0.14
+## Abaixo desta reputação o beco entende que a casa não tem quem a defenda, e cada
+## ponto que falta vira convite.
+const VANDAL_REP_SHIELD := 8
+## Os nomes que a casa enxerga quando a ronda segura um braço no ar. Ninguém aqui é
+## freguês de casa: vândalo sorteado é gente de fora do elenco, e por isso vai para
+## a cela sem levar vínculo junto.
+const VANDAL_NAMES: Array[String] = [
+	"Rufino Meia-Noite", "Boca-Salgada Vera", "Caco Tiracolo",
+	"Nino do Beco Sem Nome", "Zeca Pé-de-Ferro", "Amparo Mão-Leve",
+]
 ## Pedidos de facção já entregues (facção → quantos). É nome, não ouro: fica na
 ## conta salva depois da ruína e da reencarnação, e o privilégio do arco fechado
 ## continua valendo na vida seguinte.
@@ -414,6 +465,12 @@ var branch_labels: Array = []
 var branch_buttons: Array = []
 var staff_summary_label: Label
 var queue_label: Label
+var mess_label: Label
+var sweep_button: Button
+var cell_label: Label
+var release_button: Button
+var deliver_button: Button
+var banish_button: Button
 var staff_labels: Array = []
 var staff_buttons: Array = []
 var arc_summary_label: Label
@@ -1470,7 +1527,7 @@ func _arrivals_this_tick() -> int:
 ## perfil, o quanto a chefe já é querida e quantas mãos há no balcão. Charme é
 ## literalmente tempo de espera, e contratar também é.
 func _queue_patience(profile: Dictionary) -> int:
-	return QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size() + servants.size()
+	return maxi(1, QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size() + servants.size() - _mess_patience_loss())
 
 ## Manda para dentro quem o balcão não consegue atender agora. Cada um chega com o
 ## perfil sorteado na hora, então a fila é gente com retrato e orçamento, não um
@@ -1520,6 +1577,9 @@ func _desert_waiter(entry: Dictionary) -> void:
 	queue_walkouts += 1
 	disappointed_customers += 1
 	day_walkouts += 1
+	# Quem espera na porta em pé sobre o próprio barro bate o pé no chão antes de
+	# bater a porta: a fila suja e a sujeira atrasa a fila.
+	_add_mess(MESS_PER_WALKOUT)
 	last_event = "%s esperou %d viradas na porta e foi comprar em outro beco. A chefe rangea os dentes: fila longa sem balcão que dê conta é loja com a placa de FECHADO." % [visitor_name, int(entry["waited"])]
 	_show_feedback("✗ %s desistiu da fila." % visitor_name, Color(1.0, 0.55, 0.55))
 	_dismiss_waiter(entry)
@@ -2624,6 +2684,54 @@ func _build_ui() -> void:
 	queue_label.add_theme_font_size_override("font_size", 14)
 	queue_label.add_theme_color_override("font_color", Color(0.98, 0.90, 0.66))
 	reception_box.add_child(queue_label)
+
+	reception_box.add_child(_make_section_title("CONSERVA DA CASA E CELA", Color(0.86, 0.80, 1.0)))
+	reception_box.add_child(_make_section_hint("Barro no chão é conta, não cenário: encurta a paciência da fila, derruba a etiqueta e chama vândalo para a porta. A criada varre por salário, o servo apaixonado varre por afeto e a chefe varre em ouro. Quem é pego com a mão na prateleira pode acabar na cela do santuário — que rende sangue para a forja e prato na conta da virada."))
+	var house_card := _make_sector_card(Color(0.06, 0.05, 0.09, 0.94), Color(0.46, 0.42, 0.68, 0.95))
+	reception_box.add_child(house_card)
+	var house_row := HBoxContainer.new()
+	house_row.add_theme_constant_override("separation", 12)
+	house_card.add_child(house_row)
+	var house_info := VBoxContainer.new()
+	house_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	house_row.add_child(house_info)
+	mess_label = Label.new()
+	mess_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	mess_label.add_theme_font_size_override("font_size", 15)
+	mess_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.72))
+	house_info.add_child(mess_label)
+	cell_label = Label.new()
+	cell_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	cell_label.add_theme_font_size_override("font_size", 13)
+	cell_label.add_theme_color_override("font_color", Color(0.82, 0.80, 0.96))
+	house_info.add_child(cell_label)
+	var house_buttons := VBoxContainer.new()
+	house_buttons.add_theme_constant_override("separation", 8)
+	house_row.add_child(house_buttons)
+	sweep_button = Button.new()
+	sweep_button.custom_minimum_size = Vector2(190, 40)
+	sweep_button.add_theme_font_size_override("font_size", 14)
+	sweep_button.text = "🧹 Varref o salão"
+	sweep_button.pressed.connect(_sweep_floor)
+	house_buttons.add_child(sweep_button)
+	release_button = Button.new()
+	release_button.custom_minimum_size = Vector2(190, 40)
+	release_button.add_theme_font_size_override("font_size", 14)
+	release_button.text = "🕊 Soltar o mais velho"
+	release_button.pressed.connect(_release_prisoner)
+	house_buttons.add_child(release_button)
+	deliver_button = Button.new()
+	deliver_button.custom_minimum_size = Vector2(190, 40)
+	deliver_button.add_theme_font_size_override("font_size", 14)
+	deliver_button.text = "⚖ Entregar à guilda"
+	deliver_button.pressed.connect(_deliver_prisoner)
+	house_buttons.add_child(deliver_button)
+	banish_button = Button.new()
+	banish_button.custom_minimum_size = Vector2(190, 40)
+	banish_button.add_theme_font_size_override("font_size", 14)
+	banish_button.text = "🚪 Expulsar do bairro"
+	banish_button.pressed.connect(_banish_prisoner)
+	house_buttons.add_child(banish_button)
 
 	reception_box.add_child(_make_section_title("FILIAIS DA CASA", Color(0.72, 1.0, 0.82)))
 	reception_box.add_child(_make_section_hint("Fora do salão a loja também trabalha, e também paga conta. Cada filial abre com ouro e cobra um custo por virada; a mais rentável é a que mais deve no dia ruim."))
@@ -4234,19 +4342,27 @@ func _product_index(product_id: String) -> int:
 ## quem ainda não foi visitado domina a fila: ampliar o elenco não dilui a
 ## frequência de cada personagem nem atrasa os capítulos.
 func _pick_regular() -> Dictionary:
+	var picks: Array[Dictionary] = []
 	var weights: Array[float] = []
 	var total_weight := 0.0
 	for candidate in Regulars.DATA:
+		# Banido é banido: o nome sai do sorteio junto com a confiança que ele deixou
+		# na casa, e nada traz ele de volta para dentro da loja.
+		if _regular_banned(str(candidate["id"])):
+			continue
 		var candidate_bond := int(regular_bonds.get(str(candidate["id"]), 0))
 		var weight := 1.0 / float(candidate_bond + 2)
+		picks.append(candidate)
 		weights.append(weight)
 		total_weight += weight
+	if picks.is_empty():
+		return Regulars.DATA[0]
 	var roll := randf() * total_weight
 	for i in range(weights.size()):
 		roll -= weights[i]
 		if roll <= 0.0:
-			return Regulars.DATA[i]
-	return Regulars.DATA[0]
+			return picks[i]
+	return picks[picks.size() - 1]
 
 ## Quem bate na porta sem ser freguês de casa: retrato, orçamento e paciência.
 ## É a mesma lista que alimenta a fila de espera, então quem espera na porta é
@@ -4342,15 +4458,24 @@ func _on_customer_tick() -> void:
 			_update_demonic_form()
 			calm_line = " %s levou %d de fúria da chefe com um prato no fim do turno." % [
 				str(Staff.find("cozinha")["name"]), calm]
+		# A casa acorda com a chefe: chão varrido por quem foi pago para isso (ou por
+		# quem ama a chefe de graça) e cela que pingou no frasco durante a noite.
+		var clean_line := _clean_house_turn()
+		var blood_line := _harvest_cell()
+		# E a rua acorda com ela: barro na vitrine é convite, e convite vem cobrar.
+		var vandal_line := ""
+		if randi() % 100 < _vandal_chance():
+			_trigger_vandal()
+			vandal_line = "\n" + last_event
 		# A fila que desistiu também fecha o dia: é o número que o balanço da manhã
 		# precisa mostrar para a fama ter preço visível.
 		var lost_line := ""
 		if day_walkouts > 0:
 			lost_line = " %d saíram da fila sem comprar." % day_walkouts
-		day_report = bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + lost_line
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s\n%s%s" % [
+		day_report = bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s\n%s%s%s" % [
 			shop_day, Economy.report(economy_state, products, Ingredients.DATA), bill_line,
-			("\n" + branch_line) if branch_line != "" else ""]
+			("\n" + branch_line) if branch_line != "" else "", vandal_line]
 		# A encomenda do patrono vence e chega no mesmo instante da virada, e o
 		# resultado é gravado junto: quem fecha o jogo nessa manhã não acorda com o
 		# prazo de um dia que já passou.
@@ -4425,7 +4550,7 @@ func _on_customer_tick() -> void:
 		_animate_customer_arrival(profile)
 		var preferred_index: int = _product_index(str(profile["favorite"]))
 		current_customer_budget = int(profile.get("budget", 50)) + trade_rank * 8
-		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank + Sanctum.patience_bonus(active_buffs) + distraction_pending) / world_speed())) - _fury_patience_loss())
+		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank + Sanctum.patience_bonus(active_buffs) + distraction_pending) / world_speed())) - _fury_patience_loss() - _mess_patience_loss())
 		distraction_pending = 0
 		var seduction_used := false
 		if is_instance_valid(customer_emotion_label):
@@ -4437,13 +4562,11 @@ func _on_customer_tick() -> void:
 				_show_feedback("⛓ Furto barrado pelo selo.", Color(0.75, 1.0, 0.72))
 			elif round_block > 0 and randi() % 100 < round_block:
 				theft_blocked += 1
-				last_event = "%s levou a mão à prateleira e %s" % [
-					str(profile.get("name", "O cliente")),
-					"a ronda não precisou levar a mão a ele: %s ficou olhando até a peça voltar para o lugar." % str(Staff.find("ronda")["name"])
-					if staff_hired.has("ronda") else
-					"um dos da casa estava olhando: a peça voltou sozinha para a prateleira."
-				]
-				_show_feedback("⛔ A ronda viu primeiro." if staff_hired.has("ronda") else "⛔ Um servo da casa viu primeiro.", Color(0.75, 1.0, 0.72))
+				var caught_id := str(profile.get("regular_id", ""))
+				var caught_name := str(profile.get("name", "O cliente"))
+				if not caught_id.is_empty() and not Regulars.find(caught_id).is_empty():
+					caught_name = str(Regulars.find(caught_id).get("short", caught_name))
+				_catch_culprit(caught_name, caught_id)
 			else:
 				_handle_thief_escape(profile, available)
 				_check_achievements()
@@ -4501,7 +4624,7 @@ func _on_customer_tick() -> void:
 			# Saiu torto da forja e o cliente viu: ninguém esconde a careta.
 			_show_stage_emotion(stage_customer, "nojo")
 		var base_label := _piece_price(item, piece_tier)
-		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor() * _recommendation_price_factor() * (1.0 + SERVANT_PRICE_SHARE * servants.size()) * (1.08 if _has_spec("trade", "cartel") else 1.0)
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * _mess_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor() * _recommendation_price_factor() * (1.0 + SERVANT_PRICE_SHARE * servants.size()) * (1.08 if _has_spec("trade", "cartel") else 1.0)
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
 			preference_bonus = maxi(2, int(round(base_label * 0.25)))
@@ -4546,6 +4669,7 @@ func _on_customer_tick() -> void:
 		# pedido especial pagava: a venda comum levava o item e devovia XP.
 		gold += sale_price
 		customers_served += 1
+		_add_mess(MESS_PER_VISIT)
 		if profile.has("regular_id"):
 			var regular_id := str(profile["regular_id"])
 			var old_bond := int(regular_bonds.get(regular_id, 0))
@@ -5345,6 +5469,18 @@ func _refresh_ui() -> void:
 			queue_label.text = "ESPERANDO: %d na fila • %s%s • saíram sem comprar: %d. O balcão atende um por tique; o resto é fila." % [
 				service_queue.size(), " • ".join(waiting),
 				" …" if service_queue.size() > 4 else "", queue_walkouts]
+	if is_instance_valid(mess_label):
+		mess_label.text = _mess_line()
+	if is_instance_valid(sweep_button):
+		var mop := _mop_cost()
+		sweep_button.text = "🧹 Varrer o salão (%d)" % mop
+		sweep_button.disabled = mess <= 0 or gold < mop
+	if is_instance_valid(cell_label):
+		cell_label.text = _cell_line()
+	var has_prisoner := not prisoners.is_empty()
+	for seat_button in [release_button, deliver_button, banish_button]:
+		if is_instance_valid(seat_button):
+			seat_button.disabled = not has_prisoner
 	if is_instance_valid(staff_summary_label):
 		# A folha é a conta: o painel diz quanto os do balcão somam por virada e onde
 		# esse dinheiro aparece — no custo da casa, não numa linha separada.
@@ -5685,6 +5821,19 @@ func _save_game() -> void:
 	config.set_value("game", "branches", branches)
 	config.set_value("game", "staff_hired", staff_hired)
 	config.set_value("game", "servants", servants)
+	# A cela via em duas listas paralelas: ConfigFile lê aninhamento como Variant e
+	# um dicionário dentro de Array é exatamente o tipo que se perde no carregamento.
+	var prisoner_names: Array[String] = []
+	var prisoner_ids: Array[String] = []
+	for held in prisoners:
+		prisoner_names.append(str(held.get("name", "")))
+		prisoner_ids.append(str(held.get("regular_id", "")))
+	config.set_value("game", "prisoner_names", prisoner_names)
+	config.set_value("game", "prisoner_ids", prisoner_ids)
+	config.set_value("game", "mess", mess)
+	config.set_value("game", "sweeps_done", sweeps_done)
+	config.set_value("game", "blood_harvested", blood_harvested)
+	config.set_value("game", "banned_regulars", banned_regulars)
 	config.set_value("game", "theft_blocked", theft_blocked)
 	config.set_value("game", "queue_walkouts", queue_walkouts)
 	config.set_value("game", "day_report", day_report)
@@ -5899,6 +6048,23 @@ func _load_game() -> void:
 		for servant_id in saved_servants:
 			if not Regulars.find(str(servant_id)).is_empty() and not servants.has(str(servant_id)):
 				servants.append(str(servant_id))
+	mess = clampi(int(config.get_value("game", "mess", mess)), 0, MESS_LIMIT)
+	sweeps_done = maxi(0, int(config.get_value("game", "sweeps_done", sweeps_done)))
+	blood_harvested = maxi(0, int(config.get_value("game", "blood_harvested", blood_harvested)))
+	var saved_banned = config.get_value("game", "banned_regulars", [])
+	banned_regulars.clear()
+	if saved_banned is Array:
+		for banned_id in saved_banned:
+			if not Regulars.find(str(banned_id)).is_empty() and not banned_regulars.has(str(banned_id)):
+				banned_regulars.append(str(banned_id))
+	# Cela e banido atravessam o carregamento pelas paralelas: nome na linha de
+	# frente, id atrás, e o que não for freguês de casa vem com id vazio.
+	var saved_names = config.get_value("game", "prisoner_names", [])
+	var saved_ids = config.get_value("game", "prisoner_ids", [])
+	prisoners.clear()
+	if saved_names is Array and saved_ids is Array:
+		for held in range(mini(saved_names.size(), saved_ids.size())):
+			prisoners.append({"name": str(saved_names[held]), "regular_id": str(saved_ids[held])})
 	theft_blocked = maxi(0, int(config.get_value("game", "theft_blocked", theft_blocked)))
 	queue_walkouts = maxi(0, int(config.get_value("game", "queue_walkouts", queue_walkouts)))
 	day_report = str(config.get_value("game", "day_report", day_report))
@@ -6475,6 +6641,9 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "staff_rounds", "name": "A ronda conhece o beco (três furtos barrados na mesma vida)", "condition": theft_blocked >= 3, "gold": 220, "rep": 8, "pose": "book"},
 		{"id": "servant_first", "name": "Coração atrás do balcão (um freguês apaixonado entrando para a casa)", "condition": not servants.is_empty(), "gold": 140, "rep": 5, "pose": "beijo"},
 		{"id": "servant_three", "name": "A casa tem coração (três servos trabalhando sem salário)", "condition": servants.size() >= 3, "gold": 380, "rep": 12, "pose": "aplausos"},
+		{"id": "clean_five", "name": "A chefe conhece o peso da vassoura (cinco salões varridos em ouro)", "condition": sweeps_done >= 5, "gold": 90, "rep": 3, "pose": "felicidade"},
+		{"id": "cell_blood", "name": "A cela paga o próprio prato (três frascos de sangue colhidos)", "condition": blood_harvested >= 3, "gold": 160, "rep": 4, "pose": "desconfianca"},
+		{"id": "banish_one", "name": "Tem porta que tranca por fora (um freguês expulso do bairro)", "condition": not banned_regulars.is_empty(), "gold": 120, "rep": 2, "pose": "recusa"},
 		{"id": "queue_lost", "name": "A porta também chora (cinco visitas que desistiram da fila)", "condition": queue_walkouts >= 5, "gold": 180, "rep": 6, "pose": "recusa"},
 		{"id": "house_talent_max", "name": "A casa no cabresto (Administração da Casa no nível máximo)", "condition": house_rank >= 5, "gold": 260, "rep": 9, "pose": "book"},
 		{"id": "faction_arc_first", "name": "Primeira assinatura no caderno (um pedido de facção entregue)", "condition": _faction_asks_delivered() >= 1, "gold": 100, "rep": 3},
@@ -6579,6 +6748,7 @@ func business_score() -> int:
 		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0) \
 		+ legendary_crafted * 60 + exclusive_finished * 120 + endings_seen.size() * 30 \
 		+ branches.size() * 90 + staff_hired.size() * 30 + servants.size() * 55 \
+		+ prisoners.size() * 10 + (MESS_LIMIT - mess) / 5 \
 		+ prestige_runs * 150 + _perk_levels_total() * 20 + prestige_goals_paid * 40
 
 func _publish_score() -> void:
@@ -6676,7 +6846,8 @@ func _branch_care() -> int:
 func _daily_upkeep() -> int:
 	var bill := 12 + library_upgrade_level * 6 + sanctum_upgrade_level * 6 + ad_level * 5 \
 		+ (18 if imp_hired else 0) + Branches.total_upkeep(branches) \
-		+ Staff.total_wage(staff_hired) - SERVANT_UPKEEP_RELIEF * servants.size()
+		+ Staff.total_wage(staff_hired) + CELL_FOOD * prisoners.size() \
+		- SERVANT_UPKEEP_RELIEF * servants.size()
 	## Conta de casa bem administrada encolhe 8% por marcha, e a conta é o que
 	## segura o império: por isso a trilha mexe nela e não na receita.
 	return maxi(1, int(round(float(bill) * (1.0 - 0.08 * float(house_rank)) * (0.9 if _has_spec("house", "livro") else 1.0))))
@@ -7604,6 +7775,14 @@ func _reset_run() -> void:
 	# CNPJ. Só o reset total, que apaga o save, desfaz o que eles escolheram.
 	staff_hired.clear()
 	theft_blocked = 0
+	# Conserva e cela são da vida que está fechando: o chão novo nasce limpo, quem
+	# estava preso escapa no meio da mudança, e o bairro perdoa o banido junto com a
+	# loja — a vida nova é justamente a chance de não repetir a mesma porta.
+	mess = 0
+	sweeps_done = 0
+	blood_harvested = 0
+	prisoners.clear()
+	banned_regulars.clear()
 	# A fila é da loja velha: reencarnar abre a porta vazia, e o corpo que esperava
 	# sai de cena junto com o balcão anterior.
 	for waiting in _stage_waiters.duplicate():
@@ -7805,6 +7984,239 @@ func _servants_line() -> String:
 		int(round(SERVANT_PRICE_SHARE * servants.size() * 100.0)),
 		SERVANT_UPKEEP_RELIEF * servants.size()
 	]
+
+## ── conserva do salão, vândalos e cela ──────────────────────────────────────
+
+## Barro que ninguém varre é anúncio: a fila espera menos, a etiqueta vale menos e o
+## beco entende que a casa anda ocupada demais para se defender.
+func _add_mess(amount: int) -> void:
+	mess = clampi(mess + amount, 0, MESS_LIMIT)
+
+## Tiques de paciência que um salão imundo come da fila — a mesma moeda que o
+## charme, a logística e os servos já pagavam, só que do lado da dívida.
+func _mess_patience_loss() -> int:
+	return int(float(mess) / float(MESS_PATIENCE_STEP))
+
+## Desconto que o cliente faz na própria cabeça antes de abrir a carteira.
+func _mess_price_multiplier() -> float:
+	return 1.0 - float(mess) * MESS_PRICE_PENALTY
+
+## Preço do balde: cresce com o tamanho da casa, nunca com a marcha de quem a
+## administra — investir em Administração não pode engrossar a própria conta.
+func _mop_cost() -> int:
+	return MOP_COST + branches.size() * 6 + (library_upgrade_level + sanctum_upgrade_level) * 3
+
+## A chefe pega na vassoura ela mesma. Custa ouro e zera o chão na hora: é a defesa
+## de quem ainda não tem criada na folha, e continua sendo a defesa rápida de quem
+## já tem, porque a criada só varre uma vez por virada.
+func _sweep_floor() -> void:
+	if mess <= 0:
+		last_event = "O salão já está varrido. A chefe guarda a vassoura e jura que foi teste de chão."
+		_refresh_ui()
+		return
+	var cost := _mop_cost()
+	if gold < cost:
+		last_event = "Balde, vassoura e sabão custam %d e o caixa tem %d. A casa vai sujar mais antes de poder pagar pela própria limpeza." % [cost, gold]
+		_show_feedback("✗ Sem caixa para varrer.", Color(1.0, 0.55, 0.55))
+		_refresh_ui()
+		return
+	var swept := mess
+	gold -= cost
+	mess = 0
+	sweeps_done += 1
+	last_event = "%d de barro fora do chão por %d ouro. A entrada range de limpa e quem estava de costas olha as prateleiras de novo." % [swept, cost]
+	_show_feedback("🧹 Salão varrido.", Color(0.82, 0.98, 0.86))
+	_show_stage_emotion(stage_seller_body, "felicidade")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## O que a casa limpa sozinha na virada: a criada contratada varre o chão e cada
+## servo apaixonado dá uma mão sem cobrar. Devolve a linha do balanço da manhã.
+func _clean_house_turn() -> String:
+	var maid := Staff.sweep_per_turn(staff_hired)
+	var loving := SERVANT_SWEEP * servants.size()
+	var swept := maid + loving
+	if swept <= 0 or mess <= 0:
+		return ""
+	var before := mess
+	mess = maxi(0, mess - swept)
+	var taken := before - mess
+	# A frase é escrita por caso, não montada com um verbo só: a criada varre
+	# "ela", o servo varre "eles", e as duas mãos juntas não cabem numa
+	# concordância só.
+	if maid > 0 and loving > 0:
+		return " %s e os %d servos da casa varreram %d de barro (%d -> %d no chão)." % [
+			str(Staff.find("createda")["name"]), servants.size(), taken, before, mess]
+	if maid > 0:
+		return " %s varreu %d de barro (%d -> %d no chão)." % [
+			str(Staff.find("createda")["name"]), taken, before, mess]
+	return " Os %d servos da casa varreram %d de barro (%d -> %d no chão)." % [
+		servants.size(), taken, before, mess]
+
+## Quantos vândalos a casa consegue guardar: é reforma de santuário, não número de
+## painel — sem porta trancada ninguém prende ninguém.
+func _cell_capacity() -> int:
+	return sanctum_upgrade_level
+
+## Chance de o beco testar a loja numa virada: o barro chama, a fama afasta.
+func _vandal_chance() -> int:
+	return clampi(int(round(float(mess) * VANDAL_CHANCE_PER_MESS)) \
+		+ maxi(0, VANDAL_REP_SHIELD - reputation), 0, 40)
+
+## A guilda leva o preso embora e paga a escolta: é o único destino de quem é pego
+## antes de a casa ter cela, e é por isso que a cela existe.
+func _hand_to_guild(culprit: String) -> void:
+	var fee := 15 + player_level
+	gold += fee
+	reputation += 2
+	last_event = "%s foi entregue à guilda de escolta, que cobra %d para levar problema embora e diz \"bom trabalho\" na saída. A rua aprende o nome da casa." % [culprit, fee]
+	_show_feedback("⚖ %s entregue à guilda." % culprit, Color(0.86, 0.92, 1.0))
+
+## Quem é pego em flagrente vira preso ou conta. Sem cela, a casa chama a guilda.
+func _catch_culprit(culprit: String, regular_id: String) -> void:
+	var who := str(Staff.find("ronda")["name"]) if staff_hired.has("ronda") else (
+		"um servo da casa" if not servants.is_empty() else "a casa, acordada na hora errada")
+	if prisoners.size() >= _cell_capacity():
+		_hand_to_guild(culprit)
+		last_event = "%s segurou %s pelo colarinho antes de a peça sair da loja, e a guilda levou o problema cobrando. %s" % [
+			who, culprit, last_event]
+		return
+	prisoners.append({"name": culprit, "regular_id": regular_id})
+	# Quem está na cela não está no balcão: o servo apaixonado que passou da conta
+	# perde a vaga enquanto responde pelo que fez.
+	servants.erase(regular_id)
+	last_event = "%s segurou %s pelo colarinho antes de a peça sair da loja. ⛓ Cela do santuário agora com %d de %d: come %d por virada e rende um frasco de sangue morno por virada." % [
+		who, culprit, prisoners.size(), _cell_capacity(), CELL_FOOD
+	]
+	_show_feedback("⛓ %s na cela." % culprit, Color(0.78, 0.88, 1.0))
+	_show_stage_emotion(stage_seller_body, "aprovacao")
+
+## Rodada de vândalos: entram rindo, deixam lama e levam peça. A ronda e os servos
+## decidem se alguém sai de lá com as próprias pernas.
+func _trigger_vandal() -> void:
+	var culprit := VANDAL_NAMES[randi() % VANDAL_NAMES.size()]
+	_add_mess(MESS_VANDAL)
+	fury = mini(5, fury + 1)
+	_update_demonic_form()
+	var guard := Staff.block_chance(staff_hired) + servants.size() * SERVANT_GUARD_CHANCE
+	if guard > 0 and randi() % 100 < guard:
+		theft_blocked += 1
+		_catch_culprit(culprit, "")
+		return
+	var loot := mini(gold, 20 + player_level * 3)
+	gold -= loot
+	reputation = maxi(0, reputation - 1)
+	var broke := ""
+	if not craft_jobs.is_empty():
+		craft_jobs.pop_back()
+		broke = " Uma peça pela metade virou pó no chão."
+	last_event = "%s passou com um saco de esterco na mão e três amigos atrás: %d de lama no salão, %d ouro no bolso deles e o balcão ainda cheira. A casa não tem quem segure braço." % [
+		culprit, MESS_VANDAL, loot] + broke
+	_show_feedback("🪣 Vândalos na loja.", Color(1.0, 0.55, 0.45))
+	_show_stage_emotion(stage_seller_body, "espanto")
+	audio.play("sad")
+
+## A cela gota no frasco e come na cozinha: cada preso é insumo e conta ao mesmo
+## tempo, e é por isso que a casa pensa duas vezes antes de prender quem conhece.
+func _harvest_cell() -> String:
+	if prisoners.is_empty():
+		return ""
+	var jars := CELL_BLOOD * prisoners.size()
+	ingredient_stock["sangue"] = int(ingredient_stock.get("sangue", 0)) + jars
+	blood_harvested += jars
+	return " A cela rendeu %d frasco(s) de sangue morno para a forja." % jars
+
+## Soltar custa o sangue e devolve a rua: quem sai da cela volta a comprar, e um
+## freguês de casa ainda ganha vínculo pela humilhação que a casa lhe fez.
+func _release_prisoner() -> void:
+	if prisoners.is_empty():
+		return
+	var freed: Dictionary = prisoners.pop_front()
+	reputation += 1
+	var culprit := str(freed["name"])
+	var regular_id := str(freed.get("regular_id", ""))
+	if regular_id != "" and not Regulars.find(regular_id).is_empty():
+		regular_bonds[regular_id] = int(regular_bonds.get(regular_id, 0)) + 1
+		culprit = str(Regulars.find(regular_id).get("short", culprit))
+		last_event = "%s sai da cela com a promessa de que nunca mais encosta na prateleira, e volta a ser freguês: a casa perdoa, e o bairro vê quem manda no perdão." % culprit
+	else:
+		last_event = "%s sai da cela antes do escuro e jura que a loja é grande demais para ele. Todo mundo finge que acredita." % culprit
+	_show_feedback("🕊 %s solto." % culprit, Color(0.86, 0.98, 0.86))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Expulsar do bairro é o oposto do perdão: resolve para sempre e fecha a porta
+## para sempre. Um freguês banido nunca mais aparece no sorteio de visitas.
+func _banish_prisoner() -> void:
+	if prisoners.is_empty():
+		return
+	var out: Dictionary = prisoners.pop_front()
+	var culprit := str(out["name"])
+	var regular_id := str(out.get("regular_id", ""))
+	if regular_id != "" and not Regulars.find(regular_id).is_empty() and not banned_regulars.has(regular_id):
+		banned_regulars.append(regular_id)
+		servants.erase(regular_id)
+		if romance_pending == regular_id:
+			romance_pending = ""
+		culprit = str(Regulars.find(regular_id).get("short", culprit))
+		last_event = "%s é expulso do bairro: a placa na porta tem o nome dele e o sorteio de visitas nunca mais o sorteia. A casa ganha silêncio e perde um freguês inteiro — vínculo, encomenda e servo, tudo junto." % culprit
+	else:
+		last_event = "%s é posto para fora com a conta na mão e a ordem de não voltar. O beco anota que a casa não perdoa duas vezes." % culprit
+	reputation += 1
+	fury = maxi(0, fury - 1)
+	_update_demonic_form()
+	_show_feedback("🚪 %s banido do bairro." % culprit, Color(1.0, 0.72, 0.6))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Um freguês banido não volta: é a única porta da casa que tranca por fora.
+func _regular_banned(regular_id: String) -> bool:
+	return banned_regulars.has(regular_id)
+
+## Entregar à guilda é o meio-termo que existe só porque a cela existe: a casa
+## ganha a rua como aliada e abre mão do sangue que aquele prisioneiro daria.
+func _deliver_prisoner() -> void:
+	if prisoners.is_empty():
+		return
+	var handed: Dictionary = prisoners.pop_front()
+	_hand_to_guild(str(handed["name"]))
+	_save_game()
+	_refresh_ui()
+
+## Painel da conserva: barro no chão, preço do balde e o que a rua acha disso.
+func _mess_line() -> String:
+	return "\n".join([
+		"SALÃO: %d/%d de barro — fila -%d tique, etiqueta -%.1f%%." % [
+			mess, MESS_LIMIT, _mess_patience_loss(), float(mess) * MESS_PRICE_PENALTY * 100.0],
+		" • Balde e vassoura: %d ouro. Criada na folha: -%d por virada. Servo: -%d cada." % [
+			_mop_cost(), Staff.sweep_per_turn(staff_hired), SERVANT_SWEEP],
+		" • Chance de vândalo na próxima virada: %d%% (o barro puxa, a reputação de %d empurra)." % [
+			_vandal_chance(), reputation],
+	])
+
+## Painel da cela: quem está preso, o que rende, o que custa e quem já foi embora
+## do bairro de vez.
+func _cell_line() -> String:
+	var lines: Array[String] = []
+	if prisoners.is_empty():
+		lines.append("CELA DO SANTUÁRIO vazia (0 de %d). Cada reforma do santuário abre uma porta trancada — e um prato na conta." % _cell_capacity())
+	else:
+		var seats: Array[String] = []
+		for held in prisoners:
+			seats.append(str(held["name"]))
+		lines.append("CELA (%d de %d): %s" % [prisoners.size(), _cell_capacity(), ", ".join(seats)])
+		lines.append(" • Por virada: +%d frasco(s) de sangue morno para a forja, -%d de conta. O mais velho é o primeiro a sair." % [
+			CELL_BLOOD * prisoners.size(), CELL_FOOD * prisoners.size()])
+	if not banned_regulars.is_empty():
+		var gone: Array[String] = []
+		for banned_id in banned_regulars:
+			gone.append(str(Regulars.find(str(banned_id)).get("short", "?")))
+		lines.append(" • BANIDOS DO BAIRRO (%d): %s — nunca mais batem nesta porta." % [
+			banned_regulars.size(), ", ".join(gone)])
+	return "\n".join(lines)
 
 ## Degrau já pago por este freguês; zero quando ele ainda é só um rosto no balcão.
 func _romance_stage_of(regular_id: String) -> int:

@@ -22,7 +22,8 @@ static func find(id: String) -> Dictionary:
 ## Na forja funcionam como catalisador, empurrando a rolagem de qualidade.
 const RARE_DATA: Array = [
 	{"id": "lagrima", "name": "Lágrima de Vidro", "catalyst_luck": 2, "desc": "Chorou tanto que virou mineral. Ainda dói."},
-	{"id": "brasa", "name": "Brasa do Abismo", "catalyst_luck": 4, "desc": "Não apaga, não esfria e guarda rancor."}
+	{"id": "brasa", "name": "Brasa do Abismo", "catalyst_luck": 4, "desc": "Não apaga, não esfria e guarda rancor."},
+	{"id": "sangue", "name": "Frasco de Sangue Morno", "catalyst_luck": 3, "desc": "Ninguém vende: pinga da cela, e a cela só enche quando a casa prende alguém."}
 ]
 
 static func rare_find(id: String) -> Dictionary:
