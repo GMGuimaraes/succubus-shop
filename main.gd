@@ -8,6 +8,7 @@ const Quality = preload("res://quality.gd")
 const Economy = preload("res://economy.gd")
 const Sanctum = preload("res://sanctum.gd")
 const Expedition = preload("res://expedition.gd")
+const Adventurers = preload("res://adventurers.gd")
 const Cards = preload("res://cards.gd")
 const Campaign = preload("res://campaign.gd")
 const Origin = preload("res://origin.gd")
@@ -97,6 +98,19 @@ var branches: Array[String] = []
 ## o salário e devolve a entrega, porque a folha é conta da casa e a casa recomeça
 ## no nome dela.
 var staff_hired: Array[String] = []
+## Quem está no cadastro da estrada. Diferente do balcão, o batedor não tem salário
+## de virada: ele cobra taxa uma vez e cachê por viagem, e sobe de nível pela estrada
+## que pisou (`adventurer_xp`), não pelo ouro que a loja tem.
+var adventurers_hired: Array[String] = []
+var adventurer_xp: Dictionary = {}
+## Mochila armada quer dizer "a melhor peça do gosto dele sai do estoque e vai na
+## viagem". É escolha, não automatismo: o balcão perde a etiqueta que venderia e a
+## estrada ganha a sorte que o painel promete.
+var pack_gear: bool = true
+var gear_packed: int = 0
+## Nome escrito à mão em cada roteiro. Vazio quer dizer "manda o mais capaz"; a
+## loja pode teimar num iniciante, e a estrada cobra o preço da teimosia.
+var route_pick: Dictionary = {}
 ## Fregueses que caíram de amores pela casa e pediram para trabalhar nela. Não
 ## recebem salário — o pagamento é o próprio balcão —, e é por isso que a chefe tem
 ## de sustentar a simpatia: um dia ruim demais manda um deles embora.
@@ -486,6 +500,11 @@ var ritual_labels: Array = []
 var ritual_buttons: Array = []
 var expedition_labels: Array = []
 var expedition_buttons: Array = []
+var expedition_pick_buttons: Array = []
+var adventurer_labels: Array = []
+var adventurer_buttons: Array = []
+var adventurer_summary_label: Label
+var pack_gear_button: Button
 var expedition_active_label: Label
 var expedition_log_label: Label
 var catalyst_button: Button
@@ -3056,7 +3075,7 @@ func _build_ui() -> void:
 		ritual_buttons.append(ritual_button)
 
 	expedition_box.add_child(_make_section_title("ROTEIROS", Color(1.0, 0.72, 0.42)))
-	expedition_box.add_child(_make_section_hint("O mercado não vende raridade. Cada viagem custa ouro, leva dias de loja e só volta com o que a sorte deixar."))
+	expedition_box.add_child(_make_section_hint("O mercado não vende raridade. Cada viagem custa ouro, leva dias de loja e só volta com o que a sorte deixar — e a sorte agora tem nome: o batedor mais capaz do cadastro desce do balcão com a passagem."))
 
 	for destination in Expedition.DATA:
 		var destination_id := str(destination["id"])
@@ -3091,6 +3110,58 @@ func _build_ui() -> void:
 		trip_button.pressed.connect(_start_expedition.bind(destination_id))
 		trip_row.add_child(trip_button)
 		expedition_buttons.append(trip_button)
+		var pick_button := Button.new()
+		pick_button.custom_minimum_size = Vector2(150, 44)
+		pick_button.add_theme_font_size_override("font_size", 12)
+		pick_button.pressed.connect(_cycle_route_pick.bind(destination_id))
+		trip_row.add_child(pick_button)
+		expedition_pick_buttons.append(pick_button)
+
+	expedition_box.add_child(_make_section_title("CADASTRO DE BATEDORES", Color(0.55, 0.95, 0.7)))
+	expedition_box.add_child(_make_section_hint("Gente com nome na estrada: taxa uma vez, cachê por viagem e nível que só a rota percorrida dá. O mais capaz do cadastro é quem parte, a menos que a loja escolha outro — e o que ele leva na mochila sai do estoque que o balcão venderia."))
+	adventurer_summary_label = Label.new()
+	adventurer_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	adventurer_summary_label.add_theme_font_size_override("font_size", 14)
+	adventurer_summary_label.add_theme_color_override("font_color", Color(0.86, 0.94, 0.88))
+	expedition_box.add_child(adventurer_summary_label)
+	for candidate in Adventurers.DATA:
+		var adv_card := _make_sector_card(Color(0.045, 0.07, 0.06, 0.94), Color(0.42, 0.72, 0.52, 0.95))
+		expedition_box.add_child(adv_card)
+		var adv_row := HBoxContainer.new()
+		adv_row.add_theme_constant_override("separation", 12)
+		adv_card.add_child(adv_row)
+		var adv_info := VBoxContainer.new()
+		adv_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		adv_row.add_child(adv_info)
+		var adv_label := Label.new()
+		adv_label.add_theme_font_size_override("font_size", 15)
+		adv_label.add_theme_color_override("font_color", Color(0.92, 0.98, 0.92))
+		adv_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		adv_info.add_child(adv_label)
+		adventurer_labels.append(adv_label)
+		var adv_bg := Label.new()
+		adv_bg.text = str(candidate["bg"])
+		adv_bg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		adv_bg.add_theme_font_size_override("font_size", 12)
+		adv_bg.add_theme_color_override("font_color", Color(0.70, 0.76, 0.72))
+		adv_info.add_child(adv_bg)
+		var adv_does := Label.new()
+		adv_does.text = str(candidate["does"])
+		adv_does.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		adv_does.add_theme_font_size_override("font_size", 12)
+		adv_does.add_theme_color_override("font_color", Color(0.86, 0.82, 0.62))
+		adv_info.add_child(adv_does)
+		var adv_button := Button.new()
+		adv_button.custom_minimum_size = Vector2(170, 40)
+		adv_button.add_theme_font_size_override("font_size", 14)
+		adv_button.pressed.connect(_manage_adventurer.bind(str(candidate["id"])))
+		adv_row.add_child(adv_button)
+		adventurer_buttons.append(adv_button)
+	pack_gear_button = Button.new()
+	pack_gear_button.custom_minimum_size = Vector2(260, 42)
+	pack_gear_button.add_theme_font_size_override("font_size", 14)
+	pack_gear_button.pressed.connect(_toggle_pack_gear)
+	expedition_box.add_child(pack_gear_button)
 
 	expedition_box.add_child(_make_section_title("CATALISADORES RAROS", Color(0.86, 0.6, 1.0)))
 	expedition_box.add_child(_make_section_hint("Raridade de expedição na forja queima uma peça e empurra a qualidade da peça seguinte."))
@@ -3900,6 +3971,183 @@ func _expedition_duration(destination: Dictionary) -> float:
 func _expedition_luck() -> int:
 	return alchemy_rank + logistics_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck() + _card_luck() + _road_pact_luck()
 
+## Sorte da viagem: a da casa, mais a mão de quem partiu. O número da bota é o que
+## estava congelado na hora em que a porta bateu — a loja pode crescer enquanto o
+## batedor anda, e a mala responde pelo nível que saiu, não pelo que a casa virou.
+func _trip_luck(trip: Dictionary) -> int:
+	return _expedition_luck() + int(trip.get("skill", 0))
+
+func _adventurer_xp(id: String) -> int:
+	return int(adventurer_xp.get(id, 0))
+
+## O cadastro entra na régua da casa: vaga ocupada vale menos que estrada pisada,
+## porque nível é tempo de viagem, não ouro gasto na entrada.
+func _adventurer_score() -> int:
+	var learned := 0
+	for id in adventurer_xp.keys():
+		learned += int(adventurer_xp.get(id, 0))
+	return adventurers_hired.size() * 40 + learned * 6
+
+## O degrau mais alto que a casa já teve no cadastro. Só quem está com contrato
+## aberto conta: dispensado volta à rua, e a conquista é da casa, não da pessoa.
+func _adventurer_top_level() -> int:
+	var top := 0
+	for hired in adventurers_hired:
+		top = maxi(top, Adventurers.level_of(_adventurer_xp(str(hired))))
+	return top
+
+func _adventurer_on_road(id: String) -> bool:
+	for trip in expeditions:
+		if str(trip.get("who", "")) == id:
+			return true
+	return false
+
+## Quem está no cadastro e com as botas livres.
+func _free_adventurers() -> Array[String]:
+	var free: Array[String] = []
+	for hired in adventurers_hired:
+		var id := str(hired)
+		if _adventurer_on_road(id) or Adventurers.find(id).is_empty():
+			continue
+		free.append(id)
+	return free
+
+## A peça que a mochila leva: a melhor do gosto dele que ainda está na prateleira.
+## Sem mochila armada, sem peça, sem bônus — a escolha é do balcão.
+func _packable_gear(candidate: Dictionary) -> Dictionary:
+	var gear_id := str(candidate.get("gear", ""))
+	if gear_id.is_empty() or not pack_gear:
+		return {}
+	for i in range(products.size()):
+		if str(products[i]["id"]) != gear_id:
+			continue
+		var counts := _quality_for(gear_id)
+		for tier in range(Quality.size() - 1, -1, -1):
+			if int(counts[tier]) > 0:
+				return {"index": i, "tier": tier, "id": gear_id, "name": str(products[i]["name"])}
+	return {}
+
+## O nome que parte: o roteiro pode ter teimosia escrita à mão, e sem teimosia vai
+## o mais capaz. Ninguém no cadastro é o batedor anônimo de sempre — sem bônus, sem
+## memória, sem cachê.
+func _pick_adventurer(route_id: String) -> Dictionary:
+	var free := _free_adventurers()
+	if free.is_empty():
+		return {}
+	var chosen := ""
+	var named := str(route_pick.get(route_id, ""))
+	if named != "" and free.has(named):
+		chosen = named
+	else:
+		var best := -1
+		for id in free:
+			var seat := Adventurers.find(id)
+			var skill := Adventurers.skill_of(seat, _adventurer_xp(id), route_id, -1)
+			if skill > best:
+				best = skill
+				chosen = id
+	if chosen.is_empty():
+		return {}
+	var candidate := Adventurers.find(chosen)
+	var gear := _packable_gear(candidate)
+	return {
+		"id": chosen,
+		"name": str(candidate["name"]),
+		"level": Adventurers.level_of(_adventurer_xp(chosen)),
+		"fee": Adventurers.fee_for(candidate),
+		"gear": int(gear.get("tier", -1)),
+		"gear_index": int(gear.get("index", -1)),
+		"gear_name": str(gear.get("name", "")),
+		"skill": Adventurers.skill_of(candidate, _adventurer_xp(chosen), route_id, int(gear.get("tier", -1))),
+	}
+
+## Nome da peça que a pessoa exige levar, para o cadastro e para o diário.
+func _gear_label(candidate: Dictionary) -> String:
+	var gear_id := str(candidate.get("gear", ""))
+	if gear_id.is_empty():
+		return "mochila vazia"
+	for item in products:
+		if str(item["id"]) == gear_id:
+			return str(item["name"])
+	return gear_id
+
+func _adventurer_gate_state() -> Dictionary:
+	return {
+		"day": shop_day,
+		"trips": expeditions_done,
+		"rep": reputation,
+		"rank": logistics_rank,
+	}
+
+## O mesmo botão serve para entrar e sair do cadastro. A estrada lembra do que
+## ensinou: quem volta mais tarde não recomeça no zero, porque o nível é memória de
+## viagem, não vaga paga.
+func _manage_adventurer(id: String) -> void:
+	var candidate := Adventurers.find(id)
+	if candidate.is_empty():
+		return
+	if adventurers_hired.has(id):
+		if _adventurer_on_road(id):
+			last_event = "%s está na estrada. Dispensa se faz na volta da mala." % str(candidate["name"])
+			audio.play("sad")
+			_refresh_ui()
+			return
+		adventurers_hired.erase(id)
+		last_event = "%s voltou para a rua. O que a estrada lhe ensinou fica no caderno." % str(candidate["name"])
+		audio.play("click")
+		_show_feedback("✕ %s fora do cadastro." % str(candidate["name"]), Color(0.80, 0.86, 0.78))
+		_check_achievements()
+		_save_game()
+		_refresh_ui()
+		return
+	var blocked := Adventurers.gate(candidate, _adventurer_gate_state())
+	if blocked != "":
+		last_event = "%s não assina hoje: %s." % [str(candidate["name"]), blocked]
+		audio.play("sad")
+		_refresh_ui()
+		return
+	var fee := int(candidate["hire"])
+	if gold < fee:
+		last_event = "%s pede %d de ouro na entrada. Faltam %d, e estrada não se paga com promessa." % [
+			str(candidate["name"]), fee, fee - gold]
+		audio.play("sad")
+		_refresh_ui()
+		return
+	gold -= fee
+	adventurers_hired.append(id)
+	last_event = "%s entrou no cadastro: %d de taxa, %d de cachê por viagem, e %s na mochila quando a prateleira tiver." % [
+		str(candidate["name"]), fee, int(candidate["fee"]), _gear_label(candidate)]
+	audio.play("levelup")
+	_show_feedback("✦ %s no cadastro." % str(candidate["name"]), Color(0.55, 0.95, 0.7))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Teimosia do roteiro: quem a loja quer ver subir de nível. Ciclo livre do cadastro,
+## e o último passo volta para "manda o mais capaz".
+func _cycle_route_pick(route_id: String) -> void:
+	var candidates: Array[String] = [""]
+	for hired in adventurers_hired:
+		var id := str(hired)
+		if not Adventurers.find(id).is_empty():
+			candidates.append(id)
+	var now := str(route_pick.get(route_id, ""))
+	var step := candidates.find(now)
+	route_pick[route_id] = candidates[(step + 1) % candidates.size()]
+	var label := "o mais capaz" if str(route_pick[route_id]) == "" else str(Adventurers.find(str(route_pick[route_id]))["name"])
+	last_event = "Roteiro anotado: %s manda %s." % [str(Expedition.find(route_id)["name"]), label]
+	audio.play("click")
+	_save_game()
+	_refresh_ui()
+
+func _toggle_pack_gear() -> void:
+	pack_gear = not pack_gear
+	last_event = "Mochila %s: a melhor peça do gosto deles sai da prateleira e vai na viagem." % (
+		"armada" if pack_gear else "guardada")
+	audio.play("click")
+	_save_game()
+	_refresh_ui()
+
 ## Sorte que o álbum paga: a coleção da chefa entra na forja, na estrada e no
 ## próprio pacote — e cresce com cada carta evoluída.
 func _card_luck() -> int:
@@ -3947,14 +4195,28 @@ func _expedition_trip_summary(trip: Dictionary, elapsed: float) -> String:
 	var total := maxf(1.0, float(trip.get("total", 1.0)))
 	var remaining := maxf(0.0, float(trip.get("remaining", 0.0)) - elapsed)
 	var progress := clampf(1.0 - remaining / total, 0.0, 1.0)
-	var safe_return := 100 - Expedition.mishap_chance(destination, _expedition_luck())
-	return "%s [%s] %d%% • %s • retorno sem contratempo: %d%%" % [
+	var safe_return := 100 - Expedition.mishap_chance(destination, _trip_luck(trip))
+	return "%s [%s] %d%% • %s • %s • retorno sem contratempo: %d%%" % [
 		str(destination.get("name", "?")),
 		_bar(progress),
 		int(round(progress * 100.0)),
+		_party_label(trip),
 		Expedition.journey_event(destination, progress),
 		safe_return,
 	]
+
+## Quem partiu, no nível em que partiu, com a mochila que levou. É a frase que o
+## painel lê a cada segundo de relógio, então o número ali é sempre o congelado na
+## saída — o que a casa virou depois não muda a aposta de quem já na estrada.
+func _party_label(trip: Dictionary) -> String:
+	var who := str(trip.get("who", ""))
+	if who.is_empty():
+		return "batedor anônimo (+0)"
+	var seat := Adventurers.find(who)
+	if seat.is_empty():
+		return "batedor sem nome (+%d)" % int(trip.get("skill", 0))
+	var pack := " e %s" % str(trip.get("gear_name", "")) if int(trip.get("gear", -1)) >= 0 else ""
+	return "%s Nv.%d (+%d)%s" % [str(seat["name"]), int(trip.get("level", 1)), int(trip.get("skill", 0)), pack]
 
 func _start_expedition(id: String) -> void:
 	var destination := Expedition.find(id)
@@ -3969,14 +4231,36 @@ func _start_expedition(id: String) -> void:
 		_refresh_ui()
 		return
 	var cost := Expedition.cost_for(destination, logistics_rank)
-	if gold < cost:
-		last_event = "A passagem custa %d ouro. Sem adiantamento o batedor nem calça a bota." % cost
+	var runner := _pick_adventurer(id)
+	var fee := int(runner.get("fee", 0))
+	if gold < cost + fee:
+		last_event = "A passagem custa %d ouro%s. Sem adiantamento o batedor nem calça a bota." % [
+			cost, " e %s pede %d de cachê" % [str(runner["name"]), fee] if not runner.is_empty() else ""]
 		_refresh_ui()
 		return
-	gold -= cost
+	gold -= cost + fee
 	var duration := _expedition_duration(destination)
-	expeditions.append({"id": id, "remaining": duration, "total": duration})
-	last_event = "%s partiu com %d ouro de passagem e volta em %s." % [destination["name"], cost, Expedition.days_label(duration)]
+	var trip := {
+		"id": id,
+		"remaining": duration,
+		"total": duration,
+		"who": str(runner.get("id", "")),
+		"level": int(runner.get("level", 1)),
+		"skill": int(runner.get("skill", 0)),
+		"gear": int(runner.get("gear", -1)),
+		"gear_name": str(runner.get("gear_name", "")),
+	}
+	if int(trip["gear"]) >= 0:
+		_take_piece(int(runner["gear_index"]), Quality.BEST)
+		gear_packed += 1
+	expeditions.append(trip)
+	if runner.is_empty():
+		last_event = "%s partiu com %d ouro de passagem e volta em %s." % [destination["name"], cost, Expedition.days_label(duration)]
+	else:
+		last_event = "%s (Nv.%d, sorte +%d) partiu por %s: %d de passagem e %d de cachê%s. Volta em %s." % [
+			str(runner["name"]), int(runner["level"]), int(runner["skill"]), str(destination["name"]),
+			cost, fee, ", mochila com %s" % str(runner["gear_name"]) if int(trip["gear"]) >= 0 else "",
+			Expedition.days_label(duration)]
 	audio.play("click")
 	_show_feedback("🧭 Expedição iniciada.", Color(0.55, 0.95, 0.7))
 	_save_game()
@@ -3998,8 +4282,9 @@ func _finish_expedition(entry: Dictionary, offline: bool = false) -> void:
 	var destination := Expedition.find(str(entry.get("id", "")))
 	if destination.is_empty():
 		return
-	var luck := _expedition_luck()
+	var luck := _trip_luck(entry)
 	var loot := Expedition.roll_loot(destination, luck)
+	var pieces := loot.size()
 	var mishap := Expedition.roll_mishap(destination, luck)
 	if str(mishap.get("kind", "")) == "perda":
 		loot.clear()
@@ -4026,6 +4311,28 @@ func _finish_expedition(entry: Dictionary, offline: bool = false) -> void:
 		text += " " + str(mishap["text"])
 		if not offline:
 			_show_stage_emotion(stage_seller_body, "dor")
+	## A mochila é despesa de viagem, não empréstimo: a peça foi embora com quem a
+	## levou, e uma mala perdida leva junto o que o balcão venderia.
+	if int(entry.get("gear", -1)) >= 0:
+		text += " %s ficou na estrada com quem a levou." % str(entry.get("gear_name", "a peça"))
+	## O único degrau que a loja não compra: XP de rota. Estrada difícil ensina mais,
+	## e voltar inteiro ensina o que o contratempo não deixa aprender.
+	var who := str(entry.get("who", ""))
+	if not who.is_empty() and Adventurers.knows(who):
+		var seat := Adventurers.find(who)
+		var gained := Adventurers.mission_xp(destination, mishap.is_empty(), pieces)
+		var before := Adventurers.level_of(_adventurer_xp(who))
+		var xp := _adventurer_xp(who) + gained
+		adventurer_xp[who] = xp
+		var after := Adventurers.level_of(xp)
+		if after > before:
+			text += " %s subiu ao Nv.%d e passou a cobrar %d por viagem." % [
+				str(seat["name"]), after, Adventurers.fee_for(seat, xp)]
+			if not offline:
+				audio.play("levelup")
+				_show_feedback("⚔ %s Nv.%d." % [str(seat["name"]), after], Color(0.55, 0.95, 0.7))
+		else:
+			text += " %s voltou com %d XP de rota." % [str(seat["name"]), gained]
 	expedition_log.push_front(text)
 	while expedition_log.size() > 4:
 		expedition_log.pop_back()
@@ -5680,6 +5987,8 @@ func _refresh_ui() -> void:
 		var trip_cost := Expedition.cost_for(destination, logistics_rank)
 		var open_route := Expedition.is_unlocked(destination, shop_day)
 		var on_the_road := _expedition_on_route(destination_id)
+		var would_go := _pick_adventurer(destination_id)
+		var would_fee := int(would_go.get("fee", 0))
 		if e < expedition_labels.size():
 			if on_the_road:
 				var trip_summary := _expedition_trip_summary(on_the_road, _world_seconds_since_tick())
@@ -5689,11 +5998,83 @@ func _refresh_ui() -> void:
 				expedition_labels[e].text = "🔒 %s" % Expedition.locked_hint(destination)
 				expedition_labels[e].add_theme_color_override("font_color", Color(0.74, 0.82, 0.78))
 			else:
-				expedition_labels[e].text = "%s • risco %d%% • %s" % [Expedition.days_label(_expedition_duration(destination)), int(destination["danger"]), Expedition.preview(destination)]
+				# A linha de espera mostra o risco honesto de quem partiria agora: o
+				# perigo cru da tabela, e o que sobra depois da mão do batedor.
+				var bare_risk := Expedition.mishap_chance(destination, _expedition_luck())
+				var armed_risk := Expedition.mishap_chance(destination, _expedition_luck() + int(would_go.get("skill", 0)))
+				var pack_line := " sem batedor" if would_go.is_empty() else (
+					" com %s" % str(would_go["gear_name"]) if int(would_go["gear"]) >= 0 else " de mochila vazia")
+				expedition_labels[e].text = "%s • risco %d%% • %s: risco %d%%%s • %s" % [
+					Expedition.days_label(_expedition_duration(destination)), bare_risk,
+					"batedor anônimo" if would_go.is_empty() else "%s Nv.%d (+%d)" % [
+						str(would_go["name"]), int(would_go["level"]), int(would_go["skill"])],
+					armed_risk, pack_line, Expedition.preview(destination)]
 				expedition_labels[e].add_theme_color_override("font_color", Color(0.74, 0.82, 0.78))
 		if e < expedition_buttons.size():
-			expedition_buttons[e].text = "Voltando…" if on_the_road != {} else "Mandar (%d)" % trip_cost
-			expedition_buttons[e].disabled = on_the_road != {} or not open_route or gold < trip_cost or expeditions.size() >= _expedition_slots()
+			expedition_buttons[e].text = "Voltando…" if on_the_road != {} else (
+				"Mandar (%d)" % (trip_cost + would_fee) if would_fee > 0 else "Mandar (%d)" % trip_cost)
+			expedition_buttons[e].disabled = on_the_road != {} or not open_route \
+				or gold < trip_cost + would_fee or expeditions.size() >= _expedition_slots()
+		if e < expedition_pick_buttons.size():
+			var pick_button := expedition_pick_buttons[e] as Button
+			var picked_id := str(route_pick.get(destination_id, ""))
+			var picked_seat := Adventurers.find(picked_id)
+			var picked_name := "o mais capaz" if picked_id.is_empty() else str(picked_seat.get("name", "?"))
+			pick_button.text = "Quem: %s ▸" % picked_name
+			pick_button.disabled = adventurers_hired.is_empty()
+	# O cadastro: quem tem bota, o que a estrada já lhe ensinou e o que ele levaria.
+	for b in range(Adventurers.DATA.size()):
+		var batedor: Dictionary = Adventurers.DATA[b]
+		var batedor_id := str(batedor["id"])
+		var no_cadastro := adventurers_hired.has(batedor_id)
+		var na_estrada := _adventurer_on_road(batedor_id)
+		var porta := Adventurers.gate(batedor, _adventurer_gate_state())
+		var xp_guardada := _adventurer_xp(batedor_id)
+		var peca := _packable_gear(batedor)
+		var sorte := Adventurers.skill_of(batedor, xp_guardada, str(batedor.get("route", "")), int(peca.get("tier", -1)))
+		if b < adventurer_labels.size():
+			var route_name := "sem rota de casa" if str(batedor.get("route", "")).is_empty() else str(
+				Expedition.find(str(batedor["route"])).get("name", "?"))
+			var mochila := "mochila vazia"
+			if str(batedor.get("gear", "")).is_empty():
+				mochila = "não aceita peça"
+			elif not pack_gear:
+				mochila = "mochila guardada"
+			elif not peca.is_empty():
+				mochila = "%s (%s)" % [_gear_label(batedor), str(Quality.tier(int(peca["tier"]))["name"])]
+			else:
+				mochila = "sem %s na prateleira" % _gear_label(batedor)
+			var estado := ""
+			if na_estrada:
+				estado = " • NA ESTRADA"
+			elif no_cadastro:
+				estado = " • no cadastro"
+			elif porta != "":
+				estado = " • %s" % porta
+			else:
+				estado = " • livre"
+			(adventurer_labels[b] as Label).text = "%s — %s • %s • sorte %s • conhece: %s • mochila: %s%s" % [
+				str(batedor["name"]), str(batedor["role"]), Adventurers.level_line(xp_guardada),
+				"%d" % sorte if no_cadastro else "até %d" % sorte, route_name, mochila, estado]
+		if b < adventurer_buttons.size():
+			var adv_button := adventurer_buttons[b] as Button
+			var fee_atual := Adventurers.fee_for(batedor, xp_guardada)
+			adv_button.disabled = not no_cadastro and (porta != "" or gold < int(batedor["hire"]))
+			adv_button.text = "Estrada, voltando…" if na_estrada else (
+				"Dispensar • economiza %d/viagem" % fee_atual if no_cadastro else (
+					"Contratar (%d) • %d/viagem" % [int(batedor["hire"]), fee_atual]
+					if porta == "" else "Sem vaga: %s" % porta))
+	if is_instance_valid(adventurer_summary_label):
+		var na_rota := 0
+		for trip in expeditions:
+			if not str(trip.get("who", "")).is_empty():
+				na_rota += 1
+		adventurer_summary_label.text = "NO CADASTRO: %d de %d • %d com nome na estrada • %d peça(s) já foram na mochila. %s%s" % [
+			adventurers_hired.size(), Adventurers.size(), na_rota, gear_packed,
+			Adventurers.roster_line(adventurers_hired, adventurer_xp) if not adventurers_hired.is_empty() else "ninguém com bota amarrada",
+			" • mochila armada" if pack_gear else " • mochila guardada"]
+	if is_instance_valid(pack_gear_button):
+		pack_gear_button.text = "🎒 Mochila: ARMADA (a peça sai do estoque)" if pack_gear else "🎒 Mochila: guardada (a peça fica à venda)"
 	if is_instance_valid(expedition_active_label):
 		if expeditions.is_empty():
 			expedition_active_label.text = "Nenhuma viagem na estrada. Todos os batedores estão jogando cartas nos fundos."
@@ -5850,7 +6231,25 @@ func _read_expeditions(saved) -> void:
 		if Expedition.find(trip_id).is_empty():
 			continue
 		var total := maxf(1.0, float(trip.get("total", 1.0)))
-		expeditions.append({"id": trip_id, "remaining": clampf(float(trip.get("remaining", total)), 0.0, total), "total": total})
+		var rebuilt := {
+			"id": trip_id,
+			"remaining": clampf(float(trip.get("remaining", total)), 0.0, total),
+			"total": total,
+			"who": str(trip.get("who", "")),
+			"level": int(trip.get("level", 1)),
+			"skill": int(trip.get("skill", 0)),
+			"gear": int(trip.get("gear", -1)),
+			"gear_name": str(trip.get("gear_name", "")),
+		}
+		# Save de antes da mecânica acorda sem nome na bota, e nome que saiu da
+		# tabela não pode continuar viajando com a sorte emprestada de outro.
+		if not str(rebuilt["who"]).is_empty() and not Adventurers.knows(str(rebuilt["who"])):
+			rebuilt["who"] = ""
+			rebuilt["level"] = 1
+			rebuilt["skill"] = 0
+			rebuilt["gear"] = -1
+			rebuilt["gear_name"] = ""
+		expeditions.append(rebuilt)
 
 func _save_game() -> void:
 	var config := ConfigFile.new()
@@ -5971,6 +6370,11 @@ func _save_game() -> void:
 	config.set_value("game", "ticks", ticks)
 	config.set_value("game", "craft_jobs", craft_jobs)
 	config.set_value("game", "catalyst_enabled", catalyst_enabled)
+	config.set_value("game", "adventurers_hired", adventurers_hired)
+	config.set_value("game", "adventurer_xp", adventurer_xp)
+	config.set_value("game", "route_pick", route_pick)
+	config.set_value("game", "pack_gear", pack_gear)
+	config.set_value("game", "gear_packed", gear_packed)
 	config.set_value("game", "last_save_unix", int(Time.get_unix_time_from_system()))
 	config.set_value("game", "offline_branch_fraction", _offline_branch_fraction)
 	config.save(SAVE_PATH)
@@ -6102,6 +6506,33 @@ func _load_game() -> void:
 		for seat_id in saved_staff:
 			if Staff.knows(str(seat_id)) and not staff_hired.has(str(seat_id)):
 				staff_hired.append(str(seat_id))
+	# Cadastro de estrada: nome que não existe mais na tabela cai fora, e o XP só é
+	# lido para os nomes que ficaram — sem contrato aberto, XP vira memória guardada.
+	var saved_adventurers = config.get_value("game", "adventurers_hired", [])
+	adventurers_hired.clear()
+	if saved_adventurers is Array:
+		for adv_id in saved_adventurers:
+			if Adventurers.knows(str(adv_id)) and not adventurers_hired.has(str(adv_id)):
+				adventurers_hired.append(str(adv_id))
+	var saved_xp = config.get_value("game", "adventurer_xp", {})
+	adventurer_xp.clear()
+	if saved_xp is Dictionary:
+		for adv_id in saved_xp.keys():
+			var key := str(adv_id)
+			if Adventurers.knows(key):
+				adventurer_xp[key] = maxi(0, int(saved_xp[adv_id]))
+	var saved_pick = config.get_value("game", "route_pick", {})
+	route_pick.clear()
+	if saved_pick is Dictionary:
+		for route_id in saved_pick.keys():
+			var route := str(route_id)
+			if Expedition.find(route).is_empty():
+				continue
+			var picked := str(saved_pick[route_id])
+			if picked.is_empty() or Adventurers.knows(picked):
+				route_pick[route] = picked
+	pack_gear = bool(config.get_value("game", "pack_gear", pack_gear))
+	gear_packed = maxi(0, int(config.get_value("game", "gear_packed", gear_packed)))
 	# O afeto atravessa a vida, mas só com nome que ainda existe na lista: um save
 	# de antes da mecânica acorda sem servo nenhum, e um nome raspado de Regulars
 	# não pode continuar trabalhando de graça.
@@ -6666,6 +7097,10 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "ritual_devotee", "name": "Fiel do Santuário (10 rituais)", "condition": rituals_performed >= 10, "gold": 100, "rep": 5, "pose": "book"},
 		{"id": "first_expedition", "name": "Pé na Estrada (primeira expedição)", "condition": expeditions_done >= 1, "gold": 30, "rep": 1},
 		{"id": "route_regular", "name": "Corredor do Abismo (10 expedições de volta)", "condition": expeditions_done >= 10, "gold": 90, "rep": 4, "pose": "relic"},
+		{"id": "adventurer_hired", "name": "Nome na bota (primeiro batedor no cadastro)", "condition": not adventurers_hired.is_empty(), "gold": 110, "rep": 3},
+		{"id": "adventurer_maxed", "name": "Teto da estrada (um batedor no nível máximo)", "condition": _adventurer_top_level() >= Adventurers.max_level(), "gold": 320, "rep": 11, "pose": "vitoria"},
+		{"id": "adventurer_roster", "name": "Cadastro cheio (os cinco nomes com bota amarrada)", "condition": adventurers_hired.size() >= Adventurers.size(), "gold": 460, "rep": 15, "pose": "aplausos"},
+		{"id": "gear_three", "name": "Três peças na estrada (estoque virou mochila)", "condition": gear_packed >= 3, "gold": 200, "rep": 6, "pose": "desconfianca"},
 		{"id": "rare_hoarder", "name": "Vitrine de Raridades (3 raridades no estoque)", "condition": rare_found >= 3, "gold": 70, "rep": 3},
 		{"id": "catalyst_touch", "name": "Toque de Catalisador (peça rara na forja)", "condition": catalyst_crafted >= 1, "gold": 60, "rep": 3, "pose": "relic"},
 		{"id": "library_master", "name": "Bibliotecária do Submundo (Biblioteca Nv.3)", "condition": library_upgrade_level >= 3, "gold": 80, "rep": 4, "pose": "book"},
@@ -6811,6 +7246,7 @@ func business_score() -> int:
 		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0) \
 		+ legendary_crafted * 60 + exclusive_finished * 120 + endings_seen.size() * 30 \
 		+ branches.size() * 90 + staff_hired.size() * 30 + servants.size() * 55 \
+		+ _adventurer_score() \
 		+ prisoners.size() * 10 + (MESS_LIMIT - mess) / 5 \
 		+ prestige_runs * 150 + _perk_levels_total() * 20 + prestige_goals_paid * 40
 
@@ -7838,6 +8274,12 @@ func _reset_run() -> void:
 	# CNPJ. Só o reset total, que apaga o save, desfaz o que eles escolheram.
 	staff_hired.clear()
 	theft_blocked = 0
+	# O cadastro de estrada vence junto com a loja velha — contrato é da vida —, mas
+	# o XP não: a rota que alguém pisou fica na memória da pessoa, não no CNPJ da
+	# casa. Recontratar custa taxa de novo e entrega o batedor no nível que a estrada
+	# lhe deixou. Só o reset total desfaz o aprendizado.
+	adventurers_hired.clear()
+	route_pick.clear()
 	# Conserva e cela são da vida que está fechando: o chão novo nasce limpo, quem
 	# estava preso escapa no meio da mudança, e o bairro perdoa o banido junto com a
 	# loja — a vida nova é justamente a chance de não repetir a mesma porta.
