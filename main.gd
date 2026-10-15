@@ -16,6 +16,7 @@ const Origin = preload("res://origin.gd")
 const Prestige = preload("res://prestige.gd")
 const Endings = preload("res://endings.gd")
 const Branches = preload("res://branches.gd")
+const Rivals = preload("res://rivals.gd")
 const FactionArcs = preload("res://faction_arcs.gd")
 const TalentSpecs = preload("res://talent_specs.gd")
 const Staff = preload("res://staff.gd")
@@ -95,6 +96,9 @@ var day_snap_lost: int = 0
 ## Filiais abertas nesta vida. Cada uma paga um lucro por virada e engrossa a conta
 ## da casa; a mais rentável é também a que mais afunda quando o dia vira.
 var branches: Array[String] = []
+## Quem já teve a placa comprada. A lista é da vida: reencarnar devolve as rivais
+## para a rua, porque a praça recomeça com as portas dela.
+var rivals_absorbed: Array[String] = []
 ## Quem está no balcão nesta vida. Vaga é da vida como a filial: reencarnar devolve
 ## o salário e devolve a entrega, porque a folha é conta da casa e a casa recomeça
 ## no nome dela.
@@ -546,6 +550,9 @@ var day_report_label: Label
 var branch_summary_label: Label
 var branch_labels: Array = []
 var branch_buttons: Array = []
+var rival_summary_label: Label
+var rival_labels: Array = []
+var rival_buttons: Array = []
 var staff_summary_label: Label
 var queue_label: Label
 var mess_label: Label
@@ -1688,7 +1695,8 @@ func _product_name(product_id: String) -> String:
 	return ""
 
 ## Quantos batem na porta neste tique: um sempre, mais um por degrau de fama, mais
-## um para cada duas filiais abertas. É o que faz a loja começar quase vazia e
+## um para cada duas filiais abertas, menos o que as placas dos rivais levam da
+## calçada. É o que faz a loja começar quase vazia e
 ## terminar com gente esperando na rua — e é também o que faz a fama custar caro
 ## quando o balcão não dá conta.
 func _arrivals_this_tick() -> int:
@@ -1701,7 +1709,43 @@ func _arrivals_this_tick() -> int:
 		crowd += 1
 	crowd += int(float(branches.size()) / 2.0)
 	crowd += int(_weather()["crowd"])
+	crowd -= _rival_crowd_loss()
 	return clampi(crowd, 1, QUEUE_LIMIT)
+
+## Quem está de placa acesa na praça hoje. A lista é lida do calendário da loja
+## contra a tabela, sem sorteio e sem estado escondido: mesma semente, mesma rua.
+func _rivals_active_ids() -> Array[String]:
+	return Rivals.active_ids(shop_day, rivals_absorbed)
+
+## O corpo que a rival bebe antes de ele chegar à porta é o corpo que passeia. Na
+## feira a casa rival dobra a vez; com chuva, névoa ou tempestade ninguém passeia
+## e ela leva metade. Fama de bairro já está descontada dentro da tabela.
+func _rival_crowd_loss() -> int:
+	var ids := _rivals_active_ids()
+	if ids.is_empty():
+		return 0
+	var loss := Rivals.crowd_loss(ids, reputation)
+	match weather:
+		"feirao":
+			loss *= 2
+		"chuva", "nevoa", "tempestade":
+			loss /= 2
+	return loss
+
+## Quanto do bolso já chegou gasto na placa do vizinho. O corte é aplicado no
+## orçamento do freguês com piso, em vez de zerar quem já entrou pobre: a guerra
+## aperta o balcão e empurra a casa a absorver a rival, não a fechar a loja.
+func _rival_undercut() -> int:
+	var ids := _rivals_active_ids()
+	if ids.is_empty():
+		return 0
+	return Rivals.undercut(ids, reputation)
+
+## O bolso que chega à loja: o orçamento do perfil, mais o que o ofício abre, menos
+## o que a placa do vizinho já bebeu. Piso de 10 de propósito — quem chega com 42
+## ainda leva a coisa de doze ouro da prateleira.
+func _visit_budget(profile: Dictionary) -> int:
+	return maxi(10, int(profile.get("budget", 50)) + trade_rank * 8 - _rival_undercut())
 
 ## Quanto um cliente topa esperar: o limite da casa mais a paciência do próprio
 ## perfil, o quanto a chefe já é querida, quantas mãos há no balcão e o tempo lá fora
@@ -2965,6 +3009,41 @@ func _build_ui() -> void:
 		branch_button.pressed.connect(_open_branch.bind(str(branch["id"])))
 		branch_row.add_child(branch_button)
 		branch_buttons.append(branch_button)
+
+	reception_box.add_child(_make_section_title("A CONCORRÊNCIA DA PRAÇA", Color(1.0, 0.86, 0.60)))
+	reception_box.add_child(_make_section_hint("A praça tem outras portas abertas, e cada placa acesa tira corpo da sua porta e ouro do bolso de quem entra. Nada aqui é sorteio: é a rua cobrando o seu preço. Fama de bairro segura metade do estrago, e a outra metade se cala comprando a placa — que encarece a cada virada de espera."))
+	rival_summary_label = Label.new()
+	rival_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rival_summary_label.add_theme_font_size_override("font_size", 14)
+	rival_summary_label.add_theme_color_override("font_color", Color(0.98, 0.92, 0.76))
+	reception_box.add_child(rival_summary_label)
+	for rival in Rivals.DATA:
+		var rival_card := _make_sector_card(Color(0.08, 0.07, 0.04, 0.94), Color(0.68, 0.56, 0.26, 0.95))
+		reception_box.add_child(rival_card)
+		var rival_row := HBoxContainer.new()
+		rival_row.add_theme_constant_override("separation", 12)
+		rival_card.add_child(rival_row)
+		var rival_info := VBoxContainer.new()
+		rival_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		rival_row.add_child(rival_info)
+		var rival_label := Label.new()
+		rival_label.add_theme_font_size_override("font_size", 15)
+		rival_label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.80))
+		rival_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		rival_info.add_child(rival_label)
+		rival_labels.append(rival_label)
+		var rival_desc := Label.new()
+		rival_desc.text = str(rival["desc"])
+		rival_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		rival_desc.add_theme_font_size_override("font_size", 12)
+		rival_desc.add_theme_color_override("font_color", Color(0.78, 0.76, 0.66))
+		rival_info.add_child(rival_desc)
+		var rival_button := Button.new()
+		rival_button.custom_minimum_size = Vector2(170, 40)
+		rival_button.add_theme_font_size_override("font_size", 14)
+		rival_button.pressed.connect(_absorb_rival.bind(str(rival["id"])))
+		rival_row.add_child(rival_button)
+		rival_buttons.append(rival_button)
 
 	reception_box.add_child(_make_section_title("QUADRO DE FUNCIONÁRIOS", Color(1.0, 0.78, 0.62)))
 	reception_box.add_child(_make_section_hint("Gente fixa não é prêmio, é conta: cada vaga cobra taxa uma vez e salário em toda virada, dentro do custo da casa. Ninguém inventa número novo — cada um mexe numa fórmula que a loja já usa, e a vaga só abre quando a loja já tem o que ela exige de quem entra no balcão."))
@@ -5029,10 +5108,13 @@ func _on_customer_tick() -> void:
 		var lost_line := ""
 		if day_walkouts > 0:
 			lost_line = " %d saíram da fila sem comprar." % day_walkouts
-		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s" % [
+		# A placa que acendeu hoje entra no balanço: a loja lê o rombo antes de a
+		# primeira batida pegar menos corpo na calçada.
+		var rival_line := _rival_opening_line()
+		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s" % [
 			shop_day, Economy.report(economy_state, products, Ingredients.DATA), _weather_line(), bill_line,
-			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line]
+			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line, rival_line]
 		# A manhã também afina a faixa: alarme novo, vigário na porta ou ruína velha
 		# mudam o tom da mesma gravação antes de a chefe abrir o balcão.
 		_apply_situation_music()
@@ -5109,7 +5191,7 @@ func _on_customer_tick() -> void:
 		current_regular_id = str(profile.get("regular_id", ""))
 		_animate_customer_arrival(profile)
 		var preferred_index: int = _product_index(str(profile["favorite"]))
-		current_customer_budget = int(profile.get("budget", 50)) + trade_rank * 8
+		current_customer_budget = _visit_budget(profile)
 		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank + Sanctum.patience_bonus(active_buffs) + distraction_pending) / world_speed())) - _fury_patience_loss() - _mess_patience_loss())
 		distraction_pending = 0
 		var seduction_used := false
@@ -6039,6 +6121,25 @@ func _refresh_ui() -> void:
 			branch_button.disabled = opened or blocked != "" or gold < branch_cost
 			branch_button.text = "ABERTA" if opened else (
 				"Abrir por %d" % branch_cost if blocked == "" else "Trancada: %s" % blocked)
+	if is_instance_valid(rival_summary_label):
+		rival_summary_label.text = "HOJE NA PRAÇA: %s" % _rival_pressure_line()
+	for i in range(Rivals.DATA.size()):
+		var rival: Dictionary = Rivals.DATA[i]
+		var rival_id := str(rival["id"])
+		var absorbed := rivals_absorbed.has(rival_id)
+		var not_yet := shop_day < int(rival["day"])
+		var rival_cost := Rivals.price_for(rival, shop_day)
+		if i < rival_labels.size():
+			(rival_labels[i] as Label).text = "%s — %s\nRouba %d da porta por batida e %d do bolso de quem entra • placa acende no dia %d • fama %d %s" % [
+				str(rival["name"]),
+				"SUA" if absorbed else ("de placa acesa na praça" if not not_yet else "ainda sem placa"),
+				int(rival["crowd"]), int(rival["undercut"]), int(rival["day"]),
+				reputation, "segura metade" if reputation >= Rivals.FAME_HOLD else "ainda não segura"]
+		if i < rival_buttons.size():
+			var rival_button := rival_buttons[i] as Button
+			rival_button.disabled = absorbed or not_yet or gold < rival_cost
+			rival_button.text = "PLACA COMPRADA" if absorbed else (
+				"Comprar a placa (%d)" % rival_cost if not not_yet else "Abre no dia %d" % int(rival["day"]))
 	if is_instance_valid(queue_label):
 		if service_queue.is_empty():
 			queue_label.text = "A porta está quieta: ninguém espera do lado de fora. %s" % (
@@ -6535,6 +6636,7 @@ func _save_game() -> void:
 	config.set_value("game", "ruined_lives", ruined_lives)
 	config.set_value("game", "ruined_seasons", ruined_seasons)
 	config.set_value("game", "branches", branches)
+	config.set_value("game", "rivals_absorbed", rivals_absorbed)
 	config.set_value("game", "staff_hired", staff_hired)
 	config.set_value("game", "servants", servants)
 	# A cela via em duas listas paralelas: ConfigFile lê aninhamento como Variant e
@@ -6771,6 +6873,14 @@ func _load_game() -> void:
 		for branch_id in saved_branches:
 			if Branches.knows(str(branch_id)) and not branches.has(str(branch_id)):
 				branches.append(str(branch_id))
+	# A praça só lembra de quem você comprou. Uma placa que sumiu da tabela é
+	# absorvida de novo em vez de travar o carregamento.
+	var saved_rivals = config.get_value("game", "rivals_absorbed", [])
+	rivals_absorbed.clear()
+	if saved_rivals is Array:
+		for rival_id in saved_rivals:
+			if Rivals.knows(str(rival_id)) and not rivals_absorbed.has(str(rival_id)):
+				rivals_absorbed.append(str(rival_id))
 	# Save antigo não tem folha: o balcão acorda só com a chefe, sem salário nenhum
 	# na conta, exatamente como era antes de a loja contratar gente.
 	var saved_staff = config.get_value("game", "staff_hired", [])
@@ -7436,6 +7546,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "branch_first", "name": "Endereço fora do bairro (primeira filial)", "condition": not branches.is_empty(), "gold": 120, "rep": 4},
 		{"id": "branch_self_made", "name": "A casa se paga (filiais cobrem a conta da casa)", "condition": not branches.is_empty() and Branches.expected_profit(branches, _branch_care()) >= _daily_upkeep(), "gold": 300, "rep": 10, "pose": "book"},
 		{"id": "branch_all", "name": "Império de esquina a beco (todas as filiais abertas)", "condition": branches.size() >= Branches.size(), "gold": 500, "rep": 15, "pose": "danca"},
+		{"id": "rival_first", "name": "Placa desligada (primeira rival comprada)", "condition": not rivals_absorbed.is_empty(), "gold": 150, "rep": 5},
+		{"id": "rival_all", "name": "A praça é sua (todas as rivais absorvidas)", "condition": rivals_absorbed.size() >= Rivals.size(), "gold": 600, "rep": 12, "pose": "danca"},
 		{"id": "staff_full", "name": "Quadro cheio (as quatro vagas do balcão pagando salário juntas)", "condition": staff_hired.size() >= Staff.size(), "gold": 340, "rep": 12, "pose": "vitoria"},
 		{"id": "staff_rounds", "name": "A ronda conhece o beco (três furtos barrados na mesma vida)", "condition": theft_blocked >= 3, "gold": 220, "rep": 8, "pose": "book"},
 		{"id": "servant_first", "name": "Coração atrás do balcão (um freguês apaixonado entrando para a casa)", "condition": not servants.is_empty(), "gold": 140, "rep": 5, "pose": "beijo"},
@@ -7547,6 +7659,7 @@ func business_score() -> int:
 		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0) \
 		+ legendary_crafted * 60 + exclusive_finished * 120 + endings_seen.size() * 30 \
 		+ branches.size() * 90 + staff_hired.size() * 30 + servants.size() * 55 \
+		+ rivals_absorbed.size() * 70 \
 		+ _adventurer_score() \
 		+ invasions_repelled * 45 + defense_privileges.size() * 70 \
 		+ prisoners.size() * 10 + (MESS_LIMIT - mess) / 5 \
@@ -7739,6 +7852,68 @@ func _branch_faction_label(branch: Dictionary) -> String:
 	if faction_id == "":
 		return "qualquer loja de bairro dá o endereço"
 	return "padrinho: %s, %d de fama" % [str(Factions.find(faction_id).get("name", faction_id)), int(branch["standing"])]
+
+## ── Concorrência ──────────────────────────────────────────────────────────────
+
+## A placa que acendeu hoje é notícia da manhã, não sorteio de fila: o mural avisa
+## antes de a loja descobrir que tem menos corpo na calçada.
+func _rival_opening_line() -> String:
+	for rival in Rivals.DATA:
+		if int(rival["day"]) != shop_day or rivals_absorbed.has(str(rival["id"])):
+			continue
+		return "\n☗ " + str(rival["open"])
+	return ""
+
+## Comprar a placa é a única resposta que fecha o rombo em vez de disfarçá-lo: o
+## caixa sai de uma vez, a praça perde a concorrência e o estoque da rival sobe na
+## prateleira como peça honesta — rival nenhum entrega obra-prima. O preço sobe a
+## cada virada de espera, porque o que ela construiu na rua é obra que se paga.
+func _absorb_rival(id: String) -> void:
+	var rival := Rivals.find(id)
+	if rival.is_empty():
+		return
+	if rivals_absorbed.has(id):
+		last_event = "%s já é sua. Duas placas no mesmo lugar só engordam a conta da casa." % str(rival["name"])
+		return
+	if shop_day < int(rival["day"]):
+		last_event = "%s ainda não tem placa na praça: abre no dia %d. Comprar o que não existe é o tipo de erro que o beco comenta." % [
+			str(rival["name"]), int(rival["day"])]
+		audio.play("sad")
+		return
+	var cost := Rivals.price_for(rival, shop_day)
+	if gold < cost:
+		last_event = "A placa de %s custa %d de ouro hoje. Faltam %d — e cada virada de espera encarece a obra que ela fez na rua." % [
+			str(rival["name"]), cost, cost - gold]
+		audio.play("sad")
+		return
+	gold -= cost
+	rivals_absorbed.append(id)
+	reputation += int(rival["rep"])
+	var gained := ""
+	var index := _product_index(str(rival["gain"]["product"]))
+	if index >= 0:
+		for i in range(int(rival["gain"]["count"])):
+			_add_piece(index, 1)
+		gained = " A prateleira recebeu %d× %s." % [
+			int(rival["gain"]["count"]), str(products[index]["name"])]
+	last_event = str(rival["bought"]) + gained
+	audio.play("levelup")
+	_show_feedback("☗ %s absorvida." % str(rival["name"]), Color(0.72, 1.0, 0.82))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## A conta que o painel mostra antes de a loja decidir: quantos corpos e quanto
+## bolso a praça já bebeu hoje, e o que a fama segura.
+func _rival_pressure_line() -> String:
+	var ids := _rivals_active_ids()
+	if not ids.is_empty():
+		return "%s • porta −%d por batida • bolso −%d (fama %d %s)" % [
+			Rivals.names(ids), _rival_crowd_loss(), _rival_undercut(), reputation,
+			"segura metade" if reputation >= Rivals.FAME_HOLD else "ainda não segura"]
+	if rivals_absorbed.is_empty():
+		return "Nenhuma placa rival acesa na praça ainda."
+	return "A praça é sua: %d rival(es) com a placa comprada." % rivals_absorbed.size()
 
 ## ── Quadro de funcionários ─────────────────────────────────────────────────────
 
@@ -8569,6 +8744,9 @@ func _reset_run() -> void:
 	debt_peak = 0
 	# Filial é patrimônio da vida, não da família: reencarnar fecha as portas todas.
 	branches.clear()
+	# A praça também recomeça com as placas dela: o que foi comprado numa vida não
+	# cala a rival da vida seguinte.
+	rivals_absorbed.clear()
 	_offline_branch_fraction = 0.0
 	# O quadro também é da vida: a folha sai com a loja velha, e a vida nova contrata
 	# quem quiser do zero. Os servos não: quem largou a própria rotina por afeto à
