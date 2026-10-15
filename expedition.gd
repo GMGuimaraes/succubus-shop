@@ -16,6 +16,7 @@ const DATA: Array = [
 		"duration": 45.0,
 		"danger": 8,
 		"desc": "Lixo de nobre ainda é lixo, mas tem lixo que vale ouro.",
+		"encounter": "Disputa com catadores armados",
 		"loot": [
 			{"id": "vazio", "chance": 100, "min": 2, "max": 4},
 			{"id": "sal", "chance": 70, "min": 1, "max": 3},
@@ -31,6 +32,7 @@ const DATA: Array = [
 		"duration": 90.0,
 		"danger": 18,
 		"desc": "Dizem que o fundo é feito de quem desceu para buscar moeda.",
+		"encounter": "Emboscada entre a lama e as raízes",
 		"loot": [
 			{"id": "pena", "chance": 95, "min": 2, "max": 4},
 			{"id": "tinta", "chance": 70, "min": 1, "max": 3},
@@ -46,6 +48,7 @@ const DATA: Array = [
 		"duration": 150.0,
 		"danger": 30,
 		"desc": "Os mortos assinaram embaixo. Ainda cobram juros.",
+		"encounter": "O guardião desperta junto ao contrato",
 		"loot": [
 			{"id": "essencia", "chance": 100, "min": 3, "max": 6},
 			{"id": "tinta", "chance": 80, "min": 2, "max": 3},
@@ -61,6 +64,7 @@ const DATA: Array = [
 		"duration": 240.0,
 		"danger": 45,
 		"desc": "Não é loja, mas tem tudo o que a loja não tem.",
+		"encounter": "A fenda distorce o campo de batalha",
 		"loot": [
 			{"id": "essencia", "chance": 90, "min": 4, "max": 7},
 			{"id": "vazio", "chance": 60, "min": 3, "max": 5},
@@ -101,6 +105,20 @@ static func days_label(seconds: float) -> String:
 	var days := seconds / 60.0
 	return "%.1f dias de loja" % days if days >= 1.0 else "%.0f turnos de loja" % (days * 20.0)
 
+static func journey_event(destination: Dictionary, progress: float) -> String:
+	if progress < 0.12:
+		return "Preparando a partida"
+	if progress < 0.40:
+		return "Avançando pela rota"
+	if progress < 0.68:
+		return "⚔ " + str(destination.get("encounter", "Confronto"))
+	if progress < 0.88:
+		return "Vasculhando o local"
+	return "Voltando à loja"
+
+static func mishap_chance(destination: Dictionary, luck: int) -> int:
+	return clampi(int(destination.get("danger", 0)) - luck * 4, 2, 90)
+
 ## O que costuma voltar na mala: só os itens com chance relevante.
 static func preview(destination: Dictionary) -> String:
 	var parts: Array[String] = []
@@ -133,7 +151,7 @@ static func roll_loot(destination: Dictionary, luck: int) -> Array[Dictionary]:
 
 ## Viagem perigosa pode voltar com menos carga, menos moral ou menos reputação.
 static func roll_mishap(destination: Dictionary, luck: int) -> Dictionary:
-	var risk := clampi(int(destination["danger"]) - luck * 4, 2, 90)
+	var risk := mishap_chance(destination, luck)
 	if randi() % 100 >= risk:
 		return {}
 	return MISHAPS[randi() % MISHAPS.size()]

@@ -1001,15 +1001,13 @@ func _refresh_timed_ui() -> void:
 		var destination: Dictionary = Expedition.DATA[i]
 		var trip := _expedition_on_route(str(destination["id"]))
 		if not trip.is_empty():
-			expedition_labels[i].text = "🧭 Na estrada • faltam %s" % Expedition.days_label(maxf(0.0, float(trip.get("remaining", 0.0)) - elapsed))
+			var trip_summary := _expedition_trip_summary(trip, elapsed)
+			expedition_labels[i].text = trip_summary
+			expedition_labels[i].add_theme_color_override("font_color", Color(1.0, 0.52, 0.38) if trip_summary.contains("⚔") else Color(1.0, 0.84, 0.55))
 	if is_instance_valid(expedition_active_label) and not expeditions.is_empty():
 		var routes: Array[String] = []
 		for trip in expeditions:
-			var destination := Expedition.find(str(trip.get("id", "")))
-			var total := maxf(1.0, float(trip.get("total", 1.0)))
-			var remaining := maxf(0.0, float(trip.get("remaining", 0.0)) - elapsed)
-			var progress := clampf(1.0 - remaining / total, 0.0, 1.0)
-			routes.append("%s [%s] %d%%" % [str(destination.get("name", "?")), _bar(progress), int(round(progress * 100.0))])
+			routes.append(_expedition_trip_summary(trip, elapsed))
 		expedition_active_label.text = "Vagas: %d/%d — %s" % [expeditions.size(), _expedition_slots(), "  |  ".join(routes)]
 
 ## Transeunte anônimo atravessa o salão em uma das camadas de profundidade. O
@@ -3602,6 +3600,22 @@ func _bar(progress: float) -> String:
 	var filled := clampi(int(round(progress * 8.0)), 0, 8)
 	return "█".repeat(filled) + "░".repeat(8 - filled)
 
+func _expedition_trip_summary(trip: Dictionary, elapsed: float) -> String:
+	var destination := Expedition.find(str(trip.get("id", "")))
+	if destination.is_empty():
+		return "Rota desconhecida"
+	var total := maxf(1.0, float(trip.get("total", 1.0)))
+	var remaining := maxf(0.0, float(trip.get("remaining", 0.0)) - elapsed)
+	var progress := clampf(1.0 - remaining / total, 0.0, 1.0)
+	var safe_return := 100 - Expedition.mishap_chance(destination, _expedition_luck())
+	return "%s [%s] %d%% • %s • retorno sem contratempo: %d%%" % [
+		str(destination.get("name", "?")),
+		_bar(progress),
+		int(round(progress * 100.0)),
+		Expedition.journey_event(destination, progress),
+		safe_return,
+	]
+
 func _start_expedition(id: String) -> void:
 	var destination := Expedition.find(id)
 	if destination.is_empty():
@@ -5288,12 +5302,15 @@ func _refresh_ui() -> void:
 		var on_the_road := _expedition_on_route(destination_id)
 		if e < expedition_labels.size():
 			if on_the_road:
-				expedition_labels[e].text = "🧭 Na estrada • faltam %s" % Expedition.days_label(maxf(0.0, float(on_the_road.get("remaining", 0.0)) - _world_seconds_since_tick()))
+				var trip_summary := _expedition_trip_summary(on_the_road, _world_seconds_since_tick())
+				expedition_labels[e].text = trip_summary
+				expedition_labels[e].add_theme_color_override("font_color", Color(1.0, 0.52, 0.38) if trip_summary.contains("⚔") else Color(1.0, 0.84, 0.55))
 			elif not open_route:
 				expedition_labels[e].text = "🔒 %s" % Expedition.locked_hint(destination)
+				expedition_labels[e].add_theme_color_override("font_color", Color(0.74, 0.82, 0.78))
 			else:
 				expedition_labels[e].text = "%s • risco %d%% • %s" % [Expedition.days_label(_expedition_duration(destination)), int(destination["danger"]), Expedition.preview(destination)]
-			expedition_labels[e].add_theme_color_override("font_color", Color(1.0, 0.86, 0.45) if on_the_road != {} else Color(0.74, 0.82, 0.78))
+				expedition_labels[e].add_theme_color_override("font_color", Color(0.74, 0.82, 0.78))
 		if e < expedition_buttons.size():
 			expedition_buttons[e].text = "Voltando…" if on_the_road != {} else "Mandar (%d)" % trip_cost
 			expedition_buttons[e].disabled = on_the_road != {} or not open_route or gold < trip_cost or expeditions.size() >= _expedition_slots()
@@ -5303,10 +5320,7 @@ func _refresh_ui() -> void:
 		else:
 			var routes: Array[String] = []
 			for trip in expeditions:
-				var trip_destination := Expedition.find(str(trip.get("id", "")))
-				var total := maxf(1.0, float(trip.get("total", 1.0)))
-				var progress := clampf(1.0 - maxf(0.0, float(trip.get("remaining", 0.0)) - _world_seconds_since_tick()) / total, 0.0, 1.0)
-				routes.append("%s [%s] %d%%" % [str(trip_destination.get("name", "?")), _bar(progress), int(round(progress * 100.0))])
+				routes.append(_expedition_trip_summary(trip, _world_seconds_since_tick()))
 			expedition_active_label.text = "Vagas: %d/%d — %s" % [expeditions.size(), _expedition_slots(), "  |  ".join(routes)]
 	if is_instance_valid(expedition_log_label):
 		expedition_log_label.text = "Nenhuma mala voltou ainda." if expedition_log.is_empty() else "\n".join(expedition_log)
