@@ -150,6 +150,9 @@ var known_recipes: Array[String] = []
 var world_speed_options: Array[float] = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
 var world_speed_index: int = 1
 var world_timer: Timer
+var offline_dialog: AcceptDialog
+var _offline_elapsed_seconds: float = 0.0
+var _offline_branch_fraction: float = 0.0
 var speed_label: Label
 var speed_button: Button
 var forge_status_label: Label
@@ -647,6 +650,9 @@ const STAGE_FRONT_DEPTH := 0.82
 ## Janela de uma visita: ele tem de chegar ao balcão antes do próximo tique, mas
 ## sem correr parado.
 const STAGE_ARRIVE_SECONDS := 2.8
+const OFFLINE_FARM_MAX_SECONDS := 12.0 * 60.0 * 60.0
+const OFFLINE_FARM_BRANCH_PERIOD := 60.0 * 60.0
+const OFFLINE_REPORT_MIN_SECONDS := 60.0
 ## A chegada acompanha o intervalo do relógio do mundo para terminar antes da
 ## próxima visita; o ciclo de sprites e o passo aceleram juntos.
 ## Velocidade de caminhada em pixels por segundo na escala 1 e duração de cada
@@ -858,6 +864,11 @@ func _ready() -> void:
 	timer.autostart = true
 	timer.timeout.connect(_on_customer_tick)
 	add_child(timer)
+	_apply_offline_progress()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and is_inside_tree():
+		_save_game()
 
 func world_speed() -> float:
 	return world_speed_options[clampi(world_speed_index, 0, world_speed_options.size() - 1)]
@@ -916,6 +927,56 @@ func _world_seconds_since_tick() -> float:
 	if not is_instance_valid(world_timer) or world_timer.is_stopped():
 		return 0.0
 	return clampf((world_timer.wait_time - world_timer.time_left) * world_speed(), 0.0, 3.0)
+
+func _apply_offline_progress() -> void:
+	if _offline_elapsed_seconds <= 0.0:
+		return
+	var elapsed := _offline_elapsed_seconds
+	_offline_elapsed_seconds = 0.0
+	var crafts_before := total_crafted
+	var expeditions_before := expeditions_done
+	var imp_stock_before := int(products[0].get("stock", 0))
+	# Um acerto de filial por hora real evita multiplicar renda por dias de jogo de 60 segundos.
+	var branch_daily_net := float(Branches.expected_profit(branches, _branch_care()) - Branches.total_upkeep(branches))
+	if branches.is_empty() or branch_daily_net <= 0.0:
+		_offline_branch_fraction = 0.0
+	var branch_progress := maxf(0.0, branch_daily_net) * elapsed / OFFLINE_FARM_BRANCH_PERIOD + _offline_branch_fraction
+	var branch_earnings := int(floor(branch_progress))
+	_offline_branch_fraction = branch_progress - float(branch_earnings)
+	var imp_cycles := int(floor(elapsed / 9.0))
+	_advance_craft_jobs(elapsed, true)
+	_advance_expeditions(elapsed, true)
+	Sanctum.advance(active_buffs, elapsed)
+	if imp_hired:
+		for _cycle in range(imp_cycles):
+			_imp_work()
+	gold += branch_earnings
+	_check_achievements()
+	last_event = "Durante %.1f h fora da loja: %d forja(s), %d expedição(ões), %d poção(ões) do diabrete e +%d ouro líquido após a manutenção das filiais. Clientes, aluguel e salários ficaram pausados." % [
+		elapsed / 3600.0,
+		total_crafted - crafts_before,
+		expeditions_done - expeditions_before,
+		maxi(0, int(products[0].get("stock", 0)) - imp_stock_before),
+		branch_earnings,
+	]
+	_save_game()
+	_refresh_ui()
+	if elapsed >= OFFLINE_REPORT_MIN_SECONDS and not day_auto_ok:
+		offline_dialog = AcceptDialog.new()
+		offline_dialog.title = "Resumo do período offline"
+		offline_dialog.dialog_text = last_event + "\n\nO farm offline é limitado a 12 horas e não avança clientes, eventos aleatórios do salão ou dias de loja."
+		offline_dialog.confirmed.connect(_close_offline_report)
+		add_child(offline_dialog)
+		world_timer.stop()
+		offline_dialog.popup_centered(Vector2i(720, 320))
+
+func _close_offline_report() -> void:
+	if is_instance_valid(offline_dialog):
+		offline_dialog.queue_free()
+	offline_dialog = null
+	if is_instance_valid(world_timer) and not is_instance_valid(day_layer) \
+			and not is_instance_valid(origin_layer) and not is_instance_valid(ending_layer):
+		world_timer.start()
 
 func _refresh_timed_ui() -> void:
 	var elapsed := _world_seconds_since_tick()
@@ -3399,7 +3460,7 @@ func _craft_product(index: int) -> void:
 	_save_game()
 	_refresh_ui()
 
-func _advance_craft_jobs(game_seconds: float) -> void:
+func _advance_craft_jobs(game_seconds: float, offline: bool = false) -> void:
 	if craft_jobs.is_empty():
 		return
 	var completed: Array[Dictionary] = []
@@ -3429,16 +3490,20 @@ func _advance_craft_jobs(game_seconds: float) -> void:
 			premium_crafted += 1
 			best_quality_crafted = maxi(best_quality_crafted, tier)
 			last_event = "%s saiu %s! A chefe inspeciona a peça, finge surpresa e aumenta a etiqueta." % [item["name"], quality_name]
-			audio.play("rare")
-			_show_feedback("✦ Peça %s!" % quality_name, Color(str(Quality.tier(tier)["color"])))
-			_show_stage_emotion(stage_seller_body, "aplausao")
+			if not offline:
+				audio.play("rare")
+				_show_feedback("✦ Peça %s!" % quality_name, Color(str(Quality.tier(tier)["color"])))
+				_show_stage_emotion(stage_seller_body, "aplausao")
 		else:
 			last_event = "Produzido: %s (%s). O ferreiro bateu o martelo e pediu aplausos." % [item["name"], quality_name]
-			audio.play("craft")
-			_show_feedback("Produto pronto para vender.")
-			_show_stage_emotion(stage_seller_body, "curiosidade")
-	_check_achievements()
-	_save_game()
+			if not offline:
+				audio.play("craft")
+				_show_feedback("Produto pronto para vender.")
+				_show_stage_emotion(stage_seller_body, "curiosidade")
+	if not offline:
+		_check_achievements()
+	if not offline:
+		_save_game()
 
 func _missing_ingredients(item: Dictionary) -> Array[String]:
 	var missing: Array[String] = []
@@ -3563,7 +3628,7 @@ func _start_expedition(id: String) -> void:
 	_save_game()
 	_refresh_ui()
 
-func _advance_expeditions(game_seconds: float) -> void:
+func _advance_expeditions(game_seconds: float, offline: bool = false) -> void:
 	if expeditions.is_empty():
 		return
 	var arrived: Array[Dictionary] = []
@@ -3573,9 +3638,9 @@ func _advance_expeditions(game_seconds: float) -> void:
 			arrived.append(trip)
 	for trip in arrived:
 		expeditions.erase(trip)
-		_finish_expedition(trip)
+		_finish_expedition(trip, offline)
 
-func _finish_expedition(entry: Dictionary) -> void:
+func _finish_expedition(entry: Dictionary, offline: bool = false) -> void:
 	var destination := Expedition.find(str(entry.get("id", "")))
 	if destination.is_empty():
 		return
@@ -3605,19 +3670,23 @@ func _finish_expedition(entry: Dictionary) -> void:
 			reputation = maxi(0, reputation - 2)
 	if not mishap.is_empty():
 		text += " " + str(mishap["text"])
-		_show_stage_emotion(stage_seller_body, "dor")
+		if not offline:
+			_show_stage_emotion(stage_seller_body, "dor")
 	expedition_log.push_front(text)
 	while expedition_log.size() > 4:
 		expedition_log.pop_back()
 	last_event = text
-	if parts.is_empty():
-		audio.play("sad")
-	else:
-		audio.play("rare" if mishap.is_empty() else "coin")
-		_show_feedback("✦ Botim chegou!", Color(1.0, 0.86, 0.45))
-	_check_achievements()
-	_save_game()
-	_refresh_ui()
+	if not offline:
+		if parts.is_empty():
+			audio.play("sad")
+		else:
+			audio.play("rare" if mishap.is_empty() else "coin")
+			_show_feedback("✦ Botim chegou!", Color(1.0, 0.86, 0.45))
+	if not offline:
+		_check_achievements()
+	if not offline:
+		_save_game()
+		_refresh_ui()
 
 ## Raridade mais fraca em estoque: guarda a brasa boa para peça grande.
 func _catalyst_available() -> Dictionary:
@@ -5494,12 +5563,21 @@ func _save_game() -> void:
 	config.set_value("game", "ticks", ticks)
 	config.set_value("game", "craft_jobs", craft_jobs)
 	config.set_value("game", "catalyst_enabled", catalyst_enabled)
+	config.set_value("game", "last_save_unix", int(Time.get_unix_time_from_system()))
+	config.set_value("game", "offline_branch_fraction", _offline_branch_fraction)
 	config.save(SAVE_PATH)
 
 func _load_game() -> void:
 	var config := ConfigFile.new()
 	if config.load(SAVE_PATH) != OK:
 		return
+	_offline_branch_fraction = clampf(float(config.get_value("game", "offline_branch_fraction", 0.0)), 0.0, 0.999999)
+	var saved_at := int(config.get_value("game", "last_save_unix", 0))
+	if saved_at > 0:
+		_offline_elapsed_seconds = clampf(
+			maxf(0.0, Time.get_unix_time_from_system() - float(saved_at)),
+			0.0,
+			OFFLINE_FARM_MAX_SECONDS)
 	gold = int(config.get_value("game", "gold", gold))
 	reputation = int(config.get_value("game", "reputation", reputation))
 	customers_served = int(config.get_value("game", "customers_served", customers_served))
@@ -7312,6 +7390,7 @@ func _reset_run() -> void:
 	debt_peak = 0
 	# Filial é patrimônio da vida, não da família: reencarnar fecha as portas todas.
 	branches.clear()
+	_offline_branch_fraction = 0.0
 	# O quadro também é da vida: a folha sai com a loja velha, e a vida nova contrata
 	# quem quiser do zero.
 	staff_hired.clear()
