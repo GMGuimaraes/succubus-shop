@@ -408,8 +408,8 @@ const STAGE_CROWD_BODIES: Array[String] = [
 	"druid",
 	"pirate",
 ]
-## Quantos transeuntes o salão comporta ao mesmo tempo. O elenco cresceu para
-## dez corpos justamente para não repetir, mas sala cheia de gente andando tapa a
+## Quantos transeuntes o salão comporta ao mesmo tempo. O elenco tem dezesseis
+## corpos justamente para não repetir, mas sala cheia de gente andando tapa a
 ## chefe e o balcão: o teto é de cena, não de elenco.
 const STAGE_MAX_WALKERS := 4
 ## Altura relativa de cada corpo. A folha de poses normaliza todo mundo pela

@@ -2,7 +2,7 @@ extends RefCounted
 ## Espectro de qualidade das mercadorias fabricadas na forja.
 ## Cada peça cai em um nível, e o valor de venda é o preço base vezes o
 ## multiplicador do nível. O jogo guarda `quality_stock` em main.gd:
-## { id_do_produto: [torto, honesto, refinado, obra_prima, mitico] }.
+## { id_do_produto: [torto, honesto, refinado, obra_prima, mitico, lendario] }.
 
 const QUALITIES: Array = [
 	{"id": "torto", "name": "Torto", "mult": 0.7, "color": "#8d8794", "weight": 26},
