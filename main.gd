@@ -1634,6 +1634,59 @@ func _stage_customer_leaves() -> void:
 		_retire_walker(_stage_walkers[0]["node"] as Control)
 	_release_to_floor(body, depth, center_x, served)
 
+## O tempo que a rua faz hoje, e o preço de cada um deles: movimento na porta,
+## paciência na fila e a etiqueta do produto que a cidade acordou querendo. A rolagem
+## acontece uma vez por virada e consome sorteio sempre, então a mesma semente desenha
+## a mesma sequência de dias — clima é consequência do calendário da loja, não enfeite
+## de painel.
+const WEATHER := {
+	"limpo": {"name": "dia limpo", "crowd": 0, "patience": 0,
+		"line": "A rua acordou limpa: movimento normal de calçada."},
+	"chuva": {"name": "chuva fina", "crowd": -1, "patience": 1,
+		"line": "Chove fino: menos gente passando, quem entra fica debaixo do toldo sem pressa."},
+	"nevoa": {"name": "névoa preguiçosa", "crowd": -1, "patience": 1,
+		"line": "Névoa na vitrine: quase ninguém vê a placa, quem vê entra devagar."},
+	"tempestade": {"name": "tempestade", "crowd": -2, "patience": -1,
+		"line": "Tempestade na rua: a porta abre pouco e quem entra quer resolver logo."},
+	"calor": {"name": "calor de fundo de inferno", "crowd": 1, "patience": -1,
+		"line": "Calor pesado: a fila cresce e a paciência encolhe junto com o nervo."},
+	"feirao": {"name": "feira na praça", "crowd": 2, "patience": 0,
+		"line": "Feira na praça: a calçada está cheia de bolso solto."},
+}
+const WEATHER_ORDER: Array[String] = ["limpo", "chuva", "nevoa", "tempestade", "calor", "feirao"]
+## O produto do dia sai mais caro porque é atrás dele que a cidade acordou.
+const WEATHER_STAR_PRICE := 1.25
+var weather: String = "limpo"
+var weather_star: String = ""
+var weather_seen: Dictionary = {}
+
+func _weather() -> Dictionary:
+	return WEATHER.get(weather, WEATHER["limpo"])
+
+## Sorteia o tempo da manhã e o produto que a rua quer. Os dois dados giram sempre, e o
+## segundo aponta para a lista inteira, com ou sem prateleira: se o calendário
+## dependesse do estoque de hoje, a mesma semente deixaria de render a mesma loja — e
+## querer o que não tem é justamente o empurrão para fabricar.
+func _roll_weather() -> void:
+	weather = WEATHER_ORDER[randi() % WEATHER_ORDER.size()]
+	weather_seen[weather] = true
+	weather_star = str(products[randi() % products.size()]["id"])
+
+## A linha que a manhã lê no mural: o tempo de hoje e a etiqueta que ele empurrou.
+func _weather_line() -> String:
+	var star := _product_name(weather_star)
+	if star.is_empty():
+		return "Tempo: %s." % str(_weather()["name"])
+	return "Tempo: %s • a rua atrás de %s (+%d%% na etiqueta)." % [
+		str(_weather()["name"]), star, int(round((WEATHER_STAR_PRICE - 1.0) * 100.0))]
+
+## Nome de um produto pelo id, vazio quando o id não é da casa.
+func _product_name(product_id: String) -> String:
+	for item in products:
+		if str(item["id"]) == product_id:
+			return str(item["name"])
+	return ""
+
 ## Quantos batem na porta neste tique: um sempre, mais um por degrau de fama, mais
 ## um para cada duas filiais abertas. É o que faz a loja começar quase vazia e
 ## terminar com gente esperando na rua — e é também o que faz a fama custar caro
@@ -1647,13 +1700,15 @@ func _arrivals_this_tick() -> int:
 	if reputation >= 55:
 		crowd += 1
 	crowd += int(float(branches.size()) / 2.0)
+	crowd += int(_weather()["crowd"])
 	return clampi(crowd, 1, QUEUE_LIMIT)
 
 ## Quanto um cliente topa esperar: o limite da casa mais a paciência do próprio
-## perfil, o quanto a chefe já é querida e quantas mãos há no balcão. Charme é
+## perfil, o quanto a chefe já é querida, quantas mãos há no balcão e o tempo lá fora
+## — debaixo de chuva ninguém olha no relógio, no calor todo mundo olha. Charme é
 ## literalmente tempo de espera, e contratar também é.
 func _queue_patience(profile: Dictionary) -> int:
-	return maxi(1, QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size() + servants.size() - _mess_patience_loss())
+	return maxi(1, QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size() + servants.size() - _mess_patience_loss() + int(_weather()["patience"]))
 
 ## Manda para dentro quem o balcão não consegue atender agora. Cada um chega com o
 ## perfil sorteado na hora, então a fila é gente com retrato e orçamento, não um
@@ -4590,10 +4645,12 @@ func _shelf_price(index: int) -> int:
 	var item: Dictionary = products[index]
 	return maxi(1, int(round(_piece_price(item, _peek_tier(index, Quality.WORST)) * _market_product_factor(item))))
 
-## O mercado reativo sobre a etiqueta: demanda do produto e escassez na prateleira.
+## O mercado reativo sobre a etiqueta: demanda do produto, escassez na prateleira e o
+## produto que a rua acordou querendo hoje.
 func _market_product_factor(item: Dictionary) -> float:
 	var product_id := str(item["id"])
-	return Economy.factor(economy_state, "product", product_id) * Economy.stock_factor(int(item["stock"]))
+	return Economy.factor(economy_state, "product", product_id) * Economy.stock_factor(int(item["stock"])) * (
+		WEATHER_STAR_PRICE if product_id == weather_star else 1.0)
 
 ## Estimativa conservadora: etiqueta de uma peça Honesta no mercado de hoje,
 ## menos custo de fabricação e preço atual de reposição dos ingredientes.
@@ -4914,6 +4971,7 @@ func _on_customer_tick() -> void:
 		shop_day += 1
 		_show_stage_emotion(stage_seller_body, "sono")
 		Economy.advance_day(economy_state)
+		_roll_weather()
 		daily_quest_index = (daily_quest_index + 1) % DAILY_QUESTS.size()
 		daily_quest_progress = 0
 		daily_quest_claimed = false
@@ -4971,9 +5029,9 @@ func _on_customer_tick() -> void:
 		var lost_line := ""
 		if day_walkouts > 0:
 			lost_line = " %d saíram da fila sem comprar." % day_walkouts
-		day_report = bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s\n%s%s%s%s%s" % [
-			shop_day, Economy.report(economy_state, products, Ingredients.DATA), bill_line,
+		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s" % [
+			shop_day, Economy.report(economy_state, products, Ingredients.DATA), _weather_line(), bill_line,
 			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line]
 		# A manhã também afina a faixa: alarme novo, vigário na porta ou ruína velha
 		# mudam o tom da mesma gravação antes de a chefe abrir o balcão.
@@ -5931,7 +5989,8 @@ func _refresh_ui() -> void:
 	if is_instance_valid(market_label):
 		var hot := _demand_index()
 		var hot_text := " • Em alta: %s" % str(products[hot]["name"]) if hot >= 0 else ""
-		market_label.text = "Dia %d — %s%s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA), hot_text]
+		market_label.text = "Dia %d — %s%s\n%s" % [
+			shop_day, Economy.report(economy_state, products, Ingredients.DATA), hot_text, _weather_line()]
 	if is_instance_valid(upkeep_label):
 		# A conta do dia é a única razão para o caixa ter teto: sem ela, loja grande
 		# só cresce e nunca precisa de freguês.
@@ -6450,6 +6509,9 @@ func _save_game() -> void:
 	config.set_value("game", "customers_served", customers_served)
 	config.set_value("game", "affection", affection)
 	config.set_value("game", "fury", fury)
+	config.set_value("game", "weather", weather)
+	config.set_value("game", "weather_star", weather_star)
+	config.set_value("game", "weather_seen", weather_seen)
 	config.set_value("game", "stolen_item_name", stolen_item_name)
 	config.set_value("game", "theft_recovery_available", theft_recovery_available)
 	config.set_value("game", "regular_bonds", regular_bonds)
@@ -6597,6 +6659,15 @@ func _load_game() -> void:
 	customers_served = int(config.get_value("game", "customers_served", customers_served))
 	affection = int(config.get_value("game", "affection", affection))
 	fury = clampi(int(config.get_value("game", "fury", fury)), 0, 5)
+	weather = str(config.get_value("game", "weather", weather))
+	if not WEATHER.has(weather):
+		weather = "limpo"
+	weather_star = str(config.get_value("game", "weather_star", weather_star))
+	var saved_weather_seen = config.get_value("game", "weather_seen", {})
+	if saved_weather_seen is Dictionary:
+		for seen_weather in saved_weather_seen.keys():
+			if WEATHER.has(str(seen_weather)):
+				weather_seen[str(seen_weather)] = true
 	stolen_item_name = str(config.get_value("game", "stolen_item_name", stolen_item_name))
 	theft_recovery_available = bool(config.get_value("game", "theft_recovery_available", theft_recovery_available))
 	var saved_bonds = config.get_value("game", "regular_bonds", {})
@@ -7315,6 +7386,7 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "legendary_three", "name": "Mestra da Bigorna (3 peças Lendárias)", "condition": legendary_crafted >= 3, "gold": 420, "rep": 15},
 		{"id": "exclusive_patron", "name": "Casa das Obras Raras (encomenda exclusiva fechada)", "condition": exclusive_finished >= 1, "gold": 350, "rep": 14, "pose": "book"},
 		{"id": "market_barometer", "name": "Termômetro do Balcão (produto no pico de procura)", "condition": _max_product_heat() >= 0.8, "gold": 55, "rep": 3},
+		{"id": "weather_six", "name": "Previsão da casa (seis tempos diferentes na porta)", "condition": weather_seen.size() >= WEATHER.size(), "gold": 60, "rep": 3},
 		{"id": "ritual_apprentice", "name": "Aprendiz de Ritos (3 rituais)", "condition": rituals_performed >= 3, "gold": 40, "rep": 2},
 		{"id": "ritual_devotee", "name": "Fiel do Santuário (10 rituais)", "condition": rituals_performed >= 10, "gold": 100, "rep": 5, "pose": "book"},
 		{"id": "first_expedition", "name": "Pé na Estrada (primeira expedição)", "condition": expeditions_done >= 1, "gold": 30, "rep": 1},
@@ -8543,6 +8615,11 @@ func _reset_run() -> void:
 	seduction_successes = 0
 	affection = 0
 	fury = 0
+	# O dia um de uma vida nova acorda sem tempo sorteado e sem rua atrás de nada: a
+	# primeira previsão chega na primeira virada. O caderno de tempos já vistos é da
+	# conta da chefe, não da vida, e atravessa a reencarnação.
+	weather = "limpo"
+	weather_star = ""
 	demonic_form_active = false
 	seduction_peak_triggered = false
 	private_moments_unlocked = 0

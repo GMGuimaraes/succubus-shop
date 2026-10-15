@@ -19,13 +19,13 @@ extends SceneTree
 ##     --quit-after 90000 --script res://tools/probes/filtro.gd
 ##
 ## Veredito medido nesta rodada: A/A fecha 400 tiques idênticos e o A/B (ligado ×
-## desligado) fecha as MESMAS contas — nenhum tique divergiu: caixa 2424, fama 10,
-## afeição 55, 15 seduções em 15 tentativas, 0 momentos, 0 servos, 5 atendidos, 143
-## decepções, XP 15 no nível 7, placar 2987. Voz: 120 falas desligado nunca saem do
+## desligado) fecha as MESMAS contas — nenhum tique divergiu: caixa 2182, fama 0,
+## afeição 53, 14 seduções em 14 tentativas, 0 momentos, 0 servos, 5 atendidos, 138
+## decepções, XP 105 no nível 6, placar 2594. Voz: 120 falas desligado nunca saem do
 ## array de flerte, 120 ligado nunca saem do de confiança, nenhuma palavra provocativa
 ## sobrevive nos arrays do modo desligado, e os arrays são espelhados (4/4 e 5/5) com o
 ## meme continuando meme nos dois modos. Pico: +1 momento, +4 de fama e +15 XP de
-## qualquer forma; o tween da pose só nasce ligado (subida de 6 px em 6 fotogramas,
+## qualquer forma; o tween da pose só nasce ligado (subida de 7,1 px em 6 fotogramas,
 ## 0 px desligado). Momento privado: +1 e o mesmo placar (133) nos dois modos; afinidade
 ## 4 ainda não paga. Pose de conquista: roda desligado (retrato x1,09 nos dois).
 ## Vitrine: 120 entradas desligado = 0 flerte, 120 ligado = 29 flerte (24%). Fúria: a
