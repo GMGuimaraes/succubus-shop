@@ -13,6 +13,7 @@ const Campaign = preload("res://campaign.gd")
 const Origin = preload("res://origin.gd")
 const Prestige = preload("res://prestige.gd")
 const Endings = preload("res://endings.gd")
+const Branches = preload("res://branches.gd")
 const SteamBridge = preload("res://steam_bridge.gd")
 
 ## Caixa e despensa com que a loja abre a primeira vida — e cada vida seguinte.
@@ -69,6 +70,13 @@ var debt_peak: int = 0
 ## Vidas que fecharam no vermelho, e as temporadas marcadas como perdidas no placar.
 var ruined_lives: int = 0
 var ruined_seasons: Array[String] = []
+## O balanço da última virada: quanto a casa cobrou e o que as filiais devolveram.
+## A linha do dia nasce e morre no mesmo tique (conquista, encomenda e diabrete
+## escrevem por cima), então o resultado da conta precisa de lugar fixo na recepção.
+var day_report: String = ""
+## Filiais abertas nesta vida. Cada uma paga um lucro por virada e engrossa a conta
+## da casa; a mais rentável é também a que mais afunda quando o dia vira.
+var branches: Array[String] = []
 ## O que abrir quando a lembrança fechar: é como o capítulo final emenda o painel
 ## do império na cena do andar de cima sem empilhar os dois quadros.
 var _origin_next: Callable = Callable()
@@ -345,6 +353,10 @@ var catalyst_label: Label
 var card_summary_label: Label
 var card_bonus_label: Label
 var upkeep_label: Label
+var day_report_label: Label
+var branch_summary_label: Label
+var branch_labels: Array = []
+var branch_buttons: Array = []
 var pack_button: Button
 var card_gallery_labels: Array = []
 var board_label: Label
@@ -1880,6 +1892,46 @@ func _build_ui() -> void:
 	upkeep_label.add_theme_font_size_override("font_size", 14)
 	upkeep_label.add_theme_color_override("font_color", Color(1.0, 0.62, 0.55))
 	reception_box.add_child(upkeep_label)
+	day_report_label = Label.new()
+	day_report_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	day_report_label.add_theme_font_size_override("font_size", 13)
+	day_report_label.add_theme_color_override("font_color", Color(0.86, 0.82, 0.92))
+	reception_box.add_child(day_report_label)
+
+	reception_box.add_child(_make_section_title("FILIAIS DA CASA", Color(0.72, 1.0, 0.82)))
+	reception_box.add_child(_make_section_hint("Fora do salão a loja também trabalha, e também paga conta. Cada filial abre com ouro e cobra um custo por virada; a mais rentável é a que mais deve no dia ruim."))
+	branch_summary_label = Label.new()
+	branch_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	branch_summary_label.add_theme_font_size_override("font_size", 14)
+	branch_summary_label.add_theme_color_override("font_color", Color(0.82, 0.98, 0.88))
+	reception_box.add_child(branch_summary_label)
+	for branch in Branches.DATA:
+		var branch_card := _make_sector_card(Color(0.04, 0.08, 0.07, 0.94), Color(0.30, 0.62, 0.46, 0.95))
+		reception_box.add_child(branch_card)
+		var branch_row := HBoxContainer.new()
+		branch_row.add_theme_constant_override("separation", 12)
+		branch_card.add_child(branch_row)
+		var branch_info := VBoxContainer.new()
+		branch_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		branch_row.add_child(branch_info)
+		var branch_label := Label.new()
+		branch_label.add_theme_font_size_override("font_size", 15)
+		branch_label.add_theme_color_override("font_color", Color(0.86, 1.0, 0.92))
+		branch_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		branch_info.add_child(branch_label)
+		branch_labels.append(branch_label)
+		var branch_desc := Label.new()
+		branch_desc.text = str(branch["desc"])
+		branch_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		branch_desc.add_theme_font_size_override("font_size", 12)
+		branch_desc.add_theme_color_override("font_color", Color(0.70, 0.80, 0.75))
+		branch_info.add_child(branch_desc)
+		var branch_button := Button.new()
+		branch_button.custom_minimum_size = Vector2(170, 40)
+		branch_button.add_theme_font_size_override("font_size", 14)
+		branch_button.pressed.connect(_open_branch.bind(str(branch["id"])))
+		branch_row.add_child(branch_button)
+		branch_buttons.append(branch_button)
 
 	reception_box.add_child(_make_section_title("MERCADO DE INGREDIENTES", Color(0.78, 0.95, 1.0)))
 	reception_box.add_child(_make_section_hint("Os preços flutuam com o dia e com o seu movimento. Compre barato, fabrique caro, e revenda o que sobrar."))
@@ -3325,7 +3377,11 @@ func _on_customer_tick() -> void:
 		# A casa cobra antes de alguém comemorar o dia novo: quem acorda sem caixa
 		# já acorda devendo, e dívida tem teto.
 		var bill_line := _pay_upkeep()
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s\n%s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA), bill_line]
+		var branch_line := _collect_branches()
+		day_report = bill_line + (" " + branch_line if branch_line != "" else "")
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s\n%s%s" % [
+			shop_day, Economy.report(economy_state, products, Ingredients.DATA), bill_line,
+			("\n" + branch_line) if branch_line != "" else ""]
 		# A encomenda do patrono vence e chega no mesmo instante da virada, e o
 		# resultado é gravado junto: quem fecha o jogo nessa manhã não acorda com o
 		# prazo de um dia que já passou.
@@ -4283,6 +4339,37 @@ func _refresh_ui() -> void:
 			_daily_upkeep(),
 			" Dívida aberta de %d — a casa leva o salão aos %d." % [debt, DEBT_LIMIT] if debt > 0 else "",
 		]
+	if is_instance_valid(day_report_label):
+		day_report_label.text = "ÚLTIMA VIRADA: %s" % day_report if day_report != "" \
+			else "Ainda não houve cobrança: a casa apresenta a conta na primeira virada de dia."
+	if is_instance_valid(branch_summary_label):
+		# O painel promete média, não pico: a filial que mais paga é também a que
+		# mais cobra conserto, e o jogador precisa ver o saldo esperado.
+		if branches.is_empty():
+			branch_summary_label.text = "Nenhuma filial aberta. A primeira custa 400 de ouro e pede um capítulo fechado."
+		else:
+			var expected := Branches.expected_profit(branches)
+			var extra := Branches.total_upkeep(branches)
+			branch_summary_label.text = "CASAS ABERTAS: %d de %d • lucro esperado %+d por virada • custo extra %d • saldo médio %+d." % [
+				branches.size(), Branches.size(), expected, extra, expected - extra]
+	for i in range(Branches.DATA.size()):
+		var branch: Dictionary = Branches.DATA[i]
+		var branch_id := str(branch["id"])
+		var opened := branches.has(branch_id)
+		var blocked := Branches.gate(branch, campaign_step, faction_standing)
+		var branch_cost := int(branch["cost"])
+		if i < branch_labels.size():
+			(branch_labels[i] as Label).text = "%s — %s\n%s • paga %d por virada, custa %d • dia ruim em %d%% das viradas" % [
+				str(branch["name"]),
+				"ABERTA" if opened else ("disponível" if blocked == "" else "trancada"),
+				_branch_faction_label(branch), int(branch["profit"]), int(branch["upkeep"]),
+				int(round(float(branch["tilt"]) * 100.0)),
+			]
+		if i < branch_buttons.size():
+			var branch_button := branch_buttons[i] as Button
+			branch_button.disabled = opened or blocked != "" or gold < branch_cost
+			branch_button.text = "ABERTA" if opened else (
+				"Abrir por %d" % branch_cost if blocked == "" else "Trancada: %s" % blocked)
 	for r in range(Sanctum.DATA.size()):
 		var ritual: Dictionary = Sanctum.DATA[r]
 		var ritual_id := str(ritual["id"])
@@ -4506,6 +4593,8 @@ func _save_game() -> void:
 	config.set_value("game", "debt_peak", debt_peak)
 	config.set_value("game", "ruined_lives", ruined_lives)
 	config.set_value("game", "ruined_seasons", ruined_seasons)
+	config.set_value("game", "branches", branches)
+	config.set_value("game", "day_report", day_report)
 	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
@@ -4653,6 +4742,15 @@ func _load_game() -> void:
 		for season in saved_ruined:
 			if str(season).is_valid_int() and int(str(season)) > 0 and not ruined_seasons.has(str(season)):
 				ruined_seasons.append(str(season))
+	# Id que não está mais na tabela não reabre: a filial some do save em vez de
+	# continuar cobrando conta sem existir no painel.
+	var saved_branches = config.get_value("game", "branches", [])
+	branches.clear()
+	if saved_branches is Array:
+		for branch_id in saved_branches:
+			if Branches.knows(str(branch_id)) and not branches.has(str(branch_id)):
+				branches.append(str(branch_id))
+	day_report = str(config.get_value("game", "day_report", day_report))
 	prestige_runs = int(config.get_value("game", "prestige_runs", prestige_runs))
 	prestige_aura = int(config.get_value("game", "prestige_aura", prestige_aura))
 	var saved_perks = config.get_value("game", "prestige_perks", {})
@@ -5154,6 +5252,9 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "endings_all", "name": "Todos os finais deste balcão", "condition": endings_seen.size() >= Endings.size(), "gold": 600, "rep": 20, "pose": "vitoria"},
 		{"id": "ruin_first", "name": "Cheiro de mofo no caixa (uma vida fechou em ruína)", "condition": ruined_lives >= 1, "gold": 60, "rep": 2},
 		{"id": "debt_escaped", "name": "Saindo do buraco (quitar 120 de dívida pagando em dia)", "condition": debt == 0 and debt_peak >= 120, "gold": 200, "rep": 8, "pose": "vitoria"},
+		{"id": "branch_first", "name": "Endereço fora do bairro (primeira filial)", "condition": not branches.is_empty(), "gold": 120, "rep": 4},
+		{"id": "branch_self_made", "name": "A casa se paga (filiais cobrem a conta da casa)", "condition": not branches.is_empty() and Branches.expected_profit(branches) >= _daily_upkeep(), "gold": 300, "rep": 10, "pose": "book"},
+		{"id": "branch_all", "name": "Império de esquina a beco (todas as filiais abertas)", "condition": branches.size() >= Branches.size(), "gold": 500, "rep": 15, "pose": "danca"},
 		{"id": "card_holo", "name": "Brilho de coleção (primeira carta holográfica)", "condition": Cards.evolved_count(card_counts, 1) >= 1, "gold": 90, "rep": 4},
 		{"id": "card_prism", "name": "Prisma no mural (uma carta em seis cópias)", "condition": Cards.evolved_count(card_counts, 2) >= 1, "gold": 240, "rep": 10, "pose": "vitoria"},
 		{"id": "card_album_working", "name": "Álbum trabalhando (os três conjuntos pagando bônus)", "condition": Cards.luck_bonus(card_counts) >= 1 and Cards.price_bonus(card_counts) >= 0.04 and Cards.pack_discount(card_counts) >= 2, "gold": 150, "rep": 6},
@@ -5251,6 +5352,7 @@ func business_score() -> int:
 		+ campaign_step * 60 + private_moments_unlocked * 8 + _romance_steps_paid() * 20 \
 		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0) \
 		+ legendary_crafted * 60 + exclusive_finished * 120 + endings_seen.size() * 30 \
+		+ branches.size() * 90 \
 		+ prestige_runs * 150 + _perk_levels_total() * 20 + prestige_goals_paid * 40
 
 func _publish_score() -> void:
@@ -5336,7 +5438,7 @@ const DEBT_LIMIT := 240
 
 func _daily_upkeep() -> int:
 	return 12 + library_upgrade_level * 6 + sanctum_upgrade_level * 6 + ad_level * 5 \
-		+ (18 if imp_hired else 0)
+		+ (18 if imp_hired else 0) + Branches.total_upkeep(branches)
 
 ## A virada de dia cobra a conta. Pagar em dia usa o que sobrou de caixa para
 ## escavar a dívida; não pagar não perdoa — o faltante entra no vermelho da casa.
@@ -5363,6 +5465,66 @@ func _pay_upkeep() -> String:
 	if debt > 0:
 		return "A casa cobrou %d, pago em dia. O caixa zerado não abateu a dívida de %d." % [bill, debt]
 	return "A casa cobrou %d de custo do dia, pago em dia." % bill
+
+## As filiais trabalham na virada: cada uma paga o lucro do dia ou cobra o
+## conserto. O saldo entra no caixa, e o que o caixa não cobre vira dívida — é
+## exatamente assim que a expansão afunda quem mediu mal a própria conta.
+func _collect_branches() -> String:
+	if branches.is_empty():
+		return ""
+	var results: Array[int] = []
+	var net := 0
+	var damaged := false
+	for id in branches:
+		var gain := Branches.roll(Branches.find(str(id)), _card_luck())
+		results.append(gain)
+		net += gain
+		damaged = damaged or gain < 0
+	gold += net
+	if gold < 0:
+		debt += -gold
+		gold = 0
+		debt_peak = maxi(debt_peak, debt)
+	if damaged:
+		audio.play("sad")
+	return "FILIAIS: %s • saldo %+d no caixa." % [Branches.ledger(branches, results), net]
+
+## Abrir filial é gastar o caixa de uma vez para trocar de renda por virada — e de
+## conta por virada também. Os três motivos de recusa são as três portas do gate.
+func _open_branch(id: String) -> void:
+	var branch := Branches.find(id)
+	if branch.is_empty():
+		return
+	if branches.has(id):
+		last_event = "%s já está de portas abertas. Duas chaves do mesmo endereço não vendem o dobro." % str(branch["name"])
+		return
+	var blocked := Branches.gate(branch, campaign_step, faction_standing)
+	if blocked != "":
+		last_event = "%s ainda não é para hoje: %s." % [str(branch["name"]), blocked]
+		audio.play("sad")
+		return
+	var cost := int(branch["cost"])
+	if gold < cost:
+		last_event = "%s custa %d de ouro. Faltam %d — a banca da feira não é fiado." % [
+			str(branch["name"]), cost, cost - gold]
+		audio.play("sad")
+		return
+	gold -= cost
+	branches.append(id)
+	last_event = str(branch["open"])
+	audio.play("levelup")
+	_show_feedback("✦ %s aberta." % str(branch["name"]), Color(0.72, 1.0, 0.82))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Quem banca a filial: sem padrinho de facção a porta não abre, e o painel precisa
+## dizer o nome do padrinho e o quanto de fama ele cobra.
+func _branch_faction_label(branch: Dictionary) -> String:
+	var faction_id := str(branch["faction"])
+	if faction_id == "":
+		return "qualquer loja de bairro dá o endereço"
+	return "padrinho: %s, %d de fama" % [str(Factions.find(faction_id).get("name", faction_id)), int(branch["standing"])]
 
 ## A dívida estourou: a vida fecha no vermelho. O painel não oferece saída além de
 ## reabrir as portas, porque ruína que se dispensa com um clique não é consequência.
@@ -5532,8 +5694,10 @@ func _show_ending(ending: Dictionary = {}, ruined := false) -> void:
 	var ledger := "Nesta vida, quem mais usou o balcão: %s\n\n" % _life_standing_text()
 	var closing := "O balcão continua aberto: dá para fechar o álbum, subir no placar e esticar o império até onde a sorte deixar."
 	if ruined:
-		ledger = "A vida afundou no dia em que a casa cobrava %d e a dívida passou de %d. O fundo do poço desta vida foi %d.\n\n" % [
-			_daily_upkeep(), DEBT_LIMIT, debt_peak]
+		ledger = "A vida afundou no dia em que a casa cobrava %d e a dívida passou de %d. O fundo do poço desta vida foi %d.%s\n\n" % [
+			_daily_upkeep(), DEBT_LIMIT, debt_peak,
+			(" E a loja ainda mantinha %d filial(is) aberta(s), custando %d por virada." % [
+				branches.size(), Branches.total_upkeep(branches)]) if not branches.is_empty() else ""]
 		closing = "O balcão reabre no mesmo lugar, com a freguesia lembrando da loja e o cofre vazio: quem fecha no vermelho recomeça sem aura nenhuma."
 	body_text.text = Endings.text(ending) + "\n\n" \
 		+ "Dia %d • %d de ouro em caixa • reputação %d • nível %d\n" % [shop_day, gold, reputation, player_level] \
@@ -5883,6 +6047,9 @@ func _reset_run() -> void:
 	# A vida nova não herda o vermelho da anterior: a casa recomeça no nome dela.
 	debt = 0
 	debt_peak = 0
+	# Filial é patrimônio da vida, não da família: reencarnar fecha as portas todas.
+	branches.clear()
+	day_report = ""
 	reputation = 0
 	customers_served = 0
 	happy_customers = 0
