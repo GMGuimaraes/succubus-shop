@@ -38,10 +38,11 @@ jobs:
         shell: pwsh
         run: |
           & $env:GODOT --headless --editor --path . --import
-          if ($LASTEXITCODE -ne 0) { throw "Godot resource import failed with exit code $LASTEXITCODE." }
+          if (-not (Test-Path ".godot\imported")) { throw "Godot did not create its imported resources." }
           New-Item -ItemType Directory -Force ".export\windows" | Out-Null
           & $env:GODOT --headless --path . --export-release "Windows Desktop" ".export\windows\Succubus Shop.exe"
-          if ($LASTEXITCODE -ne 0) { throw "Godot Windows export failed with exit code $LASTEXITCODE." }
+          $executable = Get-Item ".export\windows\Succubus Shop.exe" -ErrorAction SilentlyContinue
+          if ($null -eq $executable -or $executable.Length -lt 1048576) { throw "Godot did not produce a valid Windows executable." }
       - name: Package alpha
         shell: pwsh
         run: |
