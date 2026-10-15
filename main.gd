@@ -97,6 +97,20 @@ var branches: Array[String] = []
 ## o salário e devolve a entrega, porque a folha é conta da casa e a casa recomeça
 ## no nome dela.
 var staff_hired: Array[String] = []
+## Fregueses que caíram de amores pela casa e pediram para trabalhar nela. Não
+## recebem salário — o pagamento é o próprio balcão —, e é por isso que a chefe tem
+## de sustentar a simpatia: um dia ruim demais manda um deles embora.
+var servants: Array[String] = []
+## Cada servo segura a loja em três pontas: um tique a mais de espera na fila,
+## SERVANT_PRICE_SHARE na etiqueta e SERVANT_UPKEEP_RELIEF de conta da casa por
+## virada. Ele não custa salário — custa temperamento, ver `_servant_quits`.
+const SERVANT_PRICE_SHARE := 0.02
+const SERVANT_UPKEEP_RELIEF := 8
+const SERVANT_GUARD_CHANCE := 6
+## Degraus de sedução provada que abrem uma vaga atrás do balcão. Ninguém larga a
+## própria vida para trabalhar de graça numa loja de poções por um sorriso só: a
+## casa só oferece lugar depois de ter virado mania no bairro.
+const SERVANT_LADDER := [4, 10, 18, 30]
 ## Furtos barrados pela ronda nesta vida — o número que a conquista do beco lê.
 var theft_blocked: int = 0
 ## Pedidos de facção já entregues (facção → quantos). É nome, não ouro: fica na
@@ -1456,7 +1470,7 @@ func _arrivals_this_tick() -> int:
 ## perfil, o quanto a chefe já é querida e quantas mãos há no balcão. Charme é
 ## literalmente tempo de espera, e contratar também é.
 func _queue_patience(profile: Dictionary) -> int:
-	return QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size()
+	return QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size() + servants.size()
 
 ## Manda para dentro quem o balcão não consegue atender agora. Cada um chega com o
 ## perfil sorteado na hora, então a fila é gente com retrato e orçamento, não um
@@ -4417,15 +4431,19 @@ func _on_customer_tick() -> void:
 		if is_instance_valid(customer_emotion_label):
 			customer_emotion_label.text = "🏃 pressa" if current_customer_patience <= 1 else "🙂 observando"
 		if bool(profile.get("thief", false)) and current_customer_patience <= 1:
-			var round_block := Staff.block_chance(staff_hired)
+			var round_block := Staff.block_chance(staff_hired) + servants.size() * SERVANT_GUARD_CHANCE
 			if Sanctum.guards(active_buffs):
 				last_event = "%s enfiou a mão na prateleira, mas o Selo da Cadeia estalou e a mão saiu vazia. Ele ainda pagou o que levou." % str(profile.get("name", "O cliente"))
 				_show_feedback("⛓ Furto barrado pelo selo.", Color(0.75, 1.0, 0.72))
 			elif round_block > 0 and randi() % 100 < round_block:
 				theft_blocked += 1
-				last_event = "%s levou a mão à prateleira e a ronda não precisou levar a mão a ele: %s ficou olhando até a peça voltar para o lugar." % [
-					str(profile.get("name", "O cliente")), str(Staff.find("ronda")["name"])]
-				_show_feedback("⛔ A ronda viu primeiro.", Color(0.75, 1.0, 0.72))
+				last_event = "%s levou a mão à prateleira e %s" % [
+					str(profile.get("name", "O cliente")),
+					"a ronda não precisou levar a mão a ele: %s ficou olhando até a peça voltar para o lugar." % str(Staff.find("ronda")["name"])
+					if staff_hired.has("ronda") else
+					"um dos da casa estava olhando: a peça voltou sozinha para a prateleira."
+				]
+				_show_feedback("⛔ A ronda viu primeiro." if staff_hired.has("ronda") else "⛔ Um servo da casa viu primeiro.", Color(0.75, 1.0, 0.72))
 			else:
 				_handle_thief_escape(profile, available)
 				_check_achievements()
@@ -4483,7 +4501,7 @@ func _on_customer_tick() -> void:
 			# Saiu torto da forja e o cliente viu: ninguém esconde a careta.
 			_show_stage_emotion(stage_customer, "nojo")
 		var base_label := _piece_price(item, piece_tier)
-		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor() * _recommendation_price_factor() * (1.08 if _has_spec("trade", "cartel") else 1.0)
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor() * _recommendation_price_factor() * (1.0 + SERVANT_PRICE_SHARE * servants.size()) * (1.08 if _has_spec("trade", "cartel") else 1.0)
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
 			preference_bonus = maxi(2, int(round(base_label * 0.25)))
@@ -4563,6 +4581,7 @@ func _on_customer_tick() -> void:
 				]
 			_offer_romance(regular_id, new_bond)
 			_check_regular_acts(regular_id)
+			_offer_servant(regular_id)
 		if not faction_id.is_empty():
 			var old_standing := int(faction_standing.get(faction_id, 0))
 			var old_faction_tier := Factions.tier_for(old_standing)
@@ -4926,6 +4945,8 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 				line = SELLER_DISAPPOINTED_LINES.pick_random()
 				_show_stage_emotion(stage_seller_body, "tristeza")
 				_set_seller_mood("surprised")
+				# A fúria que subiu agora é a cena que ele viu de graça demais.
+				_servant_quits()
 	if is_instance_valid(customer_emotion_label):
 		var emotion_text := "🙂 satisfeito"
 		if animation == "delighted":
@@ -5328,12 +5349,14 @@ func _refresh_ui() -> void:
 		# A folha é a conta: o painel diz quanto os do balcão somam por virada e onde
 		# esse dinheiro aparece — no custo da casa, não numa linha separada.
 		if staff_hired.is_empty():
-			staff_summary_label.text = "Ninguém no balcão além da chefe e do diabrete. A folha é zero e a conta também."
+			staff_summary_label.text = "Ninguém no balcão além da chefe e do diabrete. A folha é zero e a conta também.%s" % _servants_line()
 		else:
 			var payroll := Staff.total_wage(staff_hired)
-			staff_summary_label.text = "NO BALCÃO: %d de %d • folha %d por virada, dentro do custo da casa (hoje %d). %s%s" % [
+			staff_summary_label.text = "NO BALCÃO: %d de %d • folha %d por virada, dentro do custo da casa (hoje %d). %s%s%s" % [
 				staff_hired.size(), Staff.size(), payroll, _daily_upkeep(), Staff.roster_line(staff_hired),
-				" • %d furtos barrados pela ronda." % theft_blocked if staff_hired.has("ronda") else ""]
+				" • %d furtos barrados pela ronda." % theft_blocked if staff_hired.has("ronda") else "",
+				_servants_line()
+			]
 	for i in range(Staff.DATA.size()):
 		var seat: Dictionary = Staff.DATA[i]
 		var seat_id := str(seat["id"])
@@ -5661,6 +5684,7 @@ func _save_game() -> void:
 	config.set_value("game", "ruined_seasons", ruined_seasons)
 	config.set_value("game", "branches", branches)
 	config.set_value("game", "staff_hired", staff_hired)
+	config.set_value("game", "servants", servants)
 	config.set_value("game", "theft_blocked", theft_blocked)
 	config.set_value("game", "queue_walkouts", queue_walkouts)
 	config.set_value("game", "day_report", day_report)
@@ -5866,6 +5890,15 @@ func _load_game() -> void:
 		for seat_id in saved_staff:
 			if Staff.knows(str(seat_id)) and not staff_hired.has(str(seat_id)):
 				staff_hired.append(str(seat_id))
+	# O afeto atravessa a vida, mas só com nome que ainda existe na lista: um save
+	# de antes da mecânica acorda sem servo nenhum, e um nome raspado de Regulars
+	# não pode continuar trabalhando de graça.
+	var saved_servants = config.get_value("game", "servants", [])
+	servants.clear()
+	if saved_servants is Array:
+		for servant_id in saved_servants:
+			if not Regulars.find(str(servant_id)).is_empty() and not servants.has(str(servant_id)):
+				servants.append(str(servant_id))
 	theft_blocked = maxi(0, int(config.get_value("game", "theft_blocked", theft_blocked)))
 	queue_walkouts = maxi(0, int(config.get_value("game", "queue_walkouts", queue_walkouts)))
 	day_report = str(config.get_value("game", "day_report", day_report))
@@ -6440,6 +6473,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "branch_all", "name": "Império de esquina a beco (todas as filiais abertas)", "condition": branches.size() >= Branches.size(), "gold": 500, "rep": 15, "pose": "danca"},
 		{"id": "staff_full", "name": "Quadro cheio (as quatro vagas do balcão pagando salário juntas)", "condition": staff_hired.size() >= Staff.size(), "gold": 340, "rep": 12, "pose": "vitoria"},
 		{"id": "staff_rounds", "name": "A ronda conhece o beco (três furtos barrados na mesma vida)", "condition": theft_blocked >= 3, "gold": 220, "rep": 8, "pose": "book"},
+		{"id": "servant_first", "name": "Coração atrás do balcão (um freguês apaixonado entrando para a casa)", "condition": not servants.is_empty(), "gold": 140, "rep": 5, "pose": "beijo"},
+		{"id": "servant_three", "name": "A casa tem coração (três servos trabalhando sem salário)", "condition": servants.size() >= 3, "gold": 380, "rep": 12, "pose": "aplausos"},
 		{"id": "queue_lost", "name": "A porta também chora (cinco visitas que desistiram da fila)", "condition": queue_walkouts >= 5, "gold": 180, "rep": 6, "pose": "recusa"},
 		{"id": "house_talent_max", "name": "A casa no cabresto (Administração da Casa no nível máximo)", "condition": house_rank >= 5, "gold": 260, "rep": 9, "pose": "book"},
 		{"id": "faction_arc_first", "name": "Primeira assinatura no caderno (um pedido de facção entregue)", "condition": _faction_asks_delivered() >= 1, "gold": 100, "rep": 3},
@@ -6543,7 +6578,7 @@ func business_score() -> int:
 		+ campaign_step * 60 + private_moments_unlocked * 8 + _romance_steps_paid() * 20 \
 		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0) \
 		+ legendary_crafted * 60 + exclusive_finished * 120 + endings_seen.size() * 30 \
-		+ branches.size() * 90 + staff_hired.size() * 30 \
+		+ branches.size() * 90 + staff_hired.size() * 30 + servants.size() * 55 \
 		+ prestige_runs * 150 + _perk_levels_total() * 20 + prestige_goals_paid * 40
 
 func _publish_score() -> void:
@@ -6641,7 +6676,7 @@ func _branch_care() -> int:
 func _daily_upkeep() -> int:
 	var bill := 12 + library_upgrade_level * 6 + sanctum_upgrade_level * 6 + ad_level * 5 \
 		+ (18 if imp_hired else 0) + Branches.total_upkeep(branches) \
-		+ Staff.total_wage(staff_hired)
+		+ Staff.total_wage(staff_hired) - SERVANT_UPKEEP_RELIEF * servants.size()
 	## Conta de casa bem administrada encolhe 8% por marcha, e a conta é o que
 	## segura o império: por isso a trilha mexe nela e não na receita.
 	return maxi(1, int(round(float(bill) * (1.0 - 0.08 * float(house_rank)) * (0.9 if _has_spec("house", "livro") else 1.0))))
@@ -7564,7 +7599,9 @@ func _reset_run() -> void:
 	branches.clear()
 	_offline_branch_fraction = 0.0
 	# O quadro também é da vida: a folha sai com a loja velha, e a vida nova contrata
-	# quem quiser do zero.
+	# quem quiser do zero. Os servos não: quem largou a própria rotina por afeto à
+	# chefe continua na casa depois da reencarnação — vínculo é da família, não do
+	# CNPJ. Só o reset total, que apaga o save, desfaz o que eles escolheram.
 	staff_hired.clear()
 	theft_blocked = 0
 	# A fila é da loja velha: reencarnar abre a porta vazia, e o corpo que esperava
@@ -7712,6 +7749,62 @@ func _get_achievement_summary() -> String:
 		var marker := "✓" if unlocked_achievements.has(str(achievement["id"])) else "○"
 		lines.append("%s %s" % [marker, str(achievement["name"]).split(" (")[0]])
 	return "\n".join(lines)
+
+## Quantas vagas o balcão tem para quem trabalha de graça: é o número de degraus
+## de sedução provada que a casa já subiu, não um teto inventado.
+func servant_cap() -> int:
+	var cap := 0
+	for rung in SERVANT_LADDER:
+		if seduction_successes >= int(rung):
+			cap += 1
+	return cap
+
+## Um apaixonado pede para ficar tomando conta da loja. O tom da cena muda com o
+## interruptor de conteúdo; a porta não: com o conteúdo sensual desligado ele deve
+## a vaga à fidelidade, e ninguém tem a progressão cortada por causa do filtro.
+func _offer_servant(regular_id: String) -> void:
+	if servants.has(regular_id) or servants.size() >= servant_cap():
+		return
+	var stage := _romance_stage_of(regular_id)
+	if stage < 1:
+		return
+	if randi() % 100 >= 24 + charm_rank * 10 + stage * 12:
+		return
+	servants.append(regular_id)
+	var short := str(Regulars.find(regular_id).get("short", "O freguês"))
+	last_event = "%s largou a própria rotina para tomar conta do balcão: “%s” Ele não quer ouro, quer ficar perto. A casa ganha uma mão sem salário — e a chefe ganha o cuidado de não perder nenhuma das duas." % [
+		short,
+		"Eu já não penso direito quando você sorri, então pensei: trabalho aqui."
+		if adult_content_enabled else
+		"Confio nesta casa mais do que na minha própria banca. Me põe para trabalhar."
+	]
+	_show_feedback("♥ %s entrou para a casa." % short, Color(1.0, 0.78, 0.9))
+	_show_stage_emotion(stage_seller_body, "aprovacao")
+
+## O afeto tem preço em temperamento: um dia em que a loja trata mal o bairro faz
+## quem trabalhava de graça lembrar que trabalhava, e ele volta para a própria
+## vida. A vaga abre de novo para o próximo.
+func _servant_quits() -> void:
+	if servants.is_empty() or fury < 3:
+		return
+	var seat := randi() % servants.size()
+	var gone := str(Regulars.find(servants[seat]).get("short", "Um dos da casa"))
+	servants.remove_at(seat)
+	last_event = "%s passou a manhã limpando o balcão que a chefe quase virou e desistiu: “Eu trabalho aqui, mas ninguém me deve gritar.” A casa perde uma mão e a folha não sente — era de graça mesmo." % gone
+	_show_feedback("💔 %s saiu da casa." % gone, Color(1.0, 0.55, 0.55))
+
+## A linha do painel: quem está no balcão por afeto e o que isso muda na conta.
+func _servants_line() -> String:
+	if servants.is_empty():
+		return ""
+	var names: Array[String] = []
+	for regular_id in servants:
+		names.append(str(Regulars.find(str(regular_id)).get("short", "?")))
+	return " • SERVOS DA CASA (%d de %d, sem salário): %s — +%d tique de fila, +%d%% na etiqueta, -%d de conta por virada." % [
+		servants.size(), servant_cap(), ", ".join(names), servants.size(),
+		int(round(SERVANT_PRICE_SHARE * servants.size() * 100.0)),
+		SERVANT_UPKEEP_RELIEF * servants.size()
+	]
 
 ## Degrau já pago por este freguês; zero quando ele ainda é só um rosto no balcão.
 func _romance_stage_of(regular_id: String) -> int:
