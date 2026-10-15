@@ -22,7 +22,7 @@ Isto é uma ilustração de visão — não uma captura de funcionalidades já j
 
 ## Baixar e jogar a alpha
 
-- **Windows 10/11 (64 bits):** [baixar Succubus Shop v0.1.0-alpha.2](https://github.com/GMGuimaraes/succubus-shop/releases/tag/v0.1.0-alpha.2), extrair o ZIP e executar `Succubus Shop.exe`. O build é portátil e não exige Godot instalado.
+- **Windows 10/11 (64 bits):** [baixar Succubus Shop v0.1.0-alpha.3](https://github.com/GMGuimaraes/succubus-shop/releases/tag/v0.1.0-alpha.3), extrair o ZIP e executar `Succubus Shop.exe`. O build é portátil e não exige Godot instalado.
 - **Steam:** o executável Windows também pode ser adicionado à biblioteca pelo menu **Adicionar um jogo → Adicionar um jogo não Steam**. O pacote tem formato compatível com um depot Windows; a publicação como aplicativo próprio na loja Steam ainda depende do AppID, configuração de depots e credenciais do parceiro Steam.
 - Para jogar pelo projeto-fonte, instale Godot 4.7.2, abra `project.godot` e execute a cena principal com **F6/F5**.
 

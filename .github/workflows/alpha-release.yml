@@ -37,8 +37,6 @@ jobs:
       - name: Export Windows build
         shell: pwsh
         run: |
-          & $env:GODOT --headless --editor --path . --import
-          if (-not (Test-Path ".godot\imported")) { throw "Godot did not create its imported resources." }
           New-Item -ItemType Directory -Force ".export\windows" | Out-Null
           & $env:GODOT --headless --path . --export-release "Windows Desktop" ".export\windows\Succubus Shop.exe"
           $executable = Get-Item ".export\windows\Succubus Shop.exe" -ErrorAction SilentlyContinue
