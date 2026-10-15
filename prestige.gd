@@ -46,6 +46,11 @@ static func level_cost(perk: Dictionary, current_level: int) -> int:
 static func goal_for(index: int) -> Dictionary:
 	return {"score": 5000 + index * 2500, "aura": 3 + index}
 
+## Temporada do placar: cada vida da loja é uma temporada. Reencarnar não apaga a
+## anterior — o recorde dela fica arquivado e a corrida recomeça do zero.
+static func season(runs: int) -> int:
+	return runs + 1
+
 static func perk(id: String) -> Dictionary:
 	for candidate in PERKS:
 		if str(candidate["id"]) == id:

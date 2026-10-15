@@ -12,6 +12,7 @@ const Cards = preload("res://cards.gd")
 const Campaign = preload("res://campaign.gd")
 const Origin = preload("res://origin.gd")
 const Prestige = preload("res://prestige.gd")
+const Endings = preload("res://endings.gd")
 const SteamBridge = preload("res://steam_bridge.gd")
 
 ## Caixa e despensa com que a loja abre a primeira vida — e cada vida seguinte.
@@ -52,6 +53,14 @@ var prestige_runs: int = 0
 var prestige_aura: int = 0
 var prestige_perks: Dictionary = {}
 var prestige_goals_paid: int = 0
+## Finais já vistos (id de endings.gd) e o recorde de pontuação de cada temporada.
+## Temporada é a vida da loja: reencarnar abre a seguinte e arquiva a anterior.
+var endings_seen: Array[String] = []
+var season_records: Dictionary = {}
+## A reputação de facção é permanente e manda no preço; o final, não. Aqui fica o
+## ponteiro de cada facção no instante em que a vida começou — o que a temporada
+## conquistou acima desse ponteiro é o que decide o capítulo sete dela.
+var season_baseline: Dictionary = {}
 ## O que abrir quando a lembrança fechar: é como o capítulo final emenda o painel
 ## do império na cena do andar de cima sem empilhar os dois quadros.
 var _origin_next: Callable = Callable()
@@ -301,6 +310,7 @@ var commission_label: Label
 var commission_button: Button
 var forge_box: VBoxContainer
 var forge_mastery_label: Label
+var endings_label: Label
 var reception_box: VBoxContainer
 var library_box: VBoxContainer
 var sanctum_box: VBoxContainer
@@ -2100,6 +2110,14 @@ func _build_ui() -> void:
 	score_button.pressed.connect(_publish_score)
 	library_box.add_child(score_button)
 
+	library_box.add_child(_make_section_title("ARQUIVO DE FINAIS", Color(1.0, 0.74, 0.86)))
+	library_box.add_child(_make_section_hint("O capítulo sete fecha com a cara de quem mais usou o balcão nesta vida. Reencarnar zera a corrida e a próxima vida pode fechar de outro jeito."))
+	endings_label = Label.new()
+	endings_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	endings_label.add_theme_font_size_override("font_size", 13)
+	endings_label.add_theme_color_override("font_color", Color(0.95, 0.82, 0.9))
+	library_box.add_child(endings_label)
+
 	library_box.add_child(_make_section_title("ARQUIVO DE CARDS", Color(1.0, 0.86, 0.45)))
 	library_box.add_child(_make_section_hint("Toda arte que a loja já viu. Conquista entrega pacote brinde; o resto se compra no balcão."))
 	var gallery := GridContainer.new()
@@ -3273,6 +3291,7 @@ func _on_customer_tick() -> void:
 		romance_pending = ""
 		# Fechou o dia, fechou o balanço: o placar recebe o resultado da virada.
 		best_score = maxi(best_score, business_score())
+		_bank_season()
 		if steam != null:
 			steam.call("submit_score", business_score(), "Sua loja")
 		# O dia vira uma vez e o recorde nasce nesse instante: sem gravar aqui,
@@ -4103,13 +4122,18 @@ func _refresh_ui() -> void:
 		regulars_label.text = "\n".join(regular_lines)
 	if is_instance_valid(faction_label):
 		var faction_lines: Array[String] = ["REPUTAÇÃO POR FACÇÃO"]
+		var life_standing := _life_standing()
 		for faction in Factions.DATA:
 			var faction_id := str(faction["id"])
 			var standing := int(faction_standing.get(faction_id, 0))
 			var tier := Factions.tier_for(standing)
 			var bonus_pct := int(round(Factions.price_bonus(tier) * 100.0))
 			var bonus_text := "  +%d%%" % bonus_pct if bonus_pct > 0 else ""
-			faction_lines.append("%s — %s (%d)%s" % [faction["short"], Factions.TIER_NAMES[tier], standing, bonus_text])
+			# O número da vida é o que corre para o capítulo sete; a fama total é o
+			# que fica e manda na etiqueta.
+			faction_lines.append("%s — %s (%d) • nesta vida %d%s" % [
+				faction["short"], Factions.TIER_NAMES[tier], standing, int(life_standing[faction_id]), bonus_text,
+			])
 		faction_label.text = "\n".join(faction_lines)
 	if is_instance_valid(progression_label):
 		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Pontos de talento: %d  •  Dia %d" % [player_level, player_xp, _xp_required(), skill_points, shop_day]
@@ -4282,7 +4306,11 @@ func _refresh_ui() -> void:
 			slot.text = "%s\n%s • x%d" % [str(card["name"]), str(Cards.rarity_of(card)["name"]), copies] if copies > 0 else "?\n%s" % str(Cards.rarity_of(card)["name"])
 			slot.add_theme_color_override("font_color", Cards.color_of(card) if copies > 0 else Color(0.42, 0.4, 0.48))
 	if is_instance_valid(board_label):
-		board_label.text = "Sua pontuação: %d • recorde %d\n%s" % [business_score(), best_score, _board_text()]
+		board_label.text = "Sua pontuação: %d • recorde %d\n%s\n%s" % [
+			business_score(), best_score, _season_text(), _board_text(),
+		]
+	if is_instance_valid(endings_label):
+		endings_label.text = _endings_text()
 	if is_instance_valid(score_button):
 		var rank := 1 if steam == null else int(steam.call("rank_of", business_score()))
 		score_button.text = "Publicar resultado • você está em %dº" % rank
@@ -4417,6 +4445,9 @@ func _save_game() -> void:
 	config.set_value("game", "prestige_aura", prestige_aura)
 	config.set_value("game", "prestige_perks", prestige_perks)
 	config.set_value("game", "prestige_goals_paid", prestige_goals_paid)
+	config.set_value("game", "endings_seen", endings_seen)
+	config.set_value("game", "season_records", season_records)
+	config.set_value("game", "season_baseline", season_baseline)
 	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
@@ -4540,16 +4571,30 @@ func _load_game() -> void:
 			var known: Dictionary = Origin.find(str(scene_id))
 			if not known.is_empty() and not origin_seen.has(str(known["id"])):
 				origin_seen.append(str(known["id"]))
-		prestige_runs = int(config.get_value("game", "prestige_runs", prestige_runs))
-		prestige_aura = int(config.get_value("game", "prestige_aura", prestige_aura))
-		var saved_perks = config.get_value("game", "prestige_perks", {})
-		prestige_perks.clear()
-		if saved_perks is Dictionary:
-			for perk_id in saved_perks.keys():
-				var perk := Prestige.perk(str(perk_id))
-				if int(perk.get("max", 0)) > 0:
-					prestige_perks[str(perk_id)] = clampi(int(saved_perks[perk_id]), 0, int(perk["max"]))
-		prestige_goals_paid = int(config.get_value("game", "prestige_goals_paid", prestige_goals_paid))
+	var saved_endings = config.get_value("game", "endings_seen", [])
+	if saved_endings is Array:
+		for ending_id in saved_endings:
+			var known_ending: Dictionary = Endings.find(str(ending_id))
+			if not known_ending.is_empty() and not endings_seen.has(str(known_ending["id"])):
+				endings_seen.append(str(known_ending["id"]))
+	var saved_seasons = config.get_value("game", "season_records", {})
+	if saved_seasons is Dictionary:
+		for season in saved_seasons.keys():
+			season_records[str(season)] = maxi(0, int(saved_seasons[season]))
+	var saved_baseline = config.get_value("game", "season_baseline", {})
+	if saved_baseline is Dictionary:
+		for faction_id in saved_baseline.keys():
+			season_baseline[str(faction_id)] = maxi(0, int(saved_baseline[faction_id]))
+	prestige_runs = int(config.get_value("game", "prestige_runs", prestige_runs))
+	prestige_aura = int(config.get_value("game", "prestige_aura", prestige_aura))
+	var saved_perks = config.get_value("game", "prestige_perks", {})
+	prestige_perks.clear()
+	if saved_perks is Dictionary:
+		for perk_id in saved_perks.keys():
+			var perk := Prestige.perk(str(perk_id))
+			if int(perk.get("max", 0)) > 0:
+				prestige_perks[str(perk_id)] = clampi(int(saved_perks[perk_id]), 0, int(perk["max"]))
+	prestige_goals_paid = int(config.get_value("game", "prestige_goals_paid", prestige_goals_paid))
 	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
 	demonic_form_active = adult_content_enabled and fury >= 4
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
@@ -5035,6 +5080,10 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "prestige_round5", "name": "Casa de muitas portas (cinco reencarnações)", "condition": prestige_runs >= 5, "gold": 220, "rep": 10, "pose": "vitoria"},
 		{"id": "prestige_perks", "name": "Aura bem gasta (cinco níveis de dote)", "condition": _perk_levels_total() >= 5, "gold": 120, "rep": 5, "pose": "book"},
 		{"id": "prestige_goal", "name": "Meta batida (primeira meta de vida)", "condition": prestige_goals_paid >= 1, "gold": 80, "rep": 4},
+		{"id": "ending_first", "name": "Primeiro final (o balcão fechou um capítulo sete)", "condition": endings_seen.size() >= 1, "gold": 120, "rep": 6},
+		{"id": "ending_faction", "name": "Final com dono (uma facção fechou a loja)", "condition": _has_faction_ending(), "gold": 180, "rep": 8, "pose": "relic"},
+		{"id": "endings_three", "name": "Três despedidas (três finais diferentes)", "condition": endings_seen.size() >= 3, "gold": 300, "rep": 12},
+		{"id": "endings_all", "name": "Todos os finais deste balcão", "condition": endings_seen.size() >= Endings.size(), "gold": 600, "rep": 20, "pose": "vitoria"},
 		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"}
 	]
 
@@ -5116,12 +5165,13 @@ func business_score() -> int:
 		+ player_level * 25 + premium_crafted * 15 + expeditions_done * 20 + rituals_performed * 10 \
 		+ campaign_step * 60 + private_moments_unlocked * 8 + _romance_steps_paid() * 20 \
 		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0) \
-		+ legendary_crafted * 60 + exclusive_finished * 120 \
+		+ legendary_crafted * 60 + exclusive_finished * 120 + endings_seen.size() * 30 \
 		+ prestige_runs * 150 + _perk_levels_total() * 20 + prestige_goals_paid * 40
 
 func _publish_score() -> void:
 	var score := business_score()
 	best_score = maxi(best_score, score)
+	_bank_season()
 	if steam != null:
 		steam.call("submit_score", score, "Sua loja")
 		steam.call("request_leaderboard")
@@ -5129,6 +5179,69 @@ func _publish_score() -> void:
 	audio.play("coin")
 	_refresh_ui()
 	_save_game()
+
+## Temporada é a vida da loja. Cada virada de balanço arquiva o melhor resultado
+## dela; reencarnar não apaga a temporada anterior, só abre a próxima.
+func _bank_season() -> void:
+	var season := str(Prestige.season(prestige_runs))
+	season_records[season] = maxi(int(season_records.get(season, 0)), business_score())
+
+func _season_best(season: int) -> int:
+	return int(season_records.get(str(season), 0))
+
+## O resumo da corrida em curso e das que já fecharam, para o placar da biblioteca.
+func _season_text() -> String:
+	var current := Prestige.season(prestige_runs)
+	var lines: Array[String] = ["Temporada %d aberta • recorde da temporada: %d" % [current, _season_best(current)]]
+	lines.append("· o capítulo sete desta vida fecha com: %s" % str(Endings.for_standing(_life_standing())["title"]))
+	for run in range(prestige_runs):
+		lines.append("· temporada %d fechou com %d" % [run + 1, _season_best(run + 1)])
+	if prestige_runs == 0:
+		lines.append("· reencarnar o balcão fecha esta temporada e abre a próxima")
+	return "\n".join(lines)
+
+## O que a temporada atual pesou em cada facção, descontado o ponteiro que a vida
+## herdou da anterior. É essa conta, e não a fama total, que decide o final.
+func _life_standing() -> Dictionary:
+	var life: Dictionary = {}
+	for faction in Factions.DATA:
+		var faction_id := str(faction["id"])
+		life[faction_id] = maxi(0, int(faction_standing.get(faction_id, 0)) - int(season_baseline.get(faction_id, 0)))
+	return life
+
+## A mesma conta, escrita para o jogador ver por que o capítulo fechou daquele jeito.
+func _life_standing_text() -> String:
+	var life := _life_standing()
+	var parts: Array[String] = []
+	for faction in Factions.DATA:
+		parts.append("%s %d" % [str(faction["short"]), int(life[str(faction["id"])])])
+	return " • ".join(parts)
+
+## O final do império é da facção que mais usou o balcão nesta vida. Registrar o
+## final é o que faz ele entrar no arquivo e valer conquista — uma vez por id.
+func _claim_ending() -> Dictionary:
+	var ending := Endings.for_standing(_life_standing())
+	var ending_id := str(ending["id"])
+	if not endings_seen.has(ending_id):
+		endings_seen.append(ending_id)
+		_check_achievements()
+	return ending
+
+## Arquivo dos finais já conquistados, na ordem da tabela.
+func _endings_text() -> String:
+	var lines: Array[String] = []
+	for ending in Endings.ENDINGS:
+		var id := str(ending["id"])
+		lines.append("· %s — %s" % [str(ending["title"]), "visto" if endings_seen.has(id) else "ainda não"])
+	return "\n".join(lines)
+
+## Algum capítulo sete já fechou com o selo de uma facção, em vez de fechar com o
+## selo da própria casa?
+func _has_faction_ending() -> bool:
+	for id in endings_seen:
+		if str(id) != Endings.HOUSE:
+			return true
+	return false
 
 func _on_leaderboard_ready(_rows: Array) -> void:
 	_refresh_ui()
@@ -5205,6 +5318,7 @@ func _claim_chapter() -> void:
 	_refresh_ui()
 
 func _show_ending() -> void:
+	var ending := _claim_ending()
 	if is_instance_valid(ending_layer):
 		ending_layer.visible = true
 		return
@@ -5238,23 +5352,39 @@ func _show_ending() -> void:
 	panel.add_child(box)
 
 	var title := Label.new()
-	title.text = "IMPÉRIO DO BALCÃO"
+	title.text = str(ending["title"]).to_upper()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 30)
 	title.add_theme_color_override("font_color", Color(1.0, 0.83, 0.45))
 	box.add_child(title)
 
+	var who_label := Label.new()
+	who_label.text = "Final de %s" % str(Factions.find(str(ending["faction"])).get("name", "casa inteira")) \
+		if str(ending["faction"]) != "" else "Final da própria casa"
+	who_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	who_label.add_theme_font_size_override("font_size", 15)
+	who_label.add_theme_color_override("font_color", Color(1.0, 0.74, 0.86))
+	box.add_child(who_label)
+
 	var body_text := Label.new()
-	body_text.text = "Todos os capítulos fechados. A loja de esquina virou rede, o submundo inteiro pede pelo nome, e a " \
-		+ "chefe finalmente usa um vestido que custou mais que o estoque inteiro.\n\n" \
+	body_text.text = Endings.text(ending) + "\n\n" \
 		+ "Dia %d • %d de ouro em caixa • reputação %d • nível %d\n" % [shop_day, gold, reputation, player_level] \
 		+ "%d clientes atendidos • %d peças fabricadas • %d expedições\n" % [customers_served, total_crafted, expeditions_done] \
 		+ "%d de %d cards no álbum • pontuação %d\n\n" % [Cards.owned_count(card_counts), Cards.size(), business_score()] \
-		+ "O balcão continua aberto: dá para fechar o álbum, subir no placar e esticar o império até onde a sorte deixar."
+		+ "Nesta vida, quem mais usou o balcão: %s\n\n" % _life_standing_text() \
+		+ "O balcão continua aberto: dá para fechar o álbum, subir no placar e esticar o império até onde a sorte deixar." \
+		+ "\n\nHá %d finais diferentes neste balcão, e a loja já viu %d deles." % [Endings.size(), endings_seen.size()]
 	body_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body_text.add_theme_font_size_override("font_size", 16)
 	body_text.add_theme_color_override("font_color", Color(0.92, 0.88, 0.96))
-	box.add_child(body_text)
+	# A prosa do final é longa e o quadro não pode empurrar o botão para fora da
+	# tela: o corpo rola dentro do próprio painel.
+	var body_scroll := ScrollContainer.new()
+	body_scroll.custom_minimum_size = Vector2(560, 250)
+	body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(body_scroll)
+	body_scroll.add_child(body_text)
 
 	var farewell_title := Label.new()
 	farewell_title.text = "A DESPEDIDA DO BALCÃO"
@@ -5265,7 +5395,7 @@ func _show_ending() -> void:
 	# A lista cresce com o elenco atendido e o painel não pode estourar a tela: o
 	# rolamento fica dentro do próprio quadro do final.
 	var farewell_scroll := ScrollContainer.new()
-	farewell_scroll.custom_minimum_size = Vector2(560, 190)
+	farewell_scroll.custom_minimum_size = Vector2(560, 140)
 	farewell_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	box.add_child(farewell_scroll)
 	var farewell_text := Label.new()
@@ -5560,11 +5690,13 @@ func _reincarnate() -> void:
 		return
 	var score := business_score()
 	var gain := Prestige.aura_for(score)
+	var temporada := Prestige.season(prestige_runs)
+	_bank_season()
 	prestige_runs += 1
 	prestige_aura += gain
 	_reset_run()
-	last_event = "REENCARNAÇÃO %d: a loja fechou uma vida de %d pontos e abriu a seguinte com %d de ouro no caixa. +%d de aura no cofre." % [
-		prestige_runs, score, _prestige_start_gold(), gain
+	last_event = "REENCARNAÇÃO %d: a loja fechou uma vida de %d pontos e abriu a seguinte com %d de ouro no caixa. +%d de aura no cofre. A temporada %d ficou no placar com %d." % [
+		prestige_runs, score, _prestige_start_gold(), gain, temporada, _season_best(temporada)
 	]
 	audio.play("levelup")
 	_show_feedback("✦ Nova vida.", Color(0.85, 0.7, 1.0))
@@ -5647,7 +5779,11 @@ func _reset_run() -> void:
 	current_customer_budget = 0
 	current_customer_patience = 0
 	if is_instance_valid(ending_layer):
-		ending_layer.visible = false
+		ending_layer.queue_free()
+		ending_layer = null
+	# A fama das facções atravessa a vida, mas o placar dela recomeça do zero: o
+	# ponteiro de agora é o chão contra o qual o próximo capítulo sete é medido.
+	season_baseline = faction_standing.duplicate(true)
 
 func _board_text() -> String:
 	if steam == null:
