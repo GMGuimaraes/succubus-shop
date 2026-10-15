@@ -8,6 +8,8 @@ const Quality = preload("res://quality.gd")
 const Economy = preload("res://economy.gd")
 const Sanctum = preload("res://sanctum.gd")
 const Expedition = preload("res://expedition.gd")
+const Adventurers = preload("res://adventurers.gd")
+const Invasions = preload("res://invasions.gd")
 const Cards = preload("res://cards.gd")
 const Campaign = preload("res://campaign.gd")
 const Origin = preload("res://origin.gd")
@@ -97,6 +99,19 @@ var branches: Array[String] = []
 ## o salário e devolve a entrega, porque a folha é conta da casa e a casa recomeça
 ## no nome dela.
 var staff_hired: Array[String] = []
+## Quem está no cadastro da estrada. Diferente do balcão, o batedor não tem salário
+## de virada: ele cobra taxa uma vez e cachê por viagem, e sobe de nível pela estrada
+## que pisou (`adventurer_xp`), não pelo ouro que a loja tem.
+var adventurers_hired: Array[String] = []
+var adventurer_xp: Dictionary = {}
+## Mochila armada quer dizer "a melhor peça do gosto dele sai do estoque e vai na
+## viagem". É escolha, não automatismo: o balcão perde a etiqueta que venderia e a
+## estrada ganha a sorte que o painel promete.
+var pack_gear: bool = true
+var gear_packed: int = 0
+## Nome escrito à mão em cada roteiro. Vazio quer dizer "manda o mais capaz"; a
+## loja pode teimar num iniciante, e a estrada cobra o preço da teimosia.
+var route_pick: Dictionary = {}
 ## Fregueses que caíram de amores pela casa e pediram para trabalhar nela. Não
 ## recebem salário — o pagamento é o próprio balcão —, e é por isso que a chefe tem
 ## de sustentar a simpatia: um dia ruim demais manda um deles embora.
@@ -164,6 +179,35 @@ const VANDAL_NAMES: Array[String] = [
 	"Rufino Meia-Noite", "Boca-Salgada Vera", "Caco Tiracolo",
 	"Nino do Beco Sem Nome", "Zeca Pé-de-Ferro", "Amparo Mão-Leve",
 ]
+## O que a casa responde quando o vigário bate na porta com a lista de cobrança na
+## mão: "" é silêncio, "pago" é o dízimo em dia, "subornado" é o endereço apagado da
+## listagem por um tempo, "recusado" é a porta na cara dele — sobe a reputação hoje e
+## a visita da rua no mês seguinte. `tithe_until` é o último dia em que a resposta
+## ainda vale, porque escudo que não vence não é decisão.
+var tithe_stance: String = ""
+var tithe_until: int = 0
+var tithe_demands: int = 0
+var tithe_paid_total: int = 0
+var vicar_refusals: int = 0
+## Quantas vezes a casa pagou para apagar o próprio endereço da lista. É história da
+## família com a paróquia, não da vida: reencarnar não lava o suborno.
+var vicar_bribes: int = 0
+## Quantas portas a casa segurou e quantas arrombaram. Carimbo de porta segurada é a
+## régua da campanha de defesa (`Invasions.PRIVILEGES`) e o número que a rua lê para
+## mandar visita mais forte — segurar demais também custa.
+var invasions_repelled: int = 0
+var invasions_lost: int = 0
+## Os privilégios que a campanha já pagou. Diferente da folha e da filial, eles são
+## da família: reencarnar não arranca a dobradiça nova nem o sino do caixilho.
+var defense_privileges: Array[String] = []
+## A última visita escrita por extenso, para o painel não precisar de prosa solta.
+var last_invasion: String = ""
+## Até que dia de loja o alarme da última porta (segurada ou arrombada) ainda pesa na
+## trilha: a mesma faixa, afinada pelo que a rua acabou de fazer com a maçaneta.
+var music_alarm_until: int = 0
+## O dia em que a cobrança do vigário foi escrita no mural. Sem essa trava, a mesma
+## visita bateria na porta duas manhãs seguidas enquanto espera a resposta.
+var vicar_announced_day: int = 0
 ## Faixas de progresso que mudam a cara do salão. A régua é o mesmo placar que o
 ## painel já mostra (`business_score`), então a loja não ganha meta nova: ela ganha
 ## consequência visível do que já é.
@@ -492,6 +536,11 @@ var ritual_labels: Array = []
 var ritual_buttons: Array = []
 var expedition_labels: Array = []
 var expedition_buttons: Array = []
+var expedition_pick_buttons: Array = []
+var adventurer_labels: Array = []
+var adventurer_buttons: Array = []
+var adventurer_summary_label: Label
+var pack_gear_button: Button
 var expedition_active_label: Label
 var expedition_log_label: Label
 var catalyst_button: Button
@@ -514,6 +563,13 @@ var deliver_button: Button
 var banish_button: Button
 var staff_labels: Array = []
 var staff_buttons: Array = []
+var defense_label: Label
+var defense_lines_label: Label
+var invasion_label: Label
+var vicar_label: Label
+var tithe_button: Button
+var bribe_button: Button
+var refuse_button: Button
 var arc_summary_label: Label
 var arc_labels: Array = []
 var arc_desc_labels: Array = []
@@ -887,6 +943,9 @@ var theft_recovery_available: bool = false
 var seduction_peak_triggered: bool = false
 var ambient_particles: CPUParticles2D
 var music_player: AudioStreamPlayer
+## O volume da trilha antes do ajuste mestre, em dB. A faixa é uma só, mas a situação
+## afina esse número (`_music_situation`) e a config geral continua por cima dele.
+var music_base_db: float = -13.0
 const GameAudio = preload("res://audio.gd")
 var audio: Node
 var mute_button: Button
@@ -947,12 +1006,36 @@ const SUCCUBUS_NEGOTIATION_LINES := [
 "A chefe pisca: “Não é magia. É só você querendo muito me impressionar.”",
 "Ela desliza o item pelo balcão: “Leve. O preço é pequeno perto da história que você vai contar.”"
 ]
+const MEME_CUSTOMER_NAMES := ["Mago do Quero Mana", "Fiscal do Pix Astral", "Só Mais Uma Run", "Ladino do Ctrl+C", "Cliente do É Sobre Isso"]
 const MEME_FLIRT_LINES := [
 "A chefe responde ao Mago do Quero Mana: “Mana eu tenho. Quero ver se você aguenta o preço.”",
 "Ela encara o Fiscal do Pix Astral: “Aproxima o cristal, querido. Se der erro, você paga com um elogio.”",
 "A succubus provoca o corredor: “Só mais uma run? Então fica mais uma negociação comigo.”",
 "Ela sorri para o cliente do bordão: “É sobre isso. E sobre você voltar amanhã.”",
 "A chefe aponta para o ladrão: “Ctrl+C não copia meu charme. Esse é proprietário.”"
+]
+## O mesmo balcão dito em outra voz: com o filtro de cenas desligado a negociação
+## continua sendo confiança e ficha no caderno, nunca menos negócio. O interruptor
+## troca o texto, jamais a chance, o efeito ou a porta que ele abre.
+const TRUST_NEGOTIATION_LINES := [
+"A chefe anota o nome no caderno: “Leva agora e paga na volta. Confiança também é moeda aqui.”",
+"Ela apoia o cotovelo no balcão: “Para um freguês tão constante, eu sempre arrumo um jeito.”",
+"A chefe assente devagar: “Não é magia. É você voltar toda manhã desde aquele primeiro dia.”",
+"Ela desliza o item pelo balcão: “Leve. O preço é pequeno perto da propaganda que você vai fazer.”"
+]
+const MEME_TRUST_LINES := [
+"A chefe responde ao Mago do Quero Mana: “Mana eu tenho. Quero ver se você sustenta a etiqueta.”",
+"Ela encara o Fiscal do Pix Astral: “Aproxima o cristal. Se der erro, você resolve com a própria banca.”",
+"A chefe conta as runas do corredor: “Só mais uma run? Então fica mais uma compra consignada.”",
+"Ela anota o bordão do cliente: “É sobre isso. E sobre você voltar amanhã com o bolso cheio.”",
+"A chefe aponta para o ladrão: “Ctrl+C não copia ficha de fidelidade. Essa é proprietária.”"
+]
+## Os momentos só da loja na versão sem cena: a chefe baixa a voz do mesmo jeito,
+## só que o que ela entrega é a confiança da casa, não o flerte.
+const TRUST_MOMENTS := [
+"A chefe inclina a cabeça, puxa a cadeira para perto e abaixa a voz: “Isso aqui não sai da loja, combinado?”",
+"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais da casa quando nossa parceria ficar ainda mais lucrativa.”",
+"A chefe bate o punho no balcão e ri baixo: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”"
 ]
 ## A escada de confiança de um freguês: cada degrau cobra visitas de balcão e
 ## ouro na hora, e paga de volta para sempre na conta dele. O degrau três é o
@@ -1590,6 +1673,59 @@ func _stage_customer_leaves() -> void:
 		_retire_walker(_stage_walkers[0]["node"] as Control)
 	_release_to_floor(body, depth, center_x, served)
 
+## O tempo que a rua faz hoje, e o preço de cada um deles: movimento na porta,
+## paciência na fila e a etiqueta do produto que a cidade acordou querendo. A rolagem
+## acontece uma vez por virada e consome sorteio sempre, então a mesma semente desenha
+## a mesma sequência de dias — clima é consequência do calendário da loja, não enfeite
+## de painel.
+const WEATHER := {
+	"limpo": {"name": "dia limpo", "crowd": 0, "patience": 0,
+		"line": "A rua acordou limpa: movimento normal de calçada."},
+	"chuva": {"name": "chuva fina", "crowd": -1, "patience": 1,
+		"line": "Chove fino: menos gente passando, quem entra fica debaixo do toldo sem pressa."},
+	"nevoa": {"name": "névoa preguiçosa", "crowd": -1, "patience": 1,
+		"line": "Névoa na vitrine: quase ninguém vê a placa, quem vê entra devagar."},
+	"tempestade": {"name": "tempestade", "crowd": -2, "patience": -1,
+		"line": "Tempestade na rua: a porta abre pouco e quem entra quer resolver logo."},
+	"calor": {"name": "calor de fundo de inferno", "crowd": 1, "patience": -1,
+		"line": "Calor pesado: a fila cresce e a paciência encolhe junto com o nervo."},
+	"feirao": {"name": "feira na praça", "crowd": 2, "patience": 0,
+		"line": "Feira na praça: a calçada está cheia de bolso solto."},
+}
+const WEATHER_ORDER: Array[String] = ["limpo", "chuva", "nevoa", "tempestade", "calor", "feirao"]
+## O produto do dia sai mais caro porque é atrás dele que a cidade acordou.
+const WEATHER_STAR_PRICE := 1.25
+var weather: String = "limpo"
+var weather_star: String = ""
+var weather_seen: Dictionary = {}
+
+func _weather() -> Dictionary:
+	return WEATHER.get(weather, WEATHER["limpo"])
+
+## Sorteia o tempo da manhã e o produto que a rua quer. Os dois dados giram sempre, e o
+## segundo aponta para a lista inteira, com ou sem prateleira: se o calendário
+## dependesse do estoque de hoje, a mesma semente deixaria de render a mesma loja — e
+## querer o que não tem é justamente o empurrão para fabricar.
+func _roll_weather() -> void:
+	weather = WEATHER_ORDER[randi() % WEATHER_ORDER.size()]
+	weather_seen[weather] = true
+	weather_star = str(products[randi() % products.size()]["id"])
+
+## A linha que a manhã lê no mural: o tempo de hoje e a etiqueta que ele empurrou.
+func _weather_line() -> String:
+	var star := _product_name(weather_star)
+	if star.is_empty():
+		return "Tempo: %s." % str(_weather()["name"])
+	return "Tempo: %s • a rua atrás de %s (+%d%% na etiqueta)." % [
+		str(_weather()["name"]), star, int(round((WEATHER_STAR_PRICE - 1.0) * 100.0))]
+
+## Nome de um produto pelo id, vazio quando o id não é da casa.
+func _product_name(product_id: String) -> String:
+	for item in products:
+		if str(item["id"]) == product_id:
+			return str(item["name"])
+	return ""
+
 ## Quantos batem na porta neste tique: um sempre, mais um por degrau de fama, mais
 ## um para cada duas filiais abertas. É o que faz a loja começar quase vazia e
 ## terminar com gente esperando na rua — e é também o que faz a fama custar caro
@@ -1603,13 +1739,15 @@ func _arrivals_this_tick() -> int:
 	if reputation >= 55:
 		crowd += 1
 	crowd += int(float(branches.size()) / 2.0)
+	crowd += int(_weather()["crowd"])
 	return clampi(crowd, 1, QUEUE_LIMIT)
 
 ## Quanto um cliente topa esperar: o limite da casa mais a paciência do próprio
-## perfil, o quanto a chefe já é querida e quantas mãos há no balcão. Charme é
+## perfil, o quanto a chefe já é querida, quantas mãos há no balcão e o tempo lá fora
+## — debaixo de chuva ninguém olha no relógio, no calor todo mundo olha. Charme é
 ## literalmente tempo de espera, e contratar também é.
 func _queue_patience(profile: Dictionary) -> int:
-	return maxi(1, QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size() + servants.size() - _mess_patience_loss())
+	return maxi(1, QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size() + servants.size() - _mess_patience_loss() + int(_weather()["patience"]))
 
 ## Manda para dentro quem o balcão não consegue atender agora. Cada um chega com o
 ## perfil sorteado na hora, então a fila é gente com retrato e orçamento, não um
@@ -2984,6 +3122,48 @@ func _build_ui() -> void:
 		staff_row.add_child(staff_button)
 		staff_buttons.append(staff_button)
 
+	reception_box.add_child(_make_section_title("A PORTA DA CASA", Color(0.62, 0.86, 1.0)))
+	reception_box.add_child(_make_section_hint("Loja que dá lucro tem alvo na porta. Cada visita é resolvida com a mão que a casa já tem: a ronda da folha, os servos do salão, os batedores do cadastro, o santuário reformado e a Administração. O vigário passa na frente para cobrar — dízimo, suborno ou porta na cara dele, e as três respostas têm preço."))
+	defense_label = Label.new()
+	defense_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	defense_label.add_theme_font_size_override("font_size", 14)
+	defense_label.add_theme_color_override("font_color", Color(0.82, 0.92, 1.0))
+	reception_box.add_child(defense_label)
+	var vicar_row := HBoxContainer.new()
+	vicar_row.add_theme_constant_override("separation", 12)
+	reception_box.add_child(vicar_row)
+	vicar_label = Label.new()
+	vicar_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vicar_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vicar_label.add_theme_font_size_override("font_size", 13)
+	vicar_label.add_theme_color_override("font_color", Color(0.90, 0.84, 0.70))
+	vicar_row.add_child(vicar_label)
+	tithe_button = Button.new()
+	tithe_button.custom_minimum_size = Vector2(148, 40)
+	tithe_button.add_theme_font_size_override("font_size", 13)
+	tithe_button.pressed.connect(_answer_vicar.bind("dizimo"))
+	vicar_row.add_child(tithe_button)
+	bribe_button = Button.new()
+	bribe_button.custom_minimum_size = Vector2(148, 40)
+	bribe_button.add_theme_font_size_override("font_size", 13)
+	bribe_button.pressed.connect(_answer_vicar.bind("suborno"))
+	vicar_row.add_child(bribe_button)
+	refuse_button = Button.new()
+	refuse_button.custom_minimum_size = Vector2(148, 40)
+	refuse_button.add_theme_font_size_override("font_size", 13)
+	refuse_button.pressed.connect(_answer_vicar.bind("recusa"))
+	vicar_row.add_child(refuse_button)
+	invasion_label = Label.new()
+	invasion_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	invasion_label.add_theme_font_size_override("font_size", 12)
+	invasion_label.add_theme_color_override("font_color", Color(0.78, 0.80, 0.90))
+	reception_box.add_child(invasion_label)
+	defense_lines_label = Label.new()
+	defense_lines_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	defense_lines_label.add_theme_font_size_override("font_size", 12)
+	defense_lines_label.add_theme_color_override("font_color", Color(0.70, 0.78, 0.88))
+	reception_box.add_child(defense_lines_label)
+
 	reception_box.add_child(_make_section_title("PEDIDOS DAS FACÇÕES", Color(1.0, 0.86, 0.45)))
 	reception_box.add_child(_make_section_hint("Cada facção tem três pedidos escritos, e eles só abrem na medida em que a loja vira gente conhecida. Fechar os três deixa um privilégio permanente — nome não apaga com reencarnação."))
 	arc_summary_label = Label.new()
@@ -3171,7 +3351,7 @@ func _build_ui() -> void:
 		ritual_buttons.append(ritual_button)
 
 	expedition_box.add_child(_make_section_title("ROTEIROS", Color(1.0, 0.72, 0.42)))
-	expedition_box.add_child(_make_section_hint("O mercado não vende raridade. Cada viagem custa ouro, leva dias de loja e só volta com o que a sorte deixar."))
+	expedition_box.add_child(_make_section_hint("O mercado não vende raridade. Cada viagem custa ouro, leva dias de loja e só volta com o que a sorte deixar — e a sorte agora tem nome: o batedor mais capaz do cadastro desce do balcão com a passagem."))
 
 	for destination in Expedition.DATA:
 		var destination_id := str(destination["id"])
@@ -3206,6 +3386,58 @@ func _build_ui() -> void:
 		trip_button.pressed.connect(_start_expedition.bind(destination_id))
 		trip_row.add_child(trip_button)
 		expedition_buttons.append(trip_button)
+		var pick_button := Button.new()
+		pick_button.custom_minimum_size = Vector2(150, 44)
+		pick_button.add_theme_font_size_override("font_size", 12)
+		pick_button.pressed.connect(_cycle_route_pick.bind(destination_id))
+		trip_row.add_child(pick_button)
+		expedition_pick_buttons.append(pick_button)
+
+	expedition_box.add_child(_make_section_title("CADASTRO DE BATEDORES", Color(0.55, 0.95, 0.7)))
+	expedition_box.add_child(_make_section_hint("Gente com nome na estrada: taxa uma vez, cachê por viagem e nível que só a rota percorrida dá. O mais capaz do cadastro é quem parte, a menos que a loja escolha outro — e o que ele leva na mochila sai do estoque que o balcão venderia."))
+	adventurer_summary_label = Label.new()
+	adventurer_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	adventurer_summary_label.add_theme_font_size_override("font_size", 14)
+	adventurer_summary_label.add_theme_color_override("font_color", Color(0.86, 0.94, 0.88))
+	expedition_box.add_child(adventurer_summary_label)
+	for candidate in Adventurers.DATA:
+		var adv_card := _make_sector_card(Color(0.045, 0.07, 0.06, 0.94), Color(0.42, 0.72, 0.52, 0.95))
+		expedition_box.add_child(adv_card)
+		var adv_row := HBoxContainer.new()
+		adv_row.add_theme_constant_override("separation", 12)
+		adv_card.add_child(adv_row)
+		var adv_info := VBoxContainer.new()
+		adv_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		adv_row.add_child(adv_info)
+		var adv_label := Label.new()
+		adv_label.add_theme_font_size_override("font_size", 15)
+		adv_label.add_theme_color_override("font_color", Color(0.92, 0.98, 0.92))
+		adv_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		adv_info.add_child(adv_label)
+		adventurer_labels.append(adv_label)
+		var adv_bg := Label.new()
+		adv_bg.text = str(candidate["bg"])
+		adv_bg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		adv_bg.add_theme_font_size_override("font_size", 12)
+		adv_bg.add_theme_color_override("font_color", Color(0.70, 0.76, 0.72))
+		adv_info.add_child(adv_bg)
+		var adv_does := Label.new()
+		adv_does.text = str(candidate["does"])
+		adv_does.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		adv_does.add_theme_font_size_override("font_size", 12)
+		adv_does.add_theme_color_override("font_color", Color(0.86, 0.82, 0.62))
+		adv_info.add_child(adv_does)
+		var adv_button := Button.new()
+		adv_button.custom_minimum_size = Vector2(170, 40)
+		adv_button.add_theme_font_size_override("font_size", 14)
+		adv_button.pressed.connect(_manage_adventurer.bind(str(candidate["id"])))
+		adv_row.add_child(adv_button)
+		adventurer_buttons.append(adv_button)
+	pack_gear_button = Button.new()
+	pack_gear_button.custom_minimum_size = Vector2(260, 42)
+	pack_gear_button.add_theme_font_size_override("font_size", 14)
+	pack_gear_button.pressed.connect(_toggle_pack_gear)
+	expedition_box.add_child(pack_gear_button)
 
 	expedition_box.add_child(_make_section_title("CATALISADORES RAROS", Color(0.86, 0.6, 1.0)))
 	expedition_box.add_child(_make_section_hint("Raridade de expedição na forja queima uma peça e empurra a qualidade da peça seguinte."))
@@ -3762,6 +3994,9 @@ func _set_sector(sector: String) -> void:
 		sector_hint_label.text = "Compre ingredientes e venda itens no balcão. Os clientes chegam sozinhos para negociar." if is_reception else "Aqui apenas se fabrica: o ferreiro transforma ingredientes e ouro em mercadorias." if is_forge else "Aperfeiçoe talentos e adiante receitas presas ao nível." if is_library else "Nem tudo tem fornecedor. Mande o batedor buscar e torça pelo caminho de volta." if is_expedition else "Relíquias carregadas de magia aguardam uma negociação cuidadosa."
 	if is_instance_valid(market_toggle_button):
 		market_toggle_button.text = "☰ Ocultar" if is_instance_valid(market_panel) and market_panel.visible else "☰ Abrir"
+	# A trilha segue a sala e a rua: a mesma gravação, afinada pelo setor, pela visita
+	# que acabou de bater na porta e pela conta que a casa deve.
+	_apply_situation_music()
 	if is_instance_valid(right_title_label):
 		var sector_word := "SANTUÁRIO"
 		if is_reception:
@@ -3818,31 +4053,38 @@ func _play_sensual_reception_moment() -> void:
 	sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.42)
 
 func _play_seduction_peak_pose() -> void:
-	if not adult_content_enabled or not is_instance_valid(seller_portrait):
-		return
-	_show_stage_emotion(stage_seller_body, "beijo")
-	if sensual_tween != null and sensual_tween.is_valid():
-		sensual_tween.kill()
-	seller_portrait.pivot_offset = seller_portrait.size / 2.0
-	sensual_tween = create_tween()
-	sensual_tween.tween_property(seller_portrait, "position", Vector2(0, -12), 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	sensual_tween.tween_property(seller_portrait, "rotation", -0.045, 0.22).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.12, 1.12), 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	sensual_tween.tween_property(seller_portrait, "modulate", Color(1.0, 0.70, 0.90, 1.0), 0.25)
-	sensual_tween.tween_interval(1.1)
-	sensual_tween.tween_property(seller_portrait, "rotation", 0.045, 0.18)
-	sensual_tween.tween_property(seller_portrait, "position", Vector2(0, 4), 0.24)
-	sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.04, 1.04), 0.22)
-	sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.28)
-	sensual_tween.tween_property(seller_portrait, "rotation", 0.0, 0.12)
-	sensual_tween.tween_property(seller_portrait, "position", Vector2.ZERO, 0.18)
-	sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.24)
-	last_event = "MEDIDOR DE SEDUÇÃO CHEIO! A chefe sobe no balcão por um instante: “Agora você entende por que ninguém sai daqui pensando direito.”"
+	if adult_content_enabled and is_instance_valid(seller_portrait):
+		_show_stage_emotion(stage_seller_body, "beijo")
+		if sensual_tween != null and sensual_tween.is_valid():
+			sensual_tween.kill()
+		seller_portrait.pivot_offset = seller_portrait.size / 2.0
+		sensual_tween = create_tween()
+		sensual_tween.tween_property(seller_portrait, "position", Vector2(0, -12), 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		sensual_tween.tween_property(seller_portrait, "rotation", -0.045, 0.22).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.12, 1.12), 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		sensual_tween.tween_property(seller_portrait, "modulate", Color(1.0, 0.70, 0.90, 1.0), 0.25)
+		sensual_tween.tween_interval(1.1)
+		sensual_tween.tween_property(seller_portrait, "rotation", 0.045, 0.18)
+		sensual_tween.tween_property(seller_portrait, "position", Vector2(0, 4), 0.24)
+		sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.04, 1.04), 0.22)
+		sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.28)
+		sensual_tween.tween_property(seller_portrait, "rotation", 0.0, 0.12)
+		sensual_tween.tween_property(seller_portrait, "position", Vector2.ZERO, 0.18)
+		sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.24)
+	# O medidor cheio paga igual nos dois modos: o interruptor segura a pose desenhada
+	# na tela, nunca o degrau, o XP ou o momento que entra no placar da casa.
+	if adult_content_enabled:
+		last_event = "MEDIDOR DE SEDUÇÃO CHEIO! A chefe sobe no balcão por um instante: “Agora você entende por que ninguém sai daqui pensando direito.”"
+	else:
+		last_event = "MEDIDOR DE CONFIANÇA CHEIO! A chefe abre o caderno da casa na sua frente: “Agora você entende por que ninguém fecha a conta daqui sem voltar.”"
 	private_moments_unlocked += 1
 	reputation += 3
 	_add_xp(15)
 	audio.play("talent")
-	_show_feedback("♥ Pose especial desbloqueada!", Color(1.0, 0.62, 0.88))
+	if adult_content_enabled:
+		_show_feedback("♥ Pose especial desbloqueada!", Color(1.0, 0.62, 0.88))
+	else:
+		_show_feedback("♥ Confiança da casa conquistada!", Color(1.0, 0.62, 0.88))
 
 func _setup_background_music() -> void:
 	var music_path := "res://assets/shop_theme_loop.mp3"
@@ -3854,16 +4096,17 @@ func _setup_background_music() -> void:
 		return
 	music_stream.loop = true
 	music_player.stream = music_stream
-	music_player.volume_db = -13.0
+	music_player.volume_db = music_base_db
 	add_child(music_player)
 	music_player.play()
+	_apply_situation_music()
 
 func _apply_music_settings() -> void:
 	if is_instance_valid(mute_button):
 		mute_button.text = "🔇" if audio.muted else "🔊"
 	if is_instance_valid(music_player):
 		music_player.stream_paused = audio.muted
-		music_player.volume_db = -13.0 + linear_to_db(maxf(audio.volume, 0.0001))
+		music_player.volume_db = music_base_db + linear_to_db(maxf(audio.volume, 0.0001))
 
 func _show_feedback(message: String, color: Color = Color(1.0, 0.78, 0.9)) -> void:
 	if not is_instance_valid(toast_label):
@@ -4015,6 +4258,183 @@ func _expedition_duration(destination: Dictionary) -> float:
 func _expedition_luck() -> int:
 	return alchemy_rank + logistics_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck() + _card_luck() + _road_pact_luck()
 
+## Sorte da viagem: a da casa, mais a mão de quem partiu. O número da bota é o que
+## estava congelado na hora em que a porta bateu — a loja pode crescer enquanto o
+## batedor anda, e a mala responde pelo nível que saiu, não pelo que a casa virou.
+func _trip_luck(trip: Dictionary) -> int:
+	return _expedition_luck() + int(trip.get("skill", 0))
+
+func _adventurer_xp(id: String) -> int:
+	return int(adventurer_xp.get(id, 0))
+
+## O cadastro entra na régua da casa: vaga ocupada vale menos que estrada pisada,
+## porque nível é tempo de viagem, não ouro gasto na entrada.
+func _adventurer_score() -> int:
+	var learned := 0
+	for id in adventurer_xp.keys():
+		learned += int(adventurer_xp.get(id, 0))
+	return adventurers_hired.size() * 40 + learned * 6
+
+## O degrau mais alto que a casa já teve no cadastro. Só quem está com contrato
+## aberto conta: dispensado volta à rua, e a conquista é da casa, não da pessoa.
+func _adventurer_top_level() -> int:
+	var top := 0
+	for hired in adventurers_hired:
+		top = maxi(top, Adventurers.level_of(_adventurer_xp(str(hired))))
+	return top
+
+func _adventurer_on_road(id: String) -> bool:
+	for trip in expeditions:
+		if str(trip.get("who", "")) == id:
+			return true
+	return false
+
+## Quem está no cadastro e com as botas livres.
+func _free_adventurers() -> Array[String]:
+	var free: Array[String] = []
+	for hired in adventurers_hired:
+		var id := str(hired)
+		if _adventurer_on_road(id) or Adventurers.find(id).is_empty():
+			continue
+		free.append(id)
+	return free
+
+## A peça que a mochila leva: a melhor do gosto dele que ainda está na prateleira.
+## Sem mochila armada, sem peça, sem bônus — a escolha é do balcão.
+func _packable_gear(candidate: Dictionary) -> Dictionary:
+	var gear_id := str(candidate.get("gear", ""))
+	if gear_id.is_empty() or not pack_gear:
+		return {}
+	for i in range(products.size()):
+		if str(products[i]["id"]) != gear_id:
+			continue
+		var counts := _quality_for(gear_id)
+		for tier in range(Quality.size() - 1, -1, -1):
+			if int(counts[tier]) > 0:
+				return {"index": i, "tier": tier, "id": gear_id, "name": str(products[i]["name"])}
+	return {}
+
+## O nome que parte: o roteiro pode ter teimosia escrita à mão, e sem teimosia vai
+## o mais capaz. Ninguém no cadastro é o batedor anônimo de sempre — sem bônus, sem
+## memória, sem cachê.
+func _pick_adventurer(route_id: String) -> Dictionary:
+	var free := _free_adventurers()
+	if free.is_empty():
+		return {}
+	var chosen := ""
+	var named := str(route_pick.get(route_id, ""))
+	if named != "" and free.has(named):
+		chosen = named
+	else:
+		var best := -1
+		for id in free:
+			var seat := Adventurers.find(id)
+			var skill := Adventurers.skill_of(seat, _adventurer_xp(id), route_id, -1)
+			if skill > best:
+				best = skill
+				chosen = id
+	if chosen.is_empty():
+		return {}
+	var candidate := Adventurers.find(chosen)
+	var gear := _packable_gear(candidate)
+	return {
+		"id": chosen,
+		"name": str(candidate["name"]),
+		"level": Adventurers.level_of(_adventurer_xp(chosen)),
+		"fee": Adventurers.fee_for(candidate),
+		"gear": int(gear.get("tier", -1)),
+		"gear_index": int(gear.get("index", -1)),
+		"gear_name": str(gear.get("name", "")),
+		"skill": Adventurers.skill_of(candidate, _adventurer_xp(chosen), route_id, int(gear.get("tier", -1))),
+	}
+
+## Nome da peça que a pessoa exige levar, para o cadastro e para o diário.
+func _gear_label(candidate: Dictionary) -> String:
+	var gear_id := str(candidate.get("gear", ""))
+	if gear_id.is_empty():
+		return "mochila vazia"
+	for item in products:
+		if str(item["id"]) == gear_id:
+			return str(item["name"])
+	return gear_id
+
+func _adventurer_gate_state() -> Dictionary:
+	return {
+		"day": shop_day,
+		"trips": expeditions_done,
+		"rep": reputation,
+		"rank": logistics_rank,
+	}
+
+## O mesmo botão serve para entrar e sair do cadastro. A estrada lembra do que
+## ensinou: quem volta mais tarde não recomeça no zero, porque o nível é memória de
+## viagem, não vaga paga.
+func _manage_adventurer(id: String) -> void:
+	var candidate := Adventurers.find(id)
+	if candidate.is_empty():
+		return
+	if adventurers_hired.has(id):
+		if _adventurer_on_road(id):
+			last_event = "%s está na estrada. Dispensa se faz na volta da mala." % str(candidate["name"])
+			audio.play("sad")
+			_refresh_ui()
+			return
+		adventurers_hired.erase(id)
+		last_event = "%s voltou para a rua. O que a estrada lhe ensinou fica no caderno." % str(candidate["name"])
+		audio.play("click")
+		_show_feedback("✕ %s fora do cadastro." % str(candidate["name"]), Color(0.80, 0.86, 0.78))
+		_check_achievements()
+		_save_game()
+		_refresh_ui()
+		return
+	var blocked := Adventurers.gate(candidate, _adventurer_gate_state())
+	if blocked != "":
+		last_event = "%s não assina hoje: %s." % [str(candidate["name"]), blocked]
+		audio.play("sad")
+		_refresh_ui()
+		return
+	var fee := int(candidate["hire"])
+	if gold < fee:
+		last_event = "%s pede %d de ouro na entrada. Faltam %d, e estrada não se paga com promessa." % [
+			str(candidate["name"]), fee, fee - gold]
+		audio.play("sad")
+		_refresh_ui()
+		return
+	gold -= fee
+	adventurers_hired.append(id)
+	last_event = "%s entrou no cadastro: %d de taxa, %d de cachê por viagem, e %s na mochila quando a prateleira tiver." % [
+		str(candidate["name"]), fee, int(candidate["fee"]), _gear_label(candidate)]
+	audio.play("levelup")
+	_show_feedback("✦ %s no cadastro." % str(candidate["name"]), Color(0.55, 0.95, 0.7))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Teimosia do roteiro: quem a loja quer ver subir de nível. Ciclo livre do cadastro,
+## e o último passo volta para "manda o mais capaz".
+func _cycle_route_pick(route_id: String) -> void:
+	var candidates: Array[String] = [""]
+	for hired in adventurers_hired:
+		var id := str(hired)
+		if not Adventurers.find(id).is_empty():
+			candidates.append(id)
+	var now := str(route_pick.get(route_id, ""))
+	var step := candidates.find(now)
+	route_pick[route_id] = candidates[(step + 1) % candidates.size()]
+	var label := "o mais capaz" if str(route_pick[route_id]) == "" else str(Adventurers.find(str(route_pick[route_id]))["name"])
+	last_event = "Roteiro anotado: %s manda %s." % [str(Expedition.find(route_id)["name"]), label]
+	audio.play("click")
+	_save_game()
+	_refresh_ui()
+
+func _toggle_pack_gear() -> void:
+	pack_gear = not pack_gear
+	last_event = "Mochila %s: a melhor peça do gosto deles sai da prateleira e vai na viagem." % (
+		"armada" if pack_gear else "guardada")
+	audio.play("click")
+	_save_game()
+	_refresh_ui()
+
 ## Sorte que o álbum paga: a coleção da chefa entra na forja, na estrada e no
 ## próprio pacote — e cresce com cada carta evoluída.
 func _card_luck() -> int:
@@ -4062,14 +4482,28 @@ func _expedition_trip_summary(trip: Dictionary, elapsed: float) -> String:
 	var total := maxf(1.0, float(trip.get("total", 1.0)))
 	var remaining := maxf(0.0, float(trip.get("remaining", 0.0)) - elapsed)
 	var progress := clampf(1.0 - remaining / total, 0.0, 1.0)
-	var safe_return := 100 - Expedition.mishap_chance(destination, _expedition_luck())
-	return "%s [%s] %d%% • %s • retorno sem contratempo: %d%%" % [
+	var safe_return := 100 - Expedition.mishap_chance(destination, _trip_luck(trip))
+	return "%s [%s] %d%% • %s • %s • retorno sem contratempo: %d%%" % [
 		str(destination.get("name", "?")),
 		_bar(progress),
 		int(round(progress * 100.0)),
+		_party_label(trip),
 		Expedition.journey_event(destination, progress),
 		safe_return,
 	]
+
+## Quem partiu, no nível em que partiu, com a mochila que levou. É a frase que o
+## painel lê a cada segundo de relógio, então o número ali é sempre o congelado na
+## saída — o que a casa virou depois não muda a aposta de quem já na estrada.
+func _party_label(trip: Dictionary) -> String:
+	var who := str(trip.get("who", ""))
+	if who.is_empty():
+		return "batedor anônimo (+0)"
+	var seat := Adventurers.find(who)
+	if seat.is_empty():
+		return "batedor sem nome (+%d)" % int(trip.get("skill", 0))
+	var pack := " e %s" % str(trip.get("gear_name", "")) if int(trip.get("gear", -1)) >= 0 else ""
+	return "%s Nv.%d (+%d)%s" % [str(seat["name"]), int(trip.get("level", 1)), int(trip.get("skill", 0)), pack]
 
 func _start_expedition(id: String) -> void:
 	var destination := Expedition.find(id)
@@ -4084,14 +4518,36 @@ func _start_expedition(id: String) -> void:
 		_refresh_ui()
 		return
 	var cost := Expedition.cost_for(destination, logistics_rank)
-	if gold < cost:
-		last_event = "A passagem custa %d ouro. Sem adiantamento o batedor nem calça a bota." % cost
+	var runner := _pick_adventurer(id)
+	var fee := int(runner.get("fee", 0))
+	if gold < cost + fee:
+		last_event = "A passagem custa %d ouro%s. Sem adiantamento o batedor nem calça a bota." % [
+			cost, " e %s pede %d de cachê" % [str(runner["name"]), fee] if not runner.is_empty() else ""]
 		_refresh_ui()
 		return
-	gold -= cost
+	gold -= cost + fee
 	var duration := _expedition_duration(destination)
-	expeditions.append({"id": id, "remaining": duration, "total": duration})
-	last_event = "%s partiu com %d ouro de passagem e volta em %s." % [destination["name"], cost, Expedition.days_label(duration)]
+	var trip := {
+		"id": id,
+		"remaining": duration,
+		"total": duration,
+		"who": str(runner.get("id", "")),
+		"level": int(runner.get("level", 1)),
+		"skill": int(runner.get("skill", 0)),
+		"gear": int(runner.get("gear", -1)),
+		"gear_name": str(runner.get("gear_name", "")),
+	}
+	if int(trip["gear"]) >= 0:
+		_take_piece(int(runner["gear_index"]), Quality.BEST)
+		gear_packed += 1
+	expeditions.append(trip)
+	if runner.is_empty():
+		last_event = "%s partiu com %d ouro de passagem e volta em %s." % [destination["name"], cost, Expedition.days_label(duration)]
+	else:
+		last_event = "%s (Nv.%d, sorte +%d) partiu por %s: %d de passagem e %d de cachê%s. Volta em %s." % [
+			str(runner["name"]), int(runner["level"]), int(runner["skill"]), str(destination["name"]),
+			cost, fee, ", mochila com %s" % str(runner["gear_name"]) if int(trip["gear"]) >= 0 else "",
+			Expedition.days_label(duration)]
 	audio.play("click")
 	_show_feedback("🧭 Expedição iniciada.", Color(0.55, 0.95, 0.7))
 	_save_game()
@@ -4113,8 +4569,9 @@ func _finish_expedition(entry: Dictionary, offline: bool = false) -> void:
 	var destination := Expedition.find(str(entry.get("id", "")))
 	if destination.is_empty():
 		return
-	var luck := _expedition_luck()
+	var luck := _trip_luck(entry)
 	var loot := Expedition.roll_loot(destination, luck)
+	var pieces := loot.size()
 	var mishap := Expedition.roll_mishap(destination, luck)
 	if str(mishap.get("kind", "")) == "perda":
 		loot.clear()
@@ -4141,6 +4598,28 @@ func _finish_expedition(entry: Dictionary, offline: bool = false) -> void:
 		text += " " + str(mishap["text"])
 		if not offline:
 			_show_stage_emotion(stage_seller_body, "dor")
+	## A mochila é despesa de viagem, não empréstimo: a peça foi embora com quem a
+	## levou, e uma mala perdida leva junto o que o balcão venderia.
+	if int(entry.get("gear", -1)) >= 0:
+		text += " %s ficou na estrada com quem a levou." % str(entry.get("gear_name", "a peça"))
+	## O único degrau que a loja não compra: XP de rota. Estrada difícil ensina mais,
+	## e voltar inteiro ensina o que o contratempo não deixa aprender.
+	var who := str(entry.get("who", ""))
+	if not who.is_empty() and Adventurers.knows(who):
+		var seat := Adventurers.find(who)
+		var gained := Adventurers.mission_xp(destination, mishap.is_empty(), pieces)
+		var before := Adventurers.level_of(_adventurer_xp(who))
+		var xp := _adventurer_xp(who) + gained
+		adventurer_xp[who] = xp
+		var after := Adventurers.level_of(xp)
+		if after > before:
+			text += " %s subiu ao Nv.%d e passou a cobrar %d por viagem." % [
+				str(seat["name"]), after, Adventurers.fee_for(seat, xp)]
+			if not offline:
+				audio.play("levelup")
+				_show_feedback("⚔ %s Nv.%d." % [str(seat["name"]), after], Color(0.55, 0.95, 0.7))
+		else:
+			text += " %s voltou com %d XP de rota." % [str(seat["name"]), gained]
 	expedition_log.push_front(text)
 	while expedition_log.size() > 4:
 		expedition_log.pop_back()
@@ -4281,10 +4760,12 @@ func _shelf_price(index: int) -> int:
 	var item: Dictionary = products[index]
 	return maxi(1, int(round(_piece_price(item, _peek_tier(index, Quality.WORST)) * _market_product_factor(item) * _retail_price_factor())))
 
-## O mercado reativo sobre a etiqueta: demanda do produto e escassez na prateleira.
+## O mercado reativo sobre a etiqueta: demanda do produto, escassez na prateleira e o
+## produto que a rua acordou querendo hoje.
 func _market_product_factor(item: Dictionary) -> float:
 	var product_id := str(item["id"])
-	return Economy.factor(economy_state, "product", product_id) * Economy.stock_factor(int(item["stock"]))
+	return Economy.factor(economy_state, "product", product_id) * Economy.stock_factor(int(item["stock"])) * (
+		WEATHER_STAR_PRICE if product_id == weather_star else 1.0)
 
 func _buy_customer_mission_loot(profile: Dictionary) -> Dictionary:
 	if not auto_buy_mission_loot:
@@ -4665,13 +5146,14 @@ func _on_customer_tick() -> void:
 	_advance_craft_jobs(3.0)
 	Sanctum.advance(active_buffs, 3.0)
 	_advance_expeditions(3.0)
-	_set_seller_mood("demonic" if demonic_form_active else "neutral")
+	_set_seller_mood(_fury_mood())
 	if is_instance_valid(reaction_label):
 		reaction_label.text = ""
 	if ticks % 20 == 0:
 		shop_day += 1
 		_show_stage_emotion(stage_seller_body, "sono")
 		Economy.advance_day(economy_state)
+		_roll_weather()
 		daily_quest_index = (daily_quest_index + 1) % DAILY_QUESTS.size()
 		daily_quest_progress = 0
 		daily_quest_claimed = false
@@ -4709,15 +5191,33 @@ func _on_customer_tick() -> void:
 		if randi() % 100 < _vandal_chance():
 			_trigger_vandal()
 			vandal_line = "\n" + last_event
+		# Vândalo é o beco testando a vitrine; visita em bando é a rua batendo no caixa
+		# inteiro, com lista na mão. Uma desgraça por manhã, para o balanço ter leitura:
+		# se o barro já chamou vândalo nesta virada, a porta grande fica para amanhã.
+		var invasion_line := ""
+		if vandal_line == "":
+			if randi() % 100 < _invasion_chance():
+				invasion_line = "\n" + _roll_invasion()
+		# O vigário cobra na virada, não no meio do balcão: resposta de dízimo é decisão
+		# de chefe com painel aberto, não sorteio de fila. A mensagem aparece uma vez por
+		# dia de loja e o botão fica esperando até ela ser dada.
+		var vicar_line := ""
+		if _vicar_waiting() and vicar_announced_day != shop_day:
+			vicar_announced_day = shop_day
+			vicar_line = "\n✝ %s bate na porta com a lista da paróquia: %d de dízimo, ou %d para apagar este endereço da lista por um tempo. A resposta fica no painel até ele sair." % [
+				Invasions.vicar_name(), _vicar_demand(), _vicar_bribe()]
 		# A fila que desistiu também fecha o dia: é o número que o balanço da manhã
 		# precisa mostrar para a fama ter preço visível.
 		var lost_line := ""
 		if day_walkouts > 0:
 			lost_line = " %d saíram da fila sem comprar." % day_walkouts
-		day_report = bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s\n%s%s%s" % [
-			shop_day, Economy.report(economy_state, products, Ingredients.DATA), bill_line,
-			("\n" + branch_line) if branch_line != "" else "", vandal_line]
+		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s" % [
+			shop_day, Economy.report(economy_state, products, Ingredients.DATA), _weather_line(), bill_line,
+			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line]
+		# A manhã também afina a faixa: alarme novo, vigário na porta ou ruína velha
+		# mudam o tom da mesma gravação antes de a chefe abrir o balcão.
+		_apply_situation_music()
 		# A encomenda do patrono vence e chega no mesmo instante da virada, e o
 		# resultado é gravado junto: quem fecha o jogo nessa manhã não acorda com o
 		# prazo de um dia que já passou.
@@ -4835,7 +5335,7 @@ func _on_customer_tick() -> void:
 			if _shelf_price(affordable_index) <= current_customer_budget:
 				affordable.append(affordable_index)
 		if affordable.is_empty():
-			var charm_negotiation := adult_content_enabled and charm_rank > 0 and randi() % 100 < 25 + charm_rank * 12 + sanctum_upgrade_level * 5
+			var charm_negotiation := charm_rank > 0 and randi() % 100 < 25 + charm_rank * 12 + sanctum_upgrade_level * 5
 			if charm_negotiation and available.size() > 0:
 				seduction_used = true
 				seduction_attempts += 1
@@ -4843,7 +5343,8 @@ func _on_customer_tick() -> void:
 				current_customer_budget += 20 + charm_rank * 10
 				_add_affection(2 + charm_rank)
 				reputation += 1 + _reputation_seduction_bonus()
-				last_event = "%s suspira: “Meu orçamento é curto...” %s O cliente reconsidera." % [profile["name"], SUCCUBUS_NEGOTIATION_LINES.pick_random()]
+				var plea := "suspira: “Meu orçamento é curto...”" if adult_content_enabled else "bate no bolso: “Meu orçamento é curto...”"
+				last_event = "%s %s %s O cliente reconsidera." % [profile["name"], plea, _negotiation_line(str(profile["name"]))]
 				for affordable_index in available:
 					if _shelf_price(affordable_index) <= current_customer_budget:
 						affordable.append(affordable_index)
@@ -4866,7 +5367,7 @@ func _on_customer_tick() -> void:
 			chosen_index = preferred_index
 			# Ele viu o que queria do outro lado do salão e aponta antes de pedir.
 			_show_stage_emotion(stage_customer, "aponta")
-			if not seduction_used and adult_content_enabled and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 + sanctum_upgrade_level * 3 and (preferred_index == chosen_index or current_customer_patience <= 1):
+			if not seduction_used and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 + sanctum_upgrade_level * 3 and (preferred_index == chosen_index or current_customer_patience <= 1):
 				seduction_used = true
 				seduction_attempts += 1
 				seduction_successes += 1
@@ -5001,7 +5502,7 @@ func _on_customer_tick() -> void:
 		last_event = "A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”"
 		_play_sensual_reception_moment()
 	elif affection > 0 and affection % 5 == 0:
-		last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor, querido.”"
+		last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor, querido.”" if adult_content_enabled else "A chefe assina o caderno: “Olha só, estamos nos entendendo melhor.”"
 
 	_check_achievements()
 	_save_game()
@@ -5091,8 +5592,14 @@ func _trigger_random_event() -> void:
 		_show_stage_emotion(stage_seller_body, "pensativo")
 	audio.play("rare")
 	_show_feedback("Evento raro!", Color(1.0, 0.86, 0.45))
-	if adult_content_enabled and affection >= 5 and randi() % 2 == 0:
-		last_event += "\nA súcubo ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui, querido.”"
+	# A moeda do complemento gira nos dois modos: se ela só girasse com o filtro
+	# ligado, a sorte da loja passaria a depender do interruptor e a mesma semente
+	# deixaria de render a mesma partida.
+	if affection >= 5 and randi() % 2 == 0:
+		if adult_content_enabled:
+			last_event += "\nA súcubo ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui, querido.”"
+		else:
+			last_event += "\nA chefe ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui.”"
 
 func _animate_customer_arrival(profile: Dictionary) -> void:
 	# Evita iniciar uma animação de chegada duplicada / sobreposta, que causava
@@ -5276,6 +5783,15 @@ const CHAPTER_SELLER_LINES := {
 	],
 }
 
+## A fala da negociação de charme depende só do filtro de cenas: o meme continua meme
+## nas duas versões e o que muda é a voz da chefe, nunca o que a fala paga em ouro,
+## reputação ou vaga de servo.
+func _negotiation_line(customer_name := "") -> String:
+	var meme := customer_name in MEME_CUSTOMER_NAMES
+	if adult_content_enabled:
+		return str(MEME_FLIRT_LINES.pick_random() if meme else SUCCUBUS_NEGOTIATION_LINES.pick_random())
+	return str(MEME_TRUST_LINES.pick_random() if meme else TRUST_NEGOTIATION_LINES.pick_random())
+
 func _set_negotiation_dialogue(profile: Dictionary, item: Dictionary, seduction_used: bool, favorite_item: bool) -> void:
 	if not is_instance_valid(seller_speech_label):
 		return
@@ -5288,8 +5804,7 @@ func _set_negotiation_dialogue(profile: Dictionary, item: Dictionary, seduction_
 	if current_customer_patience <= 1:
 		customer_line = "“Rápido, por favor. Tenho um dragão me esperando.”"
 	if seduction_used:
-		var flirt_line: String = str(MEME_FLIRT_LINES.pick_random() if customer_name in ["Mago do Quero Mana", "Fiscal do Pix Astral", "Só Mais Uma Run", "Ladino do Ctrl+C", "Cliente do É Sobre Isso"] else SUCCUBUS_NEGOTIATION_LINES.pick_random())
-		seller_speech_label.text = "CHEFE: %s\n%s: %s" % [flirt_line, customer_name, customer_line]
+		seller_speech_label.text = "CHEFE: %s\n%s: %s" % [_negotiation_line(customer_name), customer_name, customer_line]
 	else:
 		var offer := "“%s por %d ouro. Quer levar?”" % [str(item.get("name", "isto")), int(item.get("price", 0))]
 		var chapter_seller: Array = CHAPTER_SELLER_LINES.get(chapter_key, [])
@@ -5364,7 +5879,7 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 	if animation != "disappointed" and not theft_recovery_available:
 		fury = maxi(0, fury - 1)
 		_update_demonic_form()
-	if adult_content_enabled and affection >= 100 and not seduction_peak_triggered:
+	if affection >= 100 and not seduction_peak_triggered:
 		seduction_peak_triggered = true
 		_play_seduction_peak_pose()
 
@@ -5399,6 +5914,13 @@ func _play_customer_reaction(mood: String) -> void:
 			tween.tween_property(customer_portrait, "modulate:a", 0.35, 0.55)
 		_:
 			tween.tween_property(customer_portrait, "modulate:a", 0.45, 0.9)
+
+## O humor que a fúria manda para o retrato. A forma demoníaca é consequência de fúria
+## e não de conteúdo: o estado, o selo no painel e o preço da etiqueta correm nos dois
+## modos. O que o filtro segura é a arte provocante do retrato, que volta inteira ao
+## ligar o interruptor no meio da fúria.
+func _fury_mood() -> String:
+	return "demonic" if (demonic_form_active and adult_content_enabled) else "neutral"
 
 func _set_seller_mood(mood: String) -> void:
 	if is_instance_valid(seller_portrait) and seller_portrait_paths.has(mood):
@@ -5474,12 +5996,12 @@ func _restore_stage_walk_frame(figure_id: int) -> void:
 	_set_stage_frame(figure, _stage_walk_sequence(frames)[step % frames])
 
 func _update_demonic_form() -> void:
-	if adult_content_enabled and fury >= 4 and not demonic_form_active:
+	if fury >= 4 and not demonic_form_active:
 		demonic_form_active = true
-		_set_seller_mood("demonic")
+		_set_seller_mood(_fury_mood())
 		_show_stage_emotion(stage_seller_body, "briga")
 		_show_stage_emotion(stage_customer, "medo")
-		last_event = "A FÚRIA CHEGOU AO LIMITE! A succubus assume sua forma demoníaca: “Respirem. Eu ainda sei negociar.”"
+		last_event = "A FÚRIA CHEGOU AO LIMITE! A succubus assume sua forma demoníaca: “Respirem. Eu ainda sei negociar.”" if adult_content_enabled else "A FÚRIA CHEGOU AO LIMITE! A chefe assume a forma demoníaca: “Respirem. Eu ainda sei negociar.”"
 		if is_instance_valid(seller_portrait):
 			seller_portrait.modulate = Color(1.0, 0.55, 0.62, 1.0)
 			var demon_tween := create_tween()
@@ -5489,8 +6011,8 @@ func _update_demonic_form() -> void:
 		_show_feedback("Forma demoníaca ativada.", Color(1.0, 0.48, 0.58))
 	elif demonic_form_active and fury <= 1:
 		demonic_form_active = false
-		_set_seller_mood("neutral")
-		last_event = "A succubus respira fundo e retorna à forma habitual. A loja sobreviveu ao drama."
+		_set_seller_mood(_fury_mood())
+		last_event = "A succubus respira fundo e retorna à forma habitual. A loja sobreviveu ao drama." if adult_content_enabled else "A chefe respira fundo e retorna à forma habitual. A loja sobreviveu ao drama."
 
 func _refresh_ui() -> void:
 	if not is_instance_valid(gold_label):
@@ -5676,7 +6198,8 @@ func _refresh_ui() -> void:
 	if is_instance_valid(market_label):
 		var hot := _demand_index()
 		var hot_text := " • Em alta: %s" % str(products[hot]["name"]) if hot >= 0 else ""
-		market_label.text = "Dia %d — %s%s" % [shop_day, Economy.report(economy_state, products, Ingredients.DATA), hot_text]
+		market_label.text = "Dia %d — %s%s\n%s" % [
+			shop_day, Economy.report(economy_state, products, Ingredients.DATA), hot_text, _weather_line()]
 	if is_instance_valid(upkeep_label):
 		# A conta do dia é a única razão para o caixa ter teto: sem ela, loja grande
 		# só cresce e nunca precisa de freguês.
@@ -5781,6 +6304,41 @@ func _refresh_ui() -> void:
 			staff_button.text = "Demitir • corta %d/dia" % int(seat["wage"]) if hired else (
 				"Contratar por %d • %d por virada" % [hire_fee, int(seat["wage"])]
 				if blocked_by == "" else "Sem vaga: %s" % blocked_by)
+	if is_instance_valid(defense_label):
+		var snapshot := _defense_snapshot()
+		var wave := _next_wave()
+		var chance := _invasion_chance()
+		if wave.is_empty():
+			defense_label.text = "MÃO NA PORTA: %d. A rua ainda não tem alvo aqui — loja com vitrine vazia não recebe visita (%d%% de chance por virada). %s" % [
+				Invasions.defense_power(snapshot), chance, Invasions.campaign_line(invasions_repelled)]
+		else:
+			defense_label.text = "MÃO NA PORTA: %d • a rua bate em %d%% das viradas • %s (%s) pede %d, e a casa segura em %d%%. %s" % [
+				Invasions.defense_power(snapshot), chance, str(wave["name"]), str(wave["leader"]),
+				int(wave["power"]), Invasions.repel_chance(snapshot, wave),
+				Invasions.campaign_line(invasions_repelled)]
+	if is_instance_valid(defense_lines_label):
+		defense_lines_label.text = _defense_breakdown_line()
+	if is_instance_valid(vicar_label):
+		vicar_label.text = _vicar_panel_line()
+	if is_instance_valid(invasion_label):
+		invasion_label.text = last_invasion
+	for answer_button in [[tithe_button, "dizimo"], [bribe_button, "suborno"], [refuse_button, "recusa"]]:
+		var vicar_button := answer_button[0] as Button
+		if not is_instance_valid(vicar_button):
+			continue
+		var waiting := _vicar_waiting()
+		match str(answer_button[1]):
+			"dizimo":
+				var tithe := _vicar_demand()
+				vicar_button.text = "✝ Dízimo (%d)" % tithe
+				vicar_button.disabled = not waiting or gold < tithe
+			"suborno":
+				var bribe := _vicar_bribe()
+				vicar_button.text = "🤝 Suborno (%d)" % bribe
+				vicar_button.disabled = not waiting or gold < bribe
+			"recusa":
+				vicar_button.text = "🚪 Recusar (0)"
+				vicar_button.disabled = not waiting
 	if is_instance_valid(arc_summary_label):
 		arc_summary_label.text = "PEDIDOS ENTREGUES: %d de %d • arcos fechados %d de %d.%s" % [
 			_faction_asks_delivered(), FactionArcs.total(), _faction_arcs_closed(), Factions.DATA.size(),
@@ -5889,6 +6447,8 @@ func _refresh_ui() -> void:
 		var trip_cost := Expedition.cost_for(destination, logistics_rank)
 		var open_route := Expedition.is_unlocked(destination, shop_day)
 		var on_the_road := _expedition_on_route(destination_id)
+		var would_go := _pick_adventurer(destination_id)
+		var would_fee := int(would_go.get("fee", 0))
 		if e < expedition_labels.size():
 			if on_the_road:
 				var trip_summary := _expedition_trip_summary(on_the_road, _world_seconds_since_tick())
@@ -5898,11 +6458,83 @@ func _refresh_ui() -> void:
 				expedition_labels[e].text = "🔒 %s" % Expedition.locked_hint(destination)
 				expedition_labels[e].add_theme_color_override("font_color", Color(0.74, 0.82, 0.78))
 			else:
-				expedition_labels[e].text = "%s • risco %d%% • %s" % [Expedition.days_label(_expedition_duration(destination)), int(destination["danger"]), Expedition.preview(destination)]
+				# A linha de espera mostra o risco honesto de quem partiria agora: o
+				# perigo cru da tabela, e o que sobra depois da mão do batedor.
+				var bare_risk := Expedition.mishap_chance(destination, _expedition_luck())
+				var armed_risk := Expedition.mishap_chance(destination, _expedition_luck() + int(would_go.get("skill", 0)))
+				var pack_line := " sem batedor" if would_go.is_empty() else (
+					" com %s" % str(would_go["gear_name"]) if int(would_go["gear"]) >= 0 else " de mochila vazia")
+				expedition_labels[e].text = "%s • risco %d%% • %s: risco %d%%%s • %s" % [
+					Expedition.days_label(_expedition_duration(destination)), bare_risk,
+					"batedor anônimo" if would_go.is_empty() else "%s Nv.%d (+%d)" % [
+						str(would_go["name"]), int(would_go["level"]), int(would_go["skill"])],
+					armed_risk, pack_line, Expedition.preview(destination)]
 				expedition_labels[e].add_theme_color_override("font_color", Color(0.74, 0.82, 0.78))
 		if e < expedition_buttons.size():
-			expedition_buttons[e].text = "Voltando…" if on_the_road != {} else "Mandar (%d)" % trip_cost
-			expedition_buttons[e].disabled = on_the_road != {} or not open_route or gold < trip_cost or expeditions.size() >= _expedition_slots()
+			expedition_buttons[e].text = "Voltando…" if on_the_road != {} else (
+				"Mandar (%d)" % (trip_cost + would_fee) if would_fee > 0 else "Mandar (%d)" % trip_cost)
+			expedition_buttons[e].disabled = on_the_road != {} or not open_route \
+				or gold < trip_cost + would_fee or expeditions.size() >= _expedition_slots()
+		if e < expedition_pick_buttons.size():
+			var pick_button := expedition_pick_buttons[e] as Button
+			var picked_id := str(route_pick.get(destination_id, ""))
+			var picked_seat := Adventurers.find(picked_id)
+			var picked_name := "o mais capaz" if picked_id.is_empty() else str(picked_seat.get("name", "?"))
+			pick_button.text = "Quem: %s ▸" % picked_name
+			pick_button.disabled = adventurers_hired.is_empty()
+	# O cadastro: quem tem bota, o que a estrada já lhe ensinou e o que ele levaria.
+	for b in range(Adventurers.DATA.size()):
+		var batedor: Dictionary = Adventurers.DATA[b]
+		var batedor_id := str(batedor["id"])
+		var no_cadastro := adventurers_hired.has(batedor_id)
+		var na_estrada := _adventurer_on_road(batedor_id)
+		var porta := Adventurers.gate(batedor, _adventurer_gate_state())
+		var xp_guardada := _adventurer_xp(batedor_id)
+		var peca := _packable_gear(batedor)
+		var sorte := Adventurers.skill_of(batedor, xp_guardada, str(batedor.get("route", "")), int(peca.get("tier", -1)))
+		if b < adventurer_labels.size():
+			var route_name := "sem rota de casa" if str(batedor.get("route", "")).is_empty() else str(
+				Expedition.find(str(batedor["route"])).get("name", "?"))
+			var mochila := "mochila vazia"
+			if str(batedor.get("gear", "")).is_empty():
+				mochila = "não aceita peça"
+			elif not pack_gear:
+				mochila = "mochila guardada"
+			elif not peca.is_empty():
+				mochila = "%s (%s)" % [_gear_label(batedor), str(Quality.tier(int(peca["tier"]))["name"])]
+			else:
+				mochila = "sem %s na prateleira" % _gear_label(batedor)
+			var estado := ""
+			if na_estrada:
+				estado = " • NA ESTRADA"
+			elif no_cadastro:
+				estado = " • no cadastro"
+			elif porta != "":
+				estado = " • %s" % porta
+			else:
+				estado = " • livre"
+			(adventurer_labels[b] as Label).text = "%s — %s • %s • sorte %s • conhece: %s • mochila: %s%s" % [
+				str(batedor["name"]), str(batedor["role"]), Adventurers.level_line(xp_guardada),
+				"%d" % sorte if no_cadastro else "até %d" % sorte, route_name, mochila, estado]
+		if b < adventurer_buttons.size():
+			var adv_button := adventurer_buttons[b] as Button
+			var fee_atual := Adventurers.fee_for(batedor, xp_guardada)
+			adv_button.disabled = not no_cadastro and (porta != "" or gold < int(batedor["hire"]))
+			adv_button.text = "Estrada, voltando…" if na_estrada else (
+				"Dispensar • economiza %d/viagem" % fee_atual if no_cadastro else (
+					"Contratar (%d) • %d/viagem" % [int(batedor["hire"]), fee_atual]
+					if porta == "" else "Sem vaga: %s" % porta))
+	if is_instance_valid(adventurer_summary_label):
+		var na_rota := 0
+		for trip in expeditions:
+			if not str(trip.get("who", "")).is_empty():
+				na_rota += 1
+		adventurer_summary_label.text = "NO CADASTRO: %d de %d • %d com nome na estrada • %d peça(s) já foram na mochila. %s%s" % [
+			adventurers_hired.size(), Adventurers.size(), na_rota, gear_packed,
+			Adventurers.roster_line(adventurers_hired, adventurer_xp) if not adventurers_hired.is_empty() else "ninguém com bota amarrada",
+			" • mochila armada" if pack_gear else " • mochila guardada"]
+	if is_instance_valid(pack_gear_button):
+		pack_gear_button.text = "🎒 Mochila: ARMADA (a peça sai do estoque)" if pack_gear else "🎒 Mochila: guardada (a peça fica à venda)"
 	if is_instance_valid(expedition_active_label):
 		if expeditions.is_empty():
 			expedition_active_label.text = "Nenhuma viagem na estrada. Todos os batedores estão jogando cartas nos fundos."
@@ -6071,7 +6703,25 @@ func _read_expeditions(saved) -> void:
 		if Expedition.find(trip_id).is_empty():
 			continue
 		var total := maxf(1.0, float(trip.get("total", 1.0)))
-		expeditions.append({"id": trip_id, "remaining": clampf(float(trip.get("remaining", total)), 0.0, total), "total": total})
+		var rebuilt := {
+			"id": trip_id,
+			"remaining": clampf(float(trip.get("remaining", total)), 0.0, total),
+			"total": total,
+			"who": str(trip.get("who", "")),
+			"level": int(trip.get("level", 1)),
+			"skill": int(trip.get("skill", 0)),
+			"gear": int(trip.get("gear", -1)),
+			"gear_name": str(trip.get("gear_name", "")),
+		}
+		# Save de antes da mecânica acorda sem nome na bota, e nome que saiu da
+		# tabela não pode continuar viajando com a sorte emprestada de outro.
+		if not str(rebuilt["who"]).is_empty() and not Adventurers.knows(str(rebuilt["who"])):
+			rebuilt["who"] = ""
+			rebuilt["level"] = 1
+			rebuilt["skill"] = 0
+			rebuilt["gear"] = -1
+			rebuilt["gear_name"] = ""
+		expeditions.append(rebuilt)
 
 func _save_game() -> void:
 	var config := ConfigFile.new()
@@ -6080,6 +6730,9 @@ func _save_game() -> void:
 	config.set_value("game", "customers_served", customers_served)
 	config.set_value("game", "affection", affection)
 	config.set_value("game", "fury", fury)
+	config.set_value("game", "weather", weather)
+	config.set_value("game", "weather_star", weather_star)
+	config.set_value("game", "weather_seen", weather_seen)
 	config.set_value("game", "stolen_item_name", stolen_item_name)
 	config.set_value("game", "theft_recovery_available", theft_recovery_available)
 	config.set_value("game", "regular_bonds", regular_bonds)
@@ -6195,6 +6848,21 @@ func _save_game() -> void:
 	config.set_value("game", "ticks", ticks)
 	config.set_value("game", "craft_jobs", craft_jobs)
 	config.set_value("game", "catalyst_enabled", catalyst_enabled)
+	config.set_value("game", "adventurers_hired", adventurers_hired)
+	config.set_value("game", "adventurer_xp", adventurer_xp)
+	config.set_value("game", "route_pick", route_pick)
+	config.set_value("game", "pack_gear", pack_gear)
+	config.set_value("game", "gear_packed", gear_packed)
+	config.set_value("game", "tithe_stance", tithe_stance)
+	config.set_value("game", "tithe_until", tithe_until)
+	config.set_value("game", "tithe_demands", tithe_demands)
+	config.set_value("game", "tithe_paid_total", tithe_paid_total)
+	config.set_value("game", "vicar_refusals", vicar_refusals)
+	config.set_value("game", "vicar_bribes", vicar_bribes)
+	config.set_value("game", "invasions_repelled", invasions_repelled)
+	config.set_value("game", "invasions_lost", invasions_lost)
+	config.set_value("game", "defense_privileges", defense_privileges)
+	config.set_value("game", "last_invasion", last_invasion)
 	config.set_value("game", "last_save_unix", int(Time.get_unix_time_from_system()))
 	config.set_value("game", "offline_branch_fraction", _offline_branch_fraction)
 	config.save(SAVE_PATH)
@@ -6215,6 +6883,15 @@ func _load_game() -> void:
 	customers_served = int(config.get_value("game", "customers_served", customers_served))
 	affection = int(config.get_value("game", "affection", affection))
 	fury = clampi(int(config.get_value("game", "fury", fury)), 0, 5)
+	weather = str(config.get_value("game", "weather", weather))
+	if not WEATHER.has(weather):
+		weather = "limpo"
+	weather_star = str(config.get_value("game", "weather_star", weather_star))
+	var saved_weather_seen = config.get_value("game", "weather_seen", {})
+	if saved_weather_seen is Dictionary:
+		for seen_weather in saved_weather_seen.keys():
+			if WEATHER.has(str(seen_weather)):
+				weather_seen[str(seen_weather)] = true
 	stolen_item_name = str(config.get_value("game", "stolen_item_name", stolen_item_name))
 	theft_recovery_available = bool(config.get_value("game", "theft_recovery_available", theft_recovery_available))
 	var saved_bonds = config.get_value("game", "regular_bonds", {})
@@ -6326,6 +7003,53 @@ func _load_game() -> void:
 		for seat_id in saved_staff:
 			if Staff.knows(str(seat_id)) and not staff_hired.has(str(seat_id)):
 				staff_hired.append(str(seat_id))
+	# Cadastro de estrada: nome que não existe mais na tabela cai fora, e o XP só é
+	# lido para os nomes que ficaram — sem contrato aberto, XP vira memória guardada.
+	var saved_adventurers = config.get_value("game", "adventurers_hired", [])
+	adventurers_hired.clear()
+	if saved_adventurers is Array:
+		for adv_id in saved_adventurers:
+			if Adventurers.knows(str(adv_id)) and not adventurers_hired.has(str(adv_id)):
+				adventurers_hired.append(str(adv_id))
+	var saved_xp = config.get_value("game", "adventurer_xp", {})
+	adventurer_xp.clear()
+	if saved_xp is Dictionary:
+		for adv_id in saved_xp.keys():
+			var key := str(adv_id)
+			if Adventurers.knows(key):
+				adventurer_xp[key] = maxi(0, int(saved_xp[adv_id]))
+	var saved_pick = config.get_value("game", "route_pick", {})
+	route_pick.clear()
+	if saved_pick is Dictionary:
+		for route_id in saved_pick.keys():
+			var route := str(route_id)
+			if Expedition.find(route).is_empty():
+				continue
+			var picked := str(saved_pick[route_id])
+			if picked.is_empty() or Adventurers.knows(picked):
+				route_pick[route] = picked
+	pack_gear = bool(config.get_value("game", "pack_gear", pack_gear))
+	gear_packed = maxi(0, int(config.get_value("game", "gear_packed", gear_packed)))
+	# A porta é da casa, então a resposta dada ao vigário atravessa o save — mas só
+	# quando ainda faz sentido: postura que não está na lista é silêncio, e dia vencido
+	# não ganha escudo eterno por um número adulterado. Carimbo e privilégio vêm
+	# clampados na tabela, porque save antigo acorda sem campanha nenhuma.
+	var saved_stance := str(config.get_value("game", "tithe_stance", ""))
+	tithe_stance = saved_stance if saved_stance in ["", "pago", "subornado", "recusado"] else ""
+	tithe_until = maxi(0, int(config.get_value("game", "tithe_until", 0)))
+	tithe_demands = maxi(0, int(config.get_value("game", "tithe_demands", 0)))
+	tithe_paid_total = maxi(0, int(config.get_value("game", "tithe_paid_total", 0)))
+	vicar_refusals = maxi(0, int(config.get_value("game", "vicar_refusals", 0)))
+	vicar_bribes = maxi(0, int(config.get_value("game", "vicar_bribes", 0)))
+	invasions_repelled = maxi(0, int(config.get_value("game", "invasions_repelled", 0)))
+	invasions_lost = maxi(0, int(config.get_value("game", "invasions_lost", 0)))
+	var saved_privileges = config.get_value("game", "defense_privileges", [])
+	defense_privileges.clear()
+	if saved_privileges is Array:
+		for privilege_id in saved_privileges:
+			if Invasions.knows_privilege(str(privilege_id)) and not defense_privileges.has(str(privilege_id)):
+				defense_privileges.append(str(privilege_id))
+	last_invasion = str(config.get_value("game", "last_invasion", ""))
 	# O afeto atravessa a vida, mas só com nome que ainda existe na lista: um save
 	# de antes da mecânica acorda sem servo nenhum, e um nome raspado de Regulars
 	# não pode continuar trabalhando de graça.
@@ -6368,7 +7092,7 @@ func _load_game() -> void:
 	prestige_goals_paid = int(config.get_value("game", "prestige_goals_paid", prestige_goals_paid))
 	adult_content_confirmed = bool(config.get_value("game", "adult_content_confirmed", false))
 	adult_content_enabled = adult_content_confirmed and bool(config.get_value("game", "adult_content_enabled", false))
-	demonic_form_active = adult_content_enabled and fury >= 4
+	demonic_form_active = fury >= 4
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
 	imp_hired = bool(config.get_value("game", "imp_hired", imp_hired))
@@ -6891,10 +7615,22 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "legendary_three", "name": "Mestra da Bigorna (3 peças Lendárias)", "condition": legendary_crafted >= 3, "gold": 420, "rep": 15},
 		{"id": "exclusive_patron", "name": "Casa das Obras Raras (encomenda exclusiva fechada)", "condition": exclusive_finished >= 1, "gold": 350, "rep": 14, "pose": "book"},
 		{"id": "market_barometer", "name": "Termômetro do Balcão (produto no pico de procura)", "condition": _max_product_heat() >= 0.8, "gold": 55, "rep": 3},
+		{"id": "weather_six", "name": "Previsão da casa (seis tempos diferentes na porta)", "condition": weather_seen.size() >= WEATHER.size(), "gold": 60, "rep": 3},
 		{"id": "ritual_apprentice", "name": "Aprendiz de Ritos (3 rituais)", "condition": rituals_performed >= 3, "gold": 40, "rep": 2},
 		{"id": "ritual_devotee", "name": "Fiel do Santuário (10 rituais)", "condition": rituals_performed >= 10, "gold": 100, "rep": 5, "pose": "book"},
 		{"id": "first_expedition", "name": "Pé na Estrada (primeira expedição)", "condition": expeditions_done >= 1, "gold": 30, "rep": 1},
 		{"id": "route_regular", "name": "Corredor do Abismo (10 expedições de volta)", "condition": expeditions_done >= 10, "gold": 90, "rep": 4, "pose": "relic"},
+		{"id": "adventurer_hired", "name": "Nome na bota (primeiro batedor no cadastro)", "condition": not adventurers_hired.is_empty(), "gold": 110, "rep": 3},
+		{"id": "adventurer_maxed", "name": "Teto da estrada (um batedor no nível máximo)", "condition": _adventurer_top_level() >= Adventurers.max_level(), "gold": 320, "rep": 11, "pose": "vitoria"},
+		{"id": "adventurer_roster", "name": "Cadastro cheio (os cinco nomes com bota amarrada)", "condition": adventurers_hired.size() >= Adventurers.size(), "gold": 460, "rep": 15, "pose": "aplausos"},
+		{"id": "gear_three", "name": "Três peças na estrada (estoque virou mochila)", "condition": gear_packed >= 3, "gold": 200, "rep": 6, "pose": "desconfianca"},
+		{"id": "first_door", "name": "Porta de madeira (primeira visita barrada)", "condition": invasions_repelled >= 1, "gold": 90, "rep": 3},
+		{"id": "door_three", "name": "Três portas seguradas (o beco já decorou o endereço)", "condition": invasions_repelled >= 3, "gold": 200, "rep": 6, "pose": "vitoria"},
+		{"id": "defense_campaign", "name": "A casa tem milícia (os três degraus da defesa)", "condition": defense_privileges.size() >= Invasions.PRIVILEGES.size(), "gold": 520, "rep": 16, "pose": "aplausos"},
+		{"id": "door_breach", "name": "Piso molhado (a porta já cedeu)", "condition": invasions_lost >= 1, "gold": 40, "rep": 1},
+		{"id": "tithe_paid", "name": "Dízimo em dia (a paróquia cita o balcão)", "condition": tithe_paid_total > 0, "gold": 60, "rep": 2},
+		{"id": "vicar_bribed", "name": "Pastoral, não simonia (o vigário no bolso)", "condition": vicar_bribes >= 1, "gold": 130, "rep": 4, "pose": "ousadia"},
+		{"id": "vicar_refused", "name": "Porta na cara do céu (uma recusa)", "condition": vicar_refusals >= 1, "gold": 75, "rep": 3},
 		{"id": "rare_hoarder", "name": "Vitrine de Raridades (3 raridades no estoque)", "condition": rare_found >= 3, "gold": 70, "rep": 3},
 		{"id": "catalyst_touch", "name": "Toque de Catalisador (peça rara na forja)", "condition": catalyst_crafted >= 1, "gold": 60, "rep": 3, "pose": "relic"},
 		{"id": "library_master", "name": "Bibliotecária do Submundo (Biblioteca Nv.3)", "condition": library_upgrade_level >= 3, "gold": 80, "rep": 4, "pose": "book"},
@@ -7040,6 +7776,8 @@ func business_score() -> int:
 		+ _arc_acts_announced() * 12 + origin_seen.size() * 25 + (1200 if game_completed else 0) \
 		+ legendary_crafted * 60 + exclusive_finished * 120 + endings_seen.size() * 30 \
 		+ branches.size() * 90 + staff_hired.size() * 30 + servants.size() * 55 \
+		+ _adventurer_score() \
+		+ invasions_repelled * 45 + defense_privileges.size() * 70 \
 		+ prisoners.size() * 10 + (MESS_LIMIT - mess) / 5 \
 		+ prestige_runs * 150 + _perk_levels_total() * 20 + prestige_goals_paid * 40
 
@@ -8067,6 +8805,12 @@ func _reset_run() -> void:
 	# CNPJ. Só o reset total, que apaga o save, desfaz o que eles escolheram.
 	staff_hired.clear()
 	theft_blocked = 0
+	# O cadastro de estrada vence junto com a loja velha — contrato é da vida —, mas
+	# o XP não: a rota que alguém pisou fica na memória da pessoa, não no CNPJ da
+	# casa. Recontratar custa taxa de novo e entrega o batedor no nível que a estrada
+	# lhe deixou. Só o reset total desfaz o aprendizado.
+	adventurers_hired.clear()
+	route_pick.clear()
 	# Conserva e cela são da vida que está fechando: o chão novo nasce limpo, quem
 	# estava preso escapa no meio da mudança, e o bairro perdoa o banido junto com a
 	# loja — a vida nova é justamente a chance de não repetir a mesma porta.
@@ -8075,6 +8819,14 @@ func _reset_run() -> void:
 	blood_harvested = 0
 	prisoners.clear()
 	banned_regulars.clear()
+	# A resposta dada ao vigário é da loja que fecha: a vida nova recebe a cobrança na
+	# primeira semana e decide de novo. Os carimbos não — porta segurada é história do
+	# beco com esta família, e a dobradiça, o sino e a milícia continuam no caixilho.
+	tithe_stance = ""
+	tithe_until = 0
+	vicar_announced_day = 0
+	last_invasion = ""
+	music_alarm_until = 0
 	# A fila é da loja velha: reencarnar abre a porta vazia, e o corpo que esperava
 	# sai de cena junto com o balcão anterior.
 	for waiting in _stage_waiters.duplicate():
@@ -8092,7 +8844,13 @@ func _reset_run() -> void:
 	seduction_successes = 0
 	affection = 0
 	fury = 0
+	# O dia um de uma vida nova acorda sem tempo sorteado e sem rua atrás de nada: a
+	# primeira previsão chega na primeira virada. O caderno de tempos já vistos é da
+	# conta da chefe, não da vida, e atravessa a reencarnação.
+	weather = "limpo"
+	weather_star = ""
 	demonic_form_active = false
+	seduction_peak_triggered = false
 	private_moments_unlocked = 0
 	ad_level = 0
 	imp_hired = false
@@ -8186,7 +8944,7 @@ func _board_text() -> String:
 	return "\n".join(lines)
 
 func _play_achievement_pose(pose: String) -> void:
-	if not adult_content_enabled or not is_instance_valid(seller_portrait):
+	if not is_instance_valid(seller_portrait):
 		return
 	if sensual_tween != null and sensual_tween.is_valid():
 		sensual_tween.kill()
@@ -8408,6 +9166,265 @@ func _trigger_vandal() -> void:
 	_show_feedback("🪣 Vândalos na loja.", Color(1.0, 0.55, 0.45))
 	_show_stage_emotion(stage_seller_body, "espanto")
 	audio.play("sad")
+
+## A casa vista de fora: todas as mãos que ela tem para fechar a porta, linha por
+## linha. Cada fonte é uma conta que o jogo já media — a ronda da folha, o servo que
+## dorme no salão, o batedor que voltou da estrada, a reforma do santuário, o degrau
+## da Administração e o que a própria campanha de defesa já pagou.
+func _defense_snapshot() -> Dictionary:
+	return {
+		"ronda": Staff.block_chance(staff_hired),
+		"servants": servants.size(),
+		"adventurers": adventurers_hired.size(),
+		"sanctum": sanctum_upgrade_level,
+		"rank": house_rank,
+		"privileges": defense_privileges,
+	}
+
+func _defense_power() -> int:
+	return Invasions.defense_power(_defense_snapshot())
+
+## A mão na porta escrita por extenso, na ordem em que a casa a contratou. Sem linha
+## nenhuma é a loja com a maçaneta e nada mais — e o painel diz isso em vez de mostrar
+## um número órfão.
+func _defense_breakdown_line() -> String:
+	var parts: Array[String] = []
+	for line in Invasions.defense_lines(_defense_snapshot()):
+		parts.append("%s +%d" % [str(line["name"]), int(line["value"])])
+	if parts.is_empty():
+		return "Nenhuma mão além da chefe na porta: %d de defesa e a rua sabe medir vitrine." % _defense_power()
+	return "Quem fecha a porta: %s." % [" • ".join(parts)]
+
+## A linha do vigário: quem ele é, o que quer, há quanto tempo a casa responde e o que
+## as recusas já acumularam contra a porta.
+func _vicar_panel_line() -> String:
+	if shop_day < Invasions.first_visit_day():
+		return "%s ainda não passou por este quarteirão. A lista da paróquia chega no dia %d." % [
+			Invasions.vicar_name(), Invasions.first_visit_day()]
+	if _vicar_waiting():
+		return "%s está na calçada com a lista: %d de dízimo (%d dia(s) de escudo) ou %d para apagar o endereço por %d dia(s). Recusar não custa ouro e custa visita." % [
+			Invasions.vicar_name(), _vicar_demand(), Invasions.TITHE_WEEK, _vicar_bribe(), Invasions.BRIBE_DAYS]
+	return "%s: %s. Cobranças respondidas: %d, ouro pago à paróquia: %d.%s" % [
+		Invasions.vicar_name(), Invasions.stance_line(tithe_stance, tithe_until, shop_day),
+		tithe_demands, tithe_paid_total,
+		" %d recusa(s) na conta da rua (+%d%% de visita)." % [vicar_refusals,
+			vicar_refusals * Invasions.INVASION_REFUSAL_STING] if vicar_refusals > 0 else ""]
+
+## Chance de a rua testar a porta numa virada: o alvo é o placar que a vitrine mostra,
+## o escudo é a resposta dada ao vigário e o sino da campanha.
+func _invasion_chance() -> int:
+	return Invasions.invasion_chance(business_score(), tithe_stance, tithe_until, shop_day,
+		vicar_refusals, _defense_snapshot())
+
+## A visita que o calendário da loja já permite, com o poder escalado pelos carimbos de
+## porta segurada. Vazio quer dizer "loja nova demais para ter alvo na porta".
+func _next_wave() -> Dictionary:
+	return Invasions.wave_for(shop_day, invasions_repelled)
+
+## A virada testa a maçaneta. Devolve a linha para o balanço da manhã, ou "" quando a
+## rua não bateu — por isso o painel mostra a chance antes, em vez de só o susto.
+func _roll_invasion() -> String:
+	var wave := _next_wave()
+	if wave.is_empty():
+		return ""
+	if randi() % 100 < Invasions.repel_chance(_defense_snapshot(), wave):
+		return _repel_invasion(wave)
+	return _breach_invasion(wave)
+
+## Porta segurada: a visita bate, encontra mão na madeira e volta com o recibo de que
+## a casa tem quem a defenda. O bairro anota, a campanha carimba, e com a milícia o
+## saco volta para o balcão.
+func _repel_invasion(wave: Dictionary) -> String:
+	invasions_repelled += 1
+	var snapshot := _defense_snapshot()
+	var gain := 2 if Invasions.has_militia(snapshot) else 1
+	reputation += gain
+	music_alarm_until = shop_day + 2
+	var parts: Array[String] = []
+	parts.append("🛡 %s (%s) veio buscar o que a vitrine mostra e encontrou %d de mão na porta; a visita pedia %d. Ninguém passou." % [
+		str(wave["name"]), str(wave["leader"]), Invasions.defense_power(snapshot), int(wave["power"])])
+	if gain == 2:
+		var reclaim := Invasions.militia_reclaim(wave, gold)
+		gold += reclaim
+		parts.append(" A milícia do beco tomou o saco de volta: +%d ouro." % reclaim)
+	if prisoners.size() < _cell_capacity() and randi() % 100 < 45:
+		_catch_culprit(str(wave["leader"]), "")
+		parts.append(" " + last_event)
+	parts.append(" %s O bairro anota a porta dura (+%d reputação). %s" % [
+		str(wave["quote"]), gain, Invasions.campaign_line(invasions_repelled)])
+	parts.append(_claim_defense_privilege())
+	last_invasion = "".join(parts)
+	_show_feedback("🛡 Porta segurada.", Color(0.72, 1.0, 0.86))
+	_show_stage_emotion(stage_seller_body, "aprovacao")
+	_apply_situation_music()
+	_check_achievements()
+	return last_invasion
+
+## O degrau da campanha que os carimbos acabaram de pagar. Privilégio de defesa é da
+## família, não da vida: reencarnar não arranca a dobradiça nova nem o sino do caixilho.
+func _claim_defense_privilege() -> String:
+	var privilege := Invasions.privilege_for(invasions_repelled)
+	if privilege.is_empty() or defense_privileges.has(str(privilege["id"])):
+		return ""
+	defense_privileges.append(str(privilege["id"]))
+	audio.play("levelup")
+	_show_feedback("🔔 %s" % str(privilege["name"]), Color(0.72, 1.0, 0.86))
+	return " CAMPANHA DE DEFESA (%d portas): \"%s\" — %s" % [
+		invasions_repelled, str(privilege["name"]), str(privilege["does"])]
+
+## Porta arrombada: o caixa, o chão, a fúria, a fama e a prateleira pagam juntos. É a
+## primeira visita da rua que mexe no inventário, e mexe no mesmo estoque que o furto e
+## a expedição já mexiam — a melhor peça do produto sorteado sai pela porta e não volta.
+func _breach_invasion(wave: Dictionary) -> String:
+	invasions_lost += 1
+	var taken := Invasions.plunder_for(wave, gold)
+	gold = maxi(0, gold - taken)
+	_add_mess(int(wave["mess"]))
+	fury = mini(5, fury + 1)
+	_update_demonic_form()
+	reputation = maxi(0, reputation - int(wave["rep"]))
+	music_alarm_until = shop_day + 3
+	var stolen := _steal_stock(int(wave["pieces"]))
+	last_invasion = "💥 %s (%s) arrombou a porta: %d de barro no salão, %d ouro no saco, %d de reputação no boca-a-boca e um ponto de fúria no balcão.%s %s A casa tinha %d de mão na porta e a visita pedia %d." % [
+		str(wave["name"]), str(wave["leader"]), int(wave["mess"]), taken, int(wave["rep"]),
+		stolen, str(wave["quote"]), _defense_power(), int(wave["power"])]
+	audio.play("sad")
+	_show_feedback("💥 Porta arrombada.", Color(1.0, 0.5, 0.44))
+	_show_stage_emotion(stage_seller_body, "medo")
+	_apply_situation_music()
+	_check_achievements()
+	return last_invasion
+
+## Peças que somem quando a porta cede: cada uma sai do mesmo estoque que a venda
+## consome, na mesma ordem de qualidade (a melhor primeiro).
+func _steal_stock(count: int) -> String:
+	var taken: Array[String] = []
+	for i in range(count):
+		var options: Array[int] = []
+		for p in range(products.size()):
+			if int(products[p]["stock"]) > 0:
+				options.append(p)
+		if options.is_empty():
+			break
+		var pick := options[randi() % options.size()]
+		var tier := _take_piece(pick, Quality.BEST)
+		taken.append("%s (%s)" % [str(products[pick]["name"]), str(Quality.tier(tier)["name"])])
+	if taken.is_empty():
+		return ""
+	return " Levaram da prateleira: %s." % ", ".join(taken)
+
+## O vigário não abençoa de graça nem condena por decreto: ele cobra para escrever o
+## endereço numa coluna menor da lista. Bate na porta a partir do dia 9 e a resposta
+## vale por dias contados — escudo que não vence não é escolha, é decoração.
+func _vicar_waiting() -> bool:
+	if shop_day < Invasions.first_visit_day():
+		return false
+	return tithe_stance.is_empty() or shop_day > tithe_until
+
+func _vicar_demand() -> int:
+	return Invasions.tithe_for(shop_day, reputation)
+
+func _vicar_bribe() -> int:
+	return Invasions.bribe_for(shop_day, reputation)
+
+## As três respostas possíveis, todas com preço: o dízimo come o caixa, o suborno come
+## o dobro e compra silêncio longo, e a recusa não custa ouro — custa visita.
+func _answer_vicar(answer: String) -> void:
+	if not _vicar_waiting():
+		last_event = "%s já tem resposta valendo até o dia %d. Ele volta quando o papel vencer." % [
+			Invasions.vicar_name(), tithe_until]
+		audio.play("click")
+		_refresh_ui()
+		return
+	var paid := 0
+	if answer == "dizimo":
+		paid = _vicar_demand()
+		if gold < paid:
+			_vicar_no_cash("o dízimo", paid)
+			return
+		tithe_stance = "pago"
+		tithe_until = shop_day + Invasions.TITHE_WEEK - 1
+		vicar_refusals = maxi(0, vicar_refusals - 1)
+		reputation += 1
+		last_event = "✝ %s recebe %d de dízimo e escreve a casa na coluna de \"paga em dia\": -%d%% de visita na porta por %d dia(s), e o sermão de domingo cita o balcão (+1 reputação)." % [
+			Invasions.vicar_name(), paid, Invasions.INVASION_TITHE_SHIELD, Invasions.TITHE_WEEK]
+	elif answer == "suborno":
+		paid = _vicar_bribe()
+		if gold < paid:
+			_vicar_no_cash("o suborno", paid)
+			return
+		tithe_stance = "subornado"
+		tithe_until = shop_day + Invasions.BRIBE_DAYS - 1
+		vicar_refusals = 0
+		vicar_bribes += 1
+		_gain_standing("submundo", 1)
+		last_event = "🤝 %d na mão de %s, e a paróquia perde este endereço por %d dia(s): -%d%% de visita na porta, +1 de fama com o Submundo, que acha o capricho bonito. Ele sai dizendo que \"não é simonia, é pastoral\"." % [
+			paid, Invasions.vicar_name(), Invasions.BRIBE_DAYS, Invasions.INVASION_BRIBE_SHIELD]
+	else:
+		tithe_stance = "recusado"
+		tithe_until = shop_day + Invasions.REFUSAL_RETRY - 1
+		vicar_refusals += 1
+		reputation += 2
+		last_event = "🚪 %s ouve \"não\" no balcão e dobra a lista: o bairro aplaude a porta dura (+2 reputação) e o papel vale %d dia(s), mas recusa é tinta — cada \"não\" soma +%d%% na chance de visita." % [
+			Invasions.vicar_name(), Invasions.REFUSAL_RETRY, Invasions.INVASION_REFUSAL_STING]
+	if paid > 0:
+		gold = maxi(0, gold - paid)
+		tithe_paid_total += paid
+		audio.play("coin")
+	else:
+		audio.play("sad")
+	tithe_demands += 1
+	_show_feedback("✝ Resposta dada ao vigário.", Color(0.86, 0.92, 1.0))
+	_apply_situation_music()
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Resposta honesta quando a bolsa não alcança a resposta: o vigário anota o número e
+## vai embora, e a cobrança volta na semana seguinte sem mudar de valor por isso.
+func _vicar_no_cash(what: String, cost: int) -> void:
+	last_event = "%s veio cobrar %s de %d e a casa tem %d no caixa. Ele anota na manga do hábito e volta quando a loja puder pagar — a rua inteira vê a conta." % [
+		Invasions.vicar_name(), what, cost, gold]
+	audio.play("sad")
+	_show_feedback("💸 Sem caixa para %s." % what, Color(1.0, 0.6, 0.5))
+	_refresh_ui()
+
+## Fama de facção ganha fora do balcão. Suborno é serviço que o Submundo reconhece, e a
+## fama que sobe é a mesma que já barateia o dia ruim das filiais.
+func _gain_standing(faction_id: String, amount: int) -> void:
+	if Factions.find(faction_id).is_empty():
+		return
+	faction_standing[faction_id] = maxi(0, int(faction_standing.get(faction_id, 0)) + amount)
+
+## Trilha situacional com a única faixa gravada que a casa tem: a mesma gravação,
+## afinada pelo que está acontecendo no salão. Alarme de porta acelera, ruína arrasta,
+## vigário na porta puxa para o grave e cada setor tem o próprio tom. `_music_situation`
+## é a resposta pura, medida na sonda; `_apply_situation_music` é quem move o player.
+func _music_situation() -> Dictionary:
+	if music_alarm_until > 0 and shop_day <= music_alarm_until:
+		return {"name": "alarme na porta", "pitch": 1.12, "db": -8.0}
+	if debt >= _debt_limit():
+		return {"name": "casa na ruína", "pitch": 0.84, "db": -18.0}
+	if _vicar_waiting() and vicar_announced_day == shop_day:
+		return {"name": "vigário na porta", "pitch": 0.92, "db": -14.0}
+	match current_sector:
+		"forge":
+			return {"name": "forja", "pitch": 1.06, "db": -11.0}
+		"library":
+			return {"name": "biblioteca", "pitch": 0.95, "db": -15.0}
+		"sanctum":
+			return {"name": "santuário", "pitch": 0.88, "db": -17.0}
+		"expedition":
+			return {"name": "estrada", "pitch": 1.02, "db": -12.0}
+	return {"name": "salão", "pitch": 1.0, "db": -13.0}
+
+func _apply_situation_music() -> void:
+	if not is_instance_valid(music_player):
+		return
+	var tune := _music_situation()
+	music_player.pitch_scale = float(tune["pitch"])
+	music_base_db = float(tune["db"])
+	_apply_music_settings()
 
 ## A cela gota no frasco e come na cozinha: cada preso é insumo e conta ao mesmo
 ## tempo, e é por isso que a casa pensa duas vezes antes de prender quem conhece.
@@ -8944,6 +9961,10 @@ func _advance_romance_step() -> void:
 	_play_sensual_reception_moment()
 	var wait := _summon_romance_partner(regular_id, int(invited["portrait"]))
 	var pose := str(requirement["pose"])
+	if not adult_content_enabled:
+		# Com o filtro desligado o salão aperta a mão em vez de beijar: o corpo muda,
+		# o degrau, o vínculo e o bônus permanente são os mesmos.
+		pose = "aprovacao"
 	# A cena acontece quando ele para no balcão, não antes: por isso a chefe espera
 	# o tempo da caminhada antes de contornar o balcão e os dois assumirem a pose.
 	if _romance_cue != null and _romance_cue.is_valid():
@@ -8972,11 +9993,12 @@ func _advance_romance_step() -> void:
 
 func _show_private_moment() -> void:
 	if affection < 5:
-		last_event = "“Paciência, querido. Primeiro conquiste minha confiança.”"
-	elif not adult_content_enabled:
-		last_event = "O momento especial está desativado nas opções de conteúdo adulto."
-	else:
-		private_moments_unlocked += 1
+		last_event = "“Paciência, querido. Primeiro conquiste minha confiança.”" if adult_content_enabled else "“Paciência. Primeiro conquiste minha confiança: o caderno da casa registra quem volta.”"
+		_save_game()
+		_refresh_ui()
+		return
+	private_moments_unlocked += 1
+	if adult_content_enabled:
 		var moments: Array[String] = [
 				"A súcubo inclina a cabeça, dá uma piscadela e puxa você para mais perto: “Esse é nosso segredinho, combinado?”",
 				"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais de mim quando nossa parceria ficar ainda mais lucrativa.”",
@@ -8984,17 +10006,18 @@ func _show_private_moment() -> void:
 			]
 		last_event = moments[(private_moments_unlocked - 1) % moments.size()]
 		_play_sensual_reception_moment()
+	else:
+		last_event = str(TRUST_MOMENTS[(private_moments_unlocked - 1) % TRUST_MOMENTS.size()])
+	_show_feedback("♥ Momento só da casa.", Color(1.0, 0.62, 0.88))
 	_save_game()
 	_refresh_ui()
 
 func _toggle_adult_content() -> void:
 	adult_content_enabled = not adult_content_enabled
 	adult_content_confirmed = true
-	if not adult_content_enabled:
-		demonic_form_active = false
-		_set_seller_mood("neutral")
+	_set_seller_mood(_fury_mood())
 	_set_sector(current_sector)
-	last_event = "Cenas sensuais ativadas. As recompensas especiais estão disponíveis." if adult_content_enabled else "Cenas sensuais desativadas. A progressão e a economia continuam normalmente."
+	last_event = "Cenas sensuais ativadas: a arte da recepção, as poses e o tom de flerte voltam para a tela." if adult_content_enabled else "Cenas sensuais desativadas: nenhuma arte provocante, pose ou flerte aparece no balcão. Progressão, economia, servos, momentos e conquistas seguem exatamente as mesmas — o que muda é a voz, nunca a porta."
 	_save_game()
 	_refresh_ui()
 
