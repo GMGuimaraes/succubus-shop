@@ -556,6 +556,13 @@ const STAGE_ROOM_PROPS := {
 	"res://assets/library_room_scene.png": [Rect2(0.225, 0.42, 0.13, 0.30), Rect2(0.0, 0.52, 0.215, 0.21), Rect2(0.78, 0.525, 0.205, 0.195)],
 	"res://assets/sanctum_room_scene.png": [Rect2(0.0, 0.53, 0.14, 0.17), Rect2(0.862, 0.53, 0.138, 0.17), Rect2(0.235, 0.515, 0.055, 0.15), Rect2(0.71, 0.505, 0.055, 0.15)],
 }
+## Móveis que ocupam uma faixa de profundidade do piso: mais ao fundo eles
+## escondem a figura; mais perto da câmera, a figura passa na frente. Cada valor
+## corresponde, na mesma ordem, a um recorte de STAGE_ROOM_PROPS.
+const STAGE_ROOM_PROP_DEPTHS := {
+	"res://assets/library_room_scene.png": [0.32, 0.40, 0.40],
+	"res://assets/sanctum_room_scene.png": [0.56, 0.56, 0.39, 0.39],
+}
 ## Quantos contornos de móvel o shader aguenta ao mesmo tempo.
 const STAGE_PROP_SLOTS := 8
 ## Faixa de piso por onde o elenco anda em cada sala, em fração da largura. Na
@@ -681,6 +688,7 @@ const STAGE_BAND_SHARE := 0.30
 const SIDE_PANEL_LIFT := 0.10
 var stage_layer: Control
 var stage_occluder: TextureRect
+var _stage_depth_occluders: Array[TextureRect] = []
 var ui_layer: Control
 var stage_seller: Control
 var stage_seller_body: Control
@@ -1315,11 +1323,15 @@ func _place_stage_figure(node: Control, depth: float, center_x: float) -> void:
 	var lane := _lane_at(depth)
 	var figure_scale: float = lane["scale"]
 	node.set_meta("stage_depth", depth)
+	node.z_index = _stage_z_for_depth(depth)
 	node.scale = Vector2(figure_scale, figure_scale)
 	node.position = Vector2(
 		center_x - node.size.x * 0.5,
 		float(lane["floor_y"]) - node.size.y * (1.0 + figure_scale) * 0.5
 	)
+
+func _stage_z_for_depth(depth: float) -> int:
+	return roundi(inverse_lerp(0.0, STAGE_FOURTH_WALL_DEPTH, clampf(depth, 0.0, STAGE_FOURTH_WALL_DEPTH)) * 400.0)
 
 func _stage_step_to(t: float, node: Control, from_x: float, to_x: float, from_depth: float, to_depth: float) -> void:
 	if not is_instance_valid(node):
@@ -1701,6 +1713,7 @@ func _layout_stage_figures() -> void:
 	var seller_floor: float = host_lane["floor_y"]
 	_seller_home = Vector2(_room_meet().x * stage_layer.size.x - stage_seller.size.x * 0.5, seller_floor - stage_seller.size.y)
 	if is_instance_valid(stage_seller):
+		stage_seller.z_index = _stage_z_for_depth(_lane_depths[1])
 		# Enquanto o tween da chefe roda, ele é o dono da posição.
 		if _seller_lean_tween == null or not _seller_lean_tween.is_valid():
 			stage_seller.position = _seller_home
@@ -1719,8 +1732,9 @@ func _layout_stage_figures() -> void:
 
 ## O palco é a tela inteira: as figuras vivem sobre a arte de fundo, sem moldura e
 ## sem cópia da arte. A UI abre apenas um respiro largo, por onde o salão aparece.
-## São duas camadas: o elenco inteiro, e por cima dele os móveis recortados da
-## própria arte de fundo — é isso que esconde quem passa atrás do balcão.
+## O elenco e os recortes de profundidade compartilham a ordem de desenho; o
+## overlay final continua reservado para móveis que ficam sempre à frente, como o
+## balcão da recepção.
 func _build_stage(root: Control) -> void:
 	_stage_back_band = Control.new()
 	_stage_back_band.custom_minimum_size = Vector2(0, 186.0)
@@ -1729,6 +1743,7 @@ func _build_stage(root: Control) -> void:
 
 	var insert_at := ui_layer.get_index()
 	stage_layer = _make_stage_layer("StageBack")
+	stage_layer.z_index = -500
 	add_child(stage_layer)
 	move_child(stage_layer, insert_at)
 	stage_occluder = TextureRect.new()
@@ -1737,9 +1752,11 @@ func _build_stage(root: Control) -> void:
 	stage_occluder.stretch_mode = TextureRect.STRETCH_SCALE
 	stage_occluder.set_anchors_preset(Control.PRESET_FULL_RECT)
 	stage_occluder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage_occluder.z_index = -50
 	stage_occluder.material = _occluder_material()
 	add_child(stage_occluder)
 	move_child(stage_occluder, insert_at + 1)
+	_apply_room_props(_stage_room)
 
 	# A chefe tem um nó externo (inclinação no balcão) e um corpo interno
 	# (respiração e balanço), para as duas animações não brigarem pela mesma propriedade.
@@ -1788,12 +1805,52 @@ func _apply_room_props(scene_path: String) -> void:
 	if _stage_occluder_material == null:
 		return
 	var props: Array = STAGE_ROOM_PROPS.get(scene_path, [])
+	var prop_depths: Array = STAGE_ROOM_PROP_DEPTHS.get(scene_path, [])
 	for i in range(STAGE_PROP_SLOTS):
-		var corners := _prop_corners(props[i]) if i < props.size() else _blank_corners()
+		var is_depth_sorted := i < prop_depths.size()
+		var corners := _prop_corners(props[i]) if i < props.size() and not is_depth_sorted else _blank_corners()
 		_stage_occluder_material.set_shader_parameter("prop%da" % i, Vector4(corners[0].x, corners[0].y, corners[1].x, corners[1].y))
 		_stage_occluder_material.set_shader_parameter("prop%db" % i, Vector4(corners[2].x, corners[2].y, corners[3].x, corners[3].y))
 	if is_instance_valid(stage_occluder) and ResourceLoader.exists(scene_path):
 		stage_occluder.texture = load(scene_path)
+	_rebuild_stage_depth_occluders(scene_path, props, prop_depths)
+
+func _rebuild_stage_depth_occluders(scene_path: String, props: Array, prop_depths: Array) -> void:
+	for overlay in _stage_depth_occluders:
+		if is_instance_valid(overlay):
+			overlay.hide()
+			overlay.queue_free()
+	_stage_depth_occluders.clear()
+	if not is_instance_valid(stage_layer) or not ResourceLoader.exists(scene_path):
+		return
+	var texture := load(scene_path) as Texture2D
+	var shader := load("res://assets/stage_props_mask.gdshader") as Shader
+	if texture == null or shader == null:
+		push_error("Não foi possível carregar a arte ou o shader dos móveis em profundidade: %s" % scene_path)
+		return
+	for i in range(mini(props.size(), prop_depths.size())):
+		var overlay := TextureRect.new()
+		overlay.name = "StageDepthProp%d" % i
+		overlay.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		overlay.stretch_mode = TextureRect.STRETCH_SCALE
+		overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+		overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		overlay.texture = texture
+		overlay.material = _depth_prop_material(shader, props[i])
+		# No mesmo plano, o pé da figura já fica à frente do móvel.
+		overlay.z_index = _stage_z_for_depth(float(prop_depths[i])) - 1
+		stage_layer.add_child(overlay)
+		_stage_depth_occluders.append(overlay)
+
+func _depth_prop_material(shader: Shader, prop: Variant) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	var corners := _prop_corners(prop)
+	for i in range(STAGE_PROP_SLOTS):
+		var slot_corners := corners if i == 0 else _blank_corners()
+		material.set_shader_parameter("prop%da" % i, Vector4(slot_corners[0].x, slot_corners[0].y, slot_corners[1].x, slot_corners[1].y))
+		material.set_shader_parameter("prop%db" % i, Vector4(slot_corners[2].x, slot_corners[2].y, slot_corners[3].x, slot_corners[3].y))
+	return material
 
 ## Os quatro cantos do contorno de um móvel: superior esquerdo, superior direito,
 ## inferior direito, inferior esquerdo. Retângulo vira quadrilátero reto; contorno
@@ -2018,6 +2075,7 @@ func _build_ui() -> void:
 	bg.stretch_mode = TextureRect.STRETCH_SCALE
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bg.z_index = -1000
 	add_child(bg)
 
 	ambient_particles = CPUParticles2D.new()
