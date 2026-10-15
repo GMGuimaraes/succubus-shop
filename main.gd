@@ -169,6 +169,9 @@ var ingredient_stock: Dictionary = STARTING_PANTRY.duplicate()
 var quality_stock: Dictionary = {}
 ## Mercado reativo: { "ingredient": {id: calor}, "product": {id: calor} }
 var economy_state: Dictionary = Economy.fresh_state()
+var auto_buy_mission_loot: bool = true
+var loot_buyback_percent: int = 45
+var retail_price_percent: int = 100
 ## Rituais ativos do santuário: { id_do_ritual: segundos_de_mundo_restantes }
 var active_buffs: Dictionary = {}
 var total_ingredients_bought: int = 0
@@ -382,6 +385,9 @@ var ingredient_sell_buttons: Array = []
 var recipe_labels: Array = []
 var recipe_buttons: Array = []
 var market_label: Label
+var loot_buyback_option: OptionButton
+var retail_price_option: OptionButton
+var auto_buy_loot_check: CheckButton
 var ritual_label: Label
 var ritual_labels: Array = []
 var ritual_buttons: Array = []
@@ -660,6 +666,10 @@ const STAGE_FRONT_DEPTH := 0.82
 const STAGE_ARRIVE_SECONDS := 2.8
 const OFFLINE_FARM_MAX_SECONDS := 12.0 * 60.0 * 60.0
 const OFFLINE_FARM_BRANCH_PERIOD := 60.0 * 60.0
+const STORE_RENOVATION_ART_ENABLED := false
+const LOOT_BUYBACK_RATES: Array[int] = [35, 45, 55]
+const RETAIL_PRICE_RATES: Array[int] = [85, 100, 115, 130]
+const MAX_RESALE_STOCK_PER_PRODUCT := 25
 const OFFLINE_REPORT_MIN_SECONDS := 60.0
 ## A chegada acompanha o intervalo do relógio do mundo para terminar antes da
 ## próxima visita; o ciclo de sprites e o passo aceleram juntos.
@@ -2101,15 +2111,21 @@ func _draw_stage_shadows(layer: Control) -> void:
 
 
 func _store_visual_for_level(level: int) -> Dictionary:
+	var visual: Dictionary
 	if level >= 15:
-		return {"path": "res://assets/shop_scene.png", "name": "Empório de prestígio"}
-	if level >= 10:
-		return {"path": "res://assets/shop_stage3.svg", "name": "Loja estabelecida"}
-	if level >= 6:
-		return {"path": "res://assets/shop_stage2.svg", "name": "Salão reformado"}
-	if level >= 3:
-		return {"path": "res://assets/shop_stage1.svg", "name": "Balcão em recuperação"}
-	return {"path": "res://assets/shop_stage0.svg", "name": "Beco improvisado"}
+		visual = {"path": "res://assets/shop_scene.png", "name": "Empório de prestígio"}
+	elif level >= 10:
+		visual = {"path": "res://assets/shop_stage3.svg", "name": "Loja estabelecida"}
+	elif level >= 6:
+		visual = {"path": "res://assets/shop_stage2.svg", "name": "Salão reformado"}
+	elif level >= 3:
+		visual = {"path": "res://assets/shop_stage1.svg", "name": "Balcão em recuperação"}
+	else:
+		visual = {"path": "res://assets/shop_stage0.svg", "name": "Beco improvisado"}
+	if not STORE_RENOVATION_ART_ENABLED:
+		visual["path"] = "res://assets/shop_scene.png"
+		visual["name"] = "Empório (reformas visuais em preparação)"
+	return visual
 
 func _room_layout_key(scene_path: String = "") -> String:
 	var path := scene_path if not scene_path.is_empty() else _stage_room
@@ -2571,6 +2587,41 @@ func _build_ui() -> void:
 	market_label.add_theme_font_size_override("font_size", 14)
 	market_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.62))
 	reception_box.add_child(market_label)
+	reception_box.add_child(_make_section_title("NEGOCIAÇÃO AUTOMÁTICA", Color(0.72, 0.91, 1.0)))
+	reception_box.add_child(_make_section_hint("A succubus compra espólios de missão abaixo do valor de vitrine e revende pelo preço configurado. Oferta e demanda continuam alterando os valores."))
+	auto_buy_loot_check = CheckButton.new()
+	auto_buy_loot_check.text = "Comprar automaticamente espólios dos aventureiros"
+	auto_buy_loot_check.toggled.connect(_set_auto_buy_mission_loot)
+	reception_box.add_child(auto_buy_loot_check)
+	var buyback_row := HBoxContainer.new()
+	buyback_row.add_theme_constant_override("separation", 10)
+	reception_box.add_child(buyback_row)
+	var buyback_label := Label.new()
+	buyback_label.text = "Oferta de recompra:"
+	buyback_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buyback_row.add_child(buyback_label)
+	loot_buyback_option = OptionButton.new()
+	loot_buyback_option.add_item("35% do valor")
+	loot_buyback_option.add_item("45% do valor")
+	loot_buyback_option.add_item("55% do valor")
+	for i in range(LOOT_BUYBACK_RATES.size()):
+		loot_buyback_option.set_item_id(i, LOOT_BUYBACK_RATES[i])
+	loot_buyback_option.item_selected.connect(_set_loot_buyback_policy)
+	buyback_row.add_child(loot_buyback_option)
+	var retail_row := HBoxContainer.new()
+	retail_row.add_theme_constant_override("separation", 10)
+	reception_box.add_child(retail_row)
+	var retail_label := Label.new()
+	retail_label.text = "Preço ao cliente:"
+	retail_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	retail_row.add_child(retail_label)
+	retail_price_option = OptionButton.new()
+	for i in range(RETAIL_PRICE_RATES.size()):
+		var price_rate := RETAIL_PRICE_RATES[i]
+		retail_price_option.add_item("%d%% da etiqueta" % price_rate)
+		retail_price_option.set_item_id(i, price_rate)
+	retail_price_option.item_selected.connect(_set_retail_price_policy)
+	retail_row.add_child(retail_price_option)
 	upkeep_label = Label.new()
 	upkeep_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	upkeep_label.add_theme_font_size_override("font_size", 14)
@@ -3961,12 +4012,77 @@ func _peek_tier(index: int, mode: int) -> int:
 ## Preço de vitrine de um produto: peça provável vezes o humor do mercado.
 func _shelf_price(index: int) -> int:
 	var item: Dictionary = products[index]
-	return maxi(1, int(round(_piece_price(item, _peek_tier(index, Quality.WORST)) * _market_product_factor(item))))
+	return maxi(1, int(round(_piece_price(item, _peek_tier(index, Quality.WORST)) * _market_product_factor(item) * _retail_price_factor())))
 
 ## O mercado reativo sobre a etiqueta: demanda do produto e escassez na prateleira.
 func _market_product_factor(item: Dictionary) -> float:
 	var product_id := str(item["id"])
 	return Economy.factor(economy_state, "product", product_id) * Economy.stock_factor(int(item["stock"]))
+
+func _buy_customer_mission_loot(profile: Dictionary) -> Dictionary:
+	if not auto_buy_mission_loot:
+		return {}
+	var faction := str(profile.get("faction", ""))
+	var offer_chance := 0
+	match faction:
+		"aventureiros":
+			offer_chance = 32
+		"guildas", "submundo":
+			offer_chance = 18
+		"mercadores":
+			offer_chance = 10
+		_:
+			return {}
+	if randi() % 100 >= offer_chance:
+		return {}
+	var candidates: Array[int] = []
+	for i in range(products.size()):
+		if _is_product_unlocked(products[i]) and int(products[i]["stock"]) < MAX_RESALE_STOCK_PER_PRODUCT:
+			candidates.append(i)
+	if candidates.is_empty():
+		return {}
+	var index: int = candidates.pick_random()
+	var item: Dictionary = products[index]
+	var best_tier := mini(Quality.LEGENDARY - 1, clampi(1 + player_level / 5, 1, 4))
+	var tier := randi_range(1, best_tier)
+	var market_value := _piece_price(item, tier) * _market_product_factor(item)
+	var payout := maxi(1, int(round(market_value * float(loot_buyback_percent) / 100.0)))
+	if gold < payout:
+		return {}
+	gold -= payout
+	_add_piece(index, tier)
+	Economy.bump(economy_state, "product", str(item["id"]), -0.08)
+	var line := "%s vendeu à loja %s (%s), espólio de missão, por %d ouro." % [
+		str(profile.get("name", "Aventureiro")),
+		str(item["name"]),
+		str(Quality.tier(tier)["name"]).to_lower(),
+		payout,
+	]
+	_show_feedback("Espólio comprado: %s (−%d ouro)" % [str(item["name"]), payout], Color(0.78, 0.95, 1.0))
+	_show_stage_emotion(stage_customer, "aprovacao")
+	return {"index": index, "line": line, "paid": payout}
+
+func _set_auto_buy_mission_loot(enabled: bool) -> void:
+	auto_buy_mission_loot = enabled
+	_save_game()
+	_refresh_ui()
+
+func _set_loot_buyback_policy(option_index: int) -> void:
+	if option_index < 0 or option_index >= LOOT_BUYBACK_RATES.size():
+		return
+	loot_buyback_percent = LOOT_BUYBACK_RATES[option_index]
+	_save_game()
+	_refresh_ui()
+
+func _set_retail_price_policy(option_index: int) -> void:
+	if option_index < 0 or option_index >= RETAIL_PRICE_RATES.size():
+		return
+	retail_price_percent = RETAIL_PRICE_RATES[option_index]
+	_save_game()
+	_refresh_ui()
+
+func _retail_price_factor() -> float:
+	return float(retail_price_percent) / 100.0
 
 ## Estimativa conservadora: etiqueta de uma peça Honesta no mercado de hoje,
 ## menos custo de fabricação e preço atual de reposição dos ingredientes.
@@ -3976,7 +4092,7 @@ func _estimated_margin(item: Dictionary) -> int:
 	var recipe: Dictionary = item.get("ingredients", {})
 	for ingredient_id in recipe.keys():
 		ingredient_cost += _ingredient_price(str(ingredient_id)) * int(recipe[ingredient_id])
-	return int(round(_piece_price(item, 1) * _market_product_factor(item))) - craft_cost - ingredient_cost
+	return int(round(_piece_price(item, 1) * _market_product_factor(item) * _retail_price_factor())) - craft_cost - ingredient_cost
 
 func _ingredient_price(ingredient_id: String) -> int:
 	var base := float(Ingredients.price_for_day(ingredient_id, shop_day))
@@ -4369,23 +4485,32 @@ func _on_customer_tick() -> void:
 		if _is_product_unlocked(products[i]) and int(products[i]["stock"]) > 0:
 			available.append(i)
 
+	var buyback: Dictionary = {}
 	if available.is_empty():
 		# Prateleira vazia também é cena: quem bate na porta é um dos fregueses,
 		# e cada um deles já tem uma reclamação escrita para este momento exato.
 		var visitor: Dictionary = _pick_regular()
+		buyback = _buy_customer_mission_loot(visitor)
 		var grumble := str(visitor.get("empty", "“Sem nada na prateleira? Eu volto... quem sabe.”"))
 		_animate_customer_arrival({
 			"name": visitor["name"],
 			"portrait": int(visitor.get("portrait", 2)),
 			"faction": str(visitor.get("faction", "mercadores"))
 		})
-		_set_customer_status("CLIENTE: foi embora")
-		_set_seller_mood("surprised")
-		last_event = "%s entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. %s Reabasteça a loja para não perder vendas." % [visitor["short"], grumble]
-		_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank + (15 if _has_spec("charm", "boca") else 0))
+		if not buyback.is_empty():
+			_set_customer_status("CLIENTE: vendeu espólio")
+			_set_seller_mood("happy")
+			last_event = "%s A loja estava sem estoque de venda, mas comprou o espólio trazido pelo cliente e reabasteceu a prateleira." % str(buyback["line"])
+			_react_to_visit("content", false)
+		else:
+			_set_customer_status("CLIENTE: foi embora")
+			_set_seller_mood("surprised")
+			last_event = "%s entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. %s Reabasteça a loja para não perder vendas." % [visitor["short"], grumble]
+			_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank + (15 if _has_spec("charm", "boca") else 0))
 	else:
 		_flood_service_queue()
 		var profile: Dictionary = _next_served_profile()
+		buyback = _buy_customer_mission_loot(profile)
 		current_regular_id = str(profile.get("regular_id", ""))
 		_animate_customer_arrival(profile)
 		var preferred_index: int = _product_index(str(profile["favorite"]))
@@ -4503,6 +4628,7 @@ func _on_customer_tick() -> void:
 			_add_xp(10)
 			headline_locked = true
 			reputation += 1 + (1 if seduction_used else 0)
+		sale_price = maxi(1, int(round(float(sale_price) * _retail_price_factor())))
 		# A peça saiu da prateleira, o dinheiro entra no caixa. Até aqui só o
 		# pedido especial pagava: a venda comum levava o item e devovia XP.
 		gold += sale_price
@@ -4572,6 +4698,8 @@ func _on_customer_tick() -> void:
 		_set_seller_mood("happy")
 		_react_to_visit("delighted" if preferred_index == chosen_index else "content", seduction_used)
 		_set_negotiation_dialogue(profile, item, seduction_used, preferred_index == chosen_index)
+		if not buyback.is_empty():
+			last_event += "\n" + str(buyback["line"])
 
 	if adult_content_enabled and affection >= 10 and affection % 10 == 0:
 		last_event = "A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”"
@@ -5219,7 +5347,8 @@ func _refresh_ui() -> void:
 		craft_buttons[i].text = "Na fila" if already_queued else "Fabricar (%d)" % craft_cost if unlocked and missing_ingredients.is_empty() else "Faltam ingredientes" if unlocked else "Receita bloqueada"
 		craft_buttons[i].disabled = already_queued or craft_jobs.size() >= 3 or not unlocked or gold < craft_cost or not missing_ingredients.is_empty()
 		var counter_stock := int(item["stock"])
-		var counter_payout := maxi(1, int(round(float(shelf) * 0.7)))
+		var counter_tier := _peek_tier(i, Quality.WORST)
+		var counter_payout := maxi(1, int(round(_piece_price(item, counter_tier) * _market_product_factor(item) * _prestige_price_factor() * 0.7)))
 		counter_labels[i].text = "%s | Estoque: %d | Balcão leva a pior: %s | Paga %d ouro" % [item["name"], counter_stock, str(Quality.tier(_peek_tier(i, Quality.WORST))["name"]), counter_payout]
 		counter_buttons[i].text = "Vender (%d)" % counter_payout
 		counter_buttons[i].disabled = counter_stock <= 0
@@ -5561,6 +5690,18 @@ func _refresh_ui() -> void:
 			romance_button.disabled = gold < int(step_data["gold"]) \
 				or int(regular_bonds.get(romance_pending, 0)) < int(step_data["bond"])
 	adult_toggle_button.text = "Cenas sensuais: LIGADAS" if adult_content_enabled else "Cenas sensuais: DESLIGADAS"
+	if is_instance_valid(auto_buy_loot_check):
+		auto_buy_loot_check.button_pressed = auto_buy_mission_loot
+	if is_instance_valid(loot_buyback_option):
+		for option_index in range(LOOT_BUYBACK_RATES.size()):
+			if LOOT_BUYBACK_RATES[option_index] == loot_buyback_percent:
+				loot_buyback_option.select(option_index)
+				break
+	if is_instance_valid(retail_price_option):
+		for option_index in range(RETAIL_PRICE_RATES.size()):
+			if RETAIL_PRICE_RATES[option_index] == retail_price_percent:
+				retail_price_option.select(option_index)
+				break
 	if is_instance_valid(recover_theft_button):
 		recover_theft_button.text = "Rastrear: %s" % stolen_item_name if theft_recovery_available else "Rastrear item roubado"
 		recover_theft_button.disabled = not theft_recovery_available
@@ -5681,6 +5822,9 @@ func _save_game() -> void:
 	config.set_value("game", "ingredient_stock", ingredient_stock)
 	config.set_value("game", "quality_stock", quality_stock)
 	config.set_value("game", "economy_state", economy_state)
+	config.set_value("game", "auto_buy_mission_loot", auto_buy_mission_loot)
+	config.set_value("game", "loot_buyback_percent", loot_buyback_percent)
+	config.set_value("game", "retail_price_percent", retail_price_percent)
 	config.set_value("game", "active_buffs", active_buffs)
 	config.set_value("game", "stolen_tier", stolen_tier)
 	config.set_value("game", "best_quality_crafted", best_quality_crafted)
@@ -5924,6 +6068,11 @@ func _load_game() -> void:
 	best_quality_crafted = clampi(int(config.get_value("game", "best_quality_crafted", best_quality_crafted)), -1, Quality.size() - 1)
 	rituals_performed = int(config.get_value("game", "rituals_performed", rituals_performed))
 	_read_economy_state(config.get_value("game", "economy_state", {}))
+	auto_buy_mission_loot = bool(config.get_value("game", "auto_buy_mission_loot", auto_buy_mission_loot))
+	var saved_buyback_rate := int(config.get_value("game", "loot_buyback_percent", loot_buyback_percent))
+	loot_buyback_percent = saved_buyback_rate if LOOT_BUYBACK_RATES.has(saved_buyback_rate) else 45
+	var saved_retail_rate := int(config.get_value("game", "retail_price_percent", retail_price_percent))
+	retail_price_percent = saved_retail_rate if RETAIL_PRICE_RATES.has(saved_retail_rate) else 100
 	active_buffs = _read_buffs(config.get_value("game", "active_buffs", {}))
 	stolen_tier = clampi(int(config.get_value("game", "stolen_tier", stolen_tier)), 0, Quality.size() - 1)
 	_read_expeditions(config.get_value("game", "expeditions", []))
