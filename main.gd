@@ -109,6 +109,8 @@ var alchemy_rank: int = 0
 var trade_rank: int = 0
 var charm_rank: int = 0
 var logistics_rank: int = 0
+## Quinta trilha: a chefe administrando a própria casa, e não só o balcão.
+var house_rank: int = 0
 ## Receitas pagas na biblioteca, independentemente do nível da personagem.
 var known_recipes: Array[String] = []
 var world_speed_options: Array[float] = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
@@ -165,6 +167,7 @@ var alchemy_button: Button
 var trade_button: Button
 var charm_button: Button
 var logistics_button: Button
+var house_button: Button
 var ingredient_labels: Array = []
 var ingredient_buttons: Array = []
 var last_event: String = "Bem-vindo! Vamos transformar esta espelunca em um império."
@@ -1685,6 +1688,9 @@ func _build_ui() -> void:
 	logistics_button = Button.new()
 	logistics_button.pressed.connect(_buy_talent.bind("logistics"))
 	talent_row.add_child(logistics_button)
+	house_button = Button.new()
+	house_button.pressed.connect(_buy_talent.bind("house"))
+	talent_row.add_child(house_button)
 
 	_build_stage(root)
 
@@ -3394,7 +3400,7 @@ func _on_customer_tick() -> void:
 		# A conta foi paga ou foi para a dívida; o teto é checado depois, para a
 		# conquista de sair do buraco bater antes de a vida fechar no vermelho.
 		_check_achievements()
-		if debt >= DEBT_LIMIT:
+		if debt >= _debt_limit():
 			_claim_ruin()
 	if imp_hired and ticks % 3 == 0:
 		_imp_work()
@@ -4117,11 +4123,15 @@ func _show_stage_emotion(figure: Control, emotion: String) -> void:
 	figure.set_meta("emotion_pose", true)
 	var hold := create_tween()
 	hold.tween_interval(0.9)
-	hold.tween_callback(_restore_stage_walk_frame.bind(figure))
+	## O callback leva o id, não o corpo: se ele sair de cena antes do intervalo
+	## acabar, o objeto liberado não converte para o parâmetro tipado e a guarda
+	## dentro da função nem chega a rodar — sobra um erro no log a cada virada.
+	hold.tween_callback(_restore_stage_walk_frame.bind(figure.get_instance_id()))
 
 ## Depois da pose de emoção o corpo retoma o passo exatamente de onde parou.
-func _restore_stage_walk_frame(figure: Control) -> void:
-	if not is_instance_valid(figure):
+func _restore_stage_walk_frame(figure_id: int) -> void:
+	var figure := instance_from_id(figure_id) as Control
+	if figure == null:
 		return
 	figure.set_meta("emotion_pose", false)
 	var frames := int(figure.get_meta("walk_frames", figure.get_child_count()))
@@ -4230,7 +4240,7 @@ func _refresh_ui() -> void:
 	if is_instance_valid(progression_label):
 		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Pontos de talento: %d  •  Dia %d" % [player_level, player_xp, _xp_required(), skill_points, shop_day]
 	if is_instance_valid(talent_label):
-		talent_label.text = "TALENTOS • Alquimia %d/5 | Comércio %d/5 | Carisma %d/5 | Logística %d/5" % [alchemy_rank, trade_rank, charm_rank, logistics_rank]
+		talent_label.text = "TALENTOS • Alquimia %d/5 | Comércio %d/5 | Carisma %d/5 | Logística %d/5 | Casa %d/5" % [alchemy_rank, trade_rank, charm_rank, logistics_rank, house_rank]
 	for talent_button in [alchemy_button, trade_button, charm_button]:
 		if is_instance_valid(talent_button):
 			talent_button.disabled = skill_points <= 0
@@ -4246,6 +4256,9 @@ func _refresh_ui() -> void:
 	if is_instance_valid(logistics_button):
 		logistics_button.text = "Logística %d/5" % logistics_rank
 		logistics_button.disabled = skill_points <= 0 or logistics_rank >= 5
+	if is_instance_valid(house_button):
+		house_button.text = "Administração da Casa %d/5" % house_rank
+		house_button.disabled = skill_points <= 0 or house_rank >= 5
 	for i in range(Ingredients.DATA.size()):
 		var ingredient: Dictionary = Ingredients.DATA[i]
 		var ingredient_id := str(ingredient["id"])
@@ -4335,9 +4348,10 @@ func _refresh_ui() -> void:
 	if is_instance_valid(upkeep_label):
 		# A conta do dia é a única razão para o caixa ter teto: sem ela, loja grande
 		# só cresce e nunca precisa de freguês.
-		upkeep_label.text = "CUSTO DA CASA: %d de ouro a cada virada (biblioteca, santuário, propaganda e diabrete pesam na conta).%s" % [
+		upkeep_label.text = "CUSTO DA CASA: %d de ouro a cada virada (biblioteca, santuário, propaganda e diabrete pesam na conta).%s%s" % [
 			_daily_upkeep(),
-			" Dívida aberta de %d — a casa leva o salão aos %d." % [debt, DEBT_LIMIT] if debt > 0 else "",
+			" Administração da casa derruba %d%% da conta. " % int(round(8.0 * float(house_rank))) if house_rank > 0 else "",
+			" Dívida aberta de %d — a casa leva o salão aos %d." % [debt, _debt_limit()] if debt > 0 else "",
 		]
 	if is_instance_valid(day_report_label):
 		day_report_label.text = "ÚLTIMA VIRADA: %s" % day_report if day_report != "" \
@@ -4348,10 +4362,11 @@ func _refresh_ui() -> void:
 		if branches.is_empty():
 			branch_summary_label.text = "Nenhuma filial aberta. A primeira custa 400 de ouro e pede um capítulo fechado."
 		else:
-			var expected := Branches.expected_profit(branches)
+			var expected := Branches.expected_profit(branches, _branch_care())
 			var extra := Branches.total_upkeep(branches)
-			branch_summary_label.text = "CASAS ABERTAS: %d de %d • lucro esperado %+d por virada • custo extra %d • saldo médio %+d." % [
-				branches.size(), Branches.size(), expected, extra, expected - extra]
+			branch_summary_label.text = "CASAS ABERTAS: %d de %d • lucro esperado %+d por virada • custo extra %d • saldo médio %+d.%s" % [
+				branches.size(), Branches.size(), expected, extra, expected - extra,
+				" Cuidado da casa: -%d%% de dia ruim." % _branch_care() if _branch_care() > 0 else ""]
 	for i in range(Branches.DATA.size()):
 		var branch: Dictionary = Branches.DATA[i]
 		var branch_id := str(branch["id"])
@@ -4363,7 +4378,7 @@ func _refresh_ui() -> void:
 				str(branch["name"]),
 				"ABERTA" if opened else ("disponível" if blocked == "" else "trancada"),
 				_branch_faction_label(branch), int(branch["profit"]), int(branch["upkeep"]),
-				int(round(float(branch["tilt"]) * 100.0)),
+				int(round(Branches.risk_for(branch, 0, _branch_care()) * 100.0)),
 			]
 		if i < branch_buttons.size():
 			var branch_button := branch_buttons[i] as Button
@@ -4621,6 +4636,7 @@ func _save_game() -> void:
 	config.set_value("game", "trade_rank", trade_rank)
 	config.set_value("game", "charm_rank", charm_rank)
 	config.set_value("game", "logistics_rank", logistics_rank)
+	config.set_value("game", "house_rank", house_rank)
 	config.set_value("game", "ingredient_stock", ingredient_stock)
 	config.set_value("game", "quality_stock", quality_stock)
 	config.set_value("game", "economy_state", economy_state)
@@ -4793,6 +4809,7 @@ func _load_game() -> void:
 	trade_rank = int(config.get_value("game", "trade_rank", trade_rank))
 	charm_rank = int(config.get_value("game", "charm_rank", charm_rank))
 	logistics_rank = int(config.get_value("game", "logistics_rank", logistics_rank))
+	house_rank = int(config.get_value("game", "house_rank", house_rank))
 	var saved_ingredients = config.get_value("game", "ingredient_stock", ingredient_stock)
 	if saved_ingredients is Dictionary:
 		ingredient_stock = saved_ingredients.duplicate(true)
@@ -4936,13 +4953,19 @@ const TALENT_REACTIONS := {
 		"Imps desfilam com caixas empilhadas: “Estoque organizado e fornecedor assustado. Meu tipo de manhã perfeita.”",
 		"A chefe bate a prancheta no quadril: “Eficiência também é sensual. Principalmente quando chega no prazo.”",
 		"Um portal minúsculo cospe ingredientes no balcão: “Entrega expressa. Reclamações com o meu chicote de planilhas.”"
+	],
+	"house": [
+		"Ela risca três contratos e a conta do dia encolhe sozinha no balcão: “Viu? Administrar a casa também é feitiçaria.”",
+		"A cadeira velha vira estofada com o que a loja deixou de pagar: “Economia doméstica é isto: comprar conforto com o dinheiro que ia embora.”",
+		"As planilhas voam do balcão e aterrassam em fila: “Cada moeda que a casa não gasta é um presente que eu me dou à noite.”"
 	]
 }
 const TALENT_MAX_LINES := {
 	"alchemy": "Ela abre os braços e o laboratório inteiro cintila: “Mestra alquimista! Agora os frascos é que pedem desculpas para mim.”",
 	"trade": "Ela apoia o queixo na mão: “Nível máximo de negociação. Vou começar a vender até o seu 'não' de volta, com juros.”",
 	"charm": "O ar fica rosado e quente: “Carisma máximo. Se eu piscar errado, vou precisar de uma fila de seguranças... e de um ventilador.”",
-	"logistics": "Todos os imps batem continência ao mesmo tempo: “Logística perfeita. Até o caos agora chega pontual.”"
+	"logistics": "Todos os imps batem continência ao mesmo tempo: “Logística perfeita. Até o caos agora chega pontual.”",
+	"house": "Ela põe os pés sobre a mesa cheia de contratos já assinados: “Administração máxima. O teto da dívida subiu, o custo do dia caiu, e o coletor agora bate na porta pedindo desculpas antes de entrar.”"
 }
 
 func _play_talent_reaction(kind: String, rank: int) -> void:
@@ -4998,6 +5021,15 @@ func _buy_talent(kind: String) -> void:
 				return
 			logistics_rank += 1
 			last_event = "Talento Logística melhorado! Ingredientes ficam 5% mais baratos por nível."
+		"house":
+			if house_rank >= 5:
+				return
+			house_rank += 1
+			last_event = "Talento Administração da Casa melhorado! A conta diária da loja fica 8% mais leve por nível."
+			if house_rank >= 2:
+				last_event += " Do nível 2 em diante, cada nível corta 1% do dia ruim das filiais."
+			if house_rank >= 5:
+				last_event += " No máximo, o teto da dívida sobe para %d." % _debt_limit()
 
 	skill_points -= 1
 	audio.play("talent")
@@ -5253,8 +5285,9 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "ruin_first", "name": "Cheiro de mofo no caixa (uma vida fechou em ruína)", "condition": ruined_lives >= 1, "gold": 60, "rep": 2},
 		{"id": "debt_escaped", "name": "Saindo do buraco (quitar 120 de dívida pagando em dia)", "condition": debt == 0 and debt_peak >= 120, "gold": 200, "rep": 8, "pose": "vitoria"},
 		{"id": "branch_first", "name": "Endereço fora do bairro (primeira filial)", "condition": not branches.is_empty(), "gold": 120, "rep": 4},
-		{"id": "branch_self_made", "name": "A casa se paga (filiais cobrem a conta da casa)", "condition": not branches.is_empty() and Branches.expected_profit(branches) >= _daily_upkeep(), "gold": 300, "rep": 10, "pose": "book"},
+		{"id": "branch_self_made", "name": "A casa se paga (filiais cobrem a conta da casa)", "condition": not branches.is_empty() and Branches.expected_profit(branches, _branch_care()) >= _daily_upkeep(), "gold": 300, "rep": 10, "pose": "book"},
 		{"id": "branch_all", "name": "Império de esquina a beco (todas as filiais abertas)", "condition": branches.size() >= Branches.size(), "gold": 500, "rep": 15, "pose": "danca"},
+		{"id": "house_talent_max", "name": "A casa no cabresto (Administração da Casa no nível máximo)", "condition": house_rank >= 5, "gold": 260, "rep": 9, "pose": "book"},
 		{"id": "card_holo", "name": "Brilho de coleção (primeira carta holográfica)", "condition": Cards.evolved_count(card_counts, 1) >= 1, "gold": 90, "rep": 4},
 		{"id": "card_prism", "name": "Prisma no mural (uma carta em seis cópias)", "condition": Cards.evolved_count(card_counts, 2) >= 1, "gold": 240, "rep": 10, "pose": "vitoria"},
 		{"id": "card_album_working", "name": "Álbum trabalhando (os três conjuntos pagando bônus)", "condition": Cards.luck_bonus(card_counts) >= 1 and Cards.price_bonus(card_counts) >= 0.04 and Cards.pack_discount(card_counts) >= 2, "gold": 150, "rep": 6},
@@ -5436,9 +5469,22 @@ func _has_faction_ending() -> bool:
 ## o caixa de ser um número que só sobe.
 const DEBT_LIMIT := 240
 
+## O teto da dívida é negociável: a chefe que aprende a administrar a casa ganha
+## folga no vermelho antes de o coletor levar o salão.
+func _debt_limit() -> int:
+	return DEBT_LIMIT + (60 if house_rank >= 5 else 0)
+
+## Da segunda marcha para cima, a administração acompanha as filiais de perto e
+## cada ponto derruba um ponto percentual da chance de dia ruim.
+func _branch_care() -> int:
+	return maxi(0, house_rank - 1)
+
 func _daily_upkeep() -> int:
-	return 12 + library_upgrade_level * 6 + sanctum_upgrade_level * 6 + ad_level * 5 \
+	var bill := 12 + library_upgrade_level * 6 + sanctum_upgrade_level * 6 + ad_level * 5 \
 		+ (18 if imp_hired else 0) + Branches.total_upkeep(branches)
+	## Conta de casa bem administrada encolhe 8% por marcha, e a conta é o que
+	## segura o império: por isso a trilha mexe nela e não na receita.
+	return maxi(1, int(round(float(bill) * (1.0 - 0.08 * float(house_rank)))))
 
 ## A virada de dia cobra a conta. Pagar em dia usa o que sobrou de caixa para
 ## escavar a dívida; não pagar não perdoa — o faltante entra no vermelho da casa.
@@ -5450,10 +5496,10 @@ func _pay_upkeep() -> String:
 	if short > 0:
 		debt += short
 		debt_peak = maxi(debt_peak, debt)
-		if debt >= DEBT_LIMIT:
+		if debt >= _debt_limit():
 			return "A casa cobrou %d e o caixa tinha só %d. Faltaram %d: a dívida estourou em %d e o coletor já está na calçada." % [
 				bill, paid, short, debt]
-		if debt >= DEBT_LIMIT / 2:
+		if debt >= _debt_limit() / 2:
 			return "A casa cobrou %d e o caixa tinha só %d. Faltaram %d, e a dívida de %d já passa da metade do teto." % [
 				bill, paid, short, debt]
 		return "A casa cobrou %d e o caixa tinha só %d. A loja foi dormir devendo %d." % [bill, paid, debt]
@@ -5476,7 +5522,7 @@ func _collect_branches() -> String:
 	var net := 0
 	var damaged := false
 	for id in branches:
-		var gain := Branches.roll(Branches.find(str(id)), _card_luck())
+		var gain := Branches.roll(Branches.find(str(id)), _card_luck(), _branch_care())
 		results.append(gain)
 		net += gain
 		damaged = damaged or gain < 0
@@ -5695,7 +5741,7 @@ func _show_ending(ending: Dictionary = {}, ruined := false) -> void:
 	var closing := "O balcão continua aberto: dá para fechar o álbum, subir no placar e esticar o império até onde a sorte deixar."
 	if ruined:
 		ledger = "A vida afundou no dia em que a casa cobrava %d e a dívida passou de %d. O fundo do poço desta vida foi %d.%s\n\n" % [
-			_daily_upkeep(), DEBT_LIMIT, debt_peak,
+			_daily_upkeep(), _debt_limit(), debt_peak,
 			(" E a loja ainda mantinha %d filial(is) aberta(s), custando %d por virada." % [
 				branches.size(), Branches.total_upkeep(branches)]) if not branches.is_empty() else ""]
 		closing = "O balcão reabre no mesmo lugar, com a freguesia lembrando da loja e o cofre vazio: quem fecha no vermelho recomeça sem aura nenhuma."
@@ -6073,6 +6119,7 @@ func _reset_run() -> void:
 	trade_rank = 0
 	charm_rank = 0
 	logistics_rank = 0
+	house_rank = 0
 	known_recipes.clear()
 	daily_quest_index = 0
 	daily_quest_progress = 0

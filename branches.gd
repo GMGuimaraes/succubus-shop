@@ -98,28 +98,31 @@ static func total_profit(ids: Array) -> int:
 			sum += int(branch["profit"])
 	return sum
 
+## Chance de dia ruim depois dos redutores: cada ponto de sorte (álbum de cards)
+## derruba 4% e cada ponto de administração da casa derruba 1%, com piso de 2%
+## para nenhuma filial virar garantia.
+static func risk_for(branch: Dictionary, luck: int = 0, care: int = 0) -> float:
+	return maxf(0.02, float(branch["tilt"]) - float(luck) * 0.04 - float(care) * 0.01)
+
 ## Expectativa de lucro por dia, já descontado o dia ruim. É o número honesto para
 ## o painel: a filial boa não é a que mais paga, é a que mais paga em média.
-static func expected_for(branch: Dictionary) -> int:
-	return int(round(float(branch["profit"]) * (1.0 - float(branch["tilt"]) * (1.0 + DAMAGE_SHARE))))
+static func expected_for(branch: Dictionary, care: int = 0) -> int:
+	return int(round(float(branch["profit"]) * (1.0 - risk_for(branch, 0, care) * (1.0 + DAMAGE_SHARE))))
 
-static func expected_profit(ids: Array) -> int:
+static func expected_profit(ids: Array, care: int = 0) -> int:
 	var sum := 0
 	for id in ids:
 		var branch := find(str(id))
 		if not branch.is_empty():
-			sum += expected_for(branch)
+			sum += expected_for(branch, care)
 	return sum
 
 ## O dia de uma filial: ou paga o lucro, ou não paga e ainda cobra o conserto.
-static func roll(branch: Dictionary, luck: int = 0) -> int:
+static func roll(branch: Dictionary, luck: int = 0, care: int = 0) -> int:
 	if branch.is_empty():
 		return 0
 	var profit := int(branch["profit"])
-	## Sorte empurra a régua para baixo: cada ponto de sorte derruba 4% da chance
-	## de dia ruim, com piso de 2% para nenhuma filial virar garantia.
-	var tilt := maxf(0.02, float(branch["tilt"]) - float(luck) * 0.04)
-	if randf() < tilt:
+	if randf() < risk_for(branch, luck, care):
 		return -int(round(profit * DAMAGE_SHARE))
 	return profit
 
