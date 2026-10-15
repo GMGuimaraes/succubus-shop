@@ -11,7 +11,8 @@ config_version=5
 [application]
 
 config/name="Succubus Shop"
-config/description="Protótipo gratuito de gerenciamento de uma loja mágica com humor."
+config/description="Alpha jogável de Succubus Shop: gerencie uma loja mágica, fabrique itens e construa um império."
+config/version="0.1.0-alpha.1"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.7")
 
@@ -23,6 +24,11 @@ window/size/window_width_override=1280
 window/size/window_height_override=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[debug]
+
+file_logging/enable_file_logging=true
+file_logging/log_path="user://logs/godot.log"
 
 [rendering]
 

@@ -18,9 +18,25 @@ Isto é uma ilustração de visão — não uma captura de funcionalidades já j
 
 ## Estado do projeto
 
-**Protótipo jogável em desenvolvimento.** Já há fabricação e venda de produtos, cadeia de produção com ingredientes e qualidade, economia reativa, clientes automáticos, expedições, santuário de relíquias, cartas colecionáveis que evoluem e pagam bônus de balcão, campanha em sete capítulos com sete desfechos (seis por facção mais a ruína), **os três pedidos escritos de cada uma das cinco facções, que pagam privilégio permanente e atravessam a reencarnação**, custo diário da casa e dívida com teto, filiais fora do salão que pagam por virada e engrossam a conta, **quatro vagas de funcionários com taxa, salário na conta diária e entrega dentro das fórmulas que a loja já tinha**, reencarnação do império com aura, dotes permanentes e placar por temporada, conquistas, placar de pontuação, integração opcional com a Steam e progressão por nível, pontos de talento **com dois ofícios concorrentes por trilha — assinar um raspa o outro até a próxima vida**, contratos de loja e reputação por facção. Ainda não é um lançamento final; interface, balanceamento e conteúdo precisam de mais testes.
+**Alpha jogável em desenvolvimento.** Já há fabricação e venda de produtos, cadeia de produção com ingredientes e qualidade, economia reativa, clientes automáticos, expedições, santuário de relíquias, cartas colecionáveis que evoluem e pagam bônus de balcão, campanha em sete capítulos com sete desfechos (seis por facção mais a ruína), **os três pedidos escritos de cada uma das cinco facções, que pagam privilégio permanente e atravessam a reencarnação**, custo diário da casa e dívida com teto, filiais fora do salão que pagam por virada e engrossam a conta, **quatro vagas de funcionários com taxa, salário na conta diária e entrega dentro das fórmulas que a loja já tinha**, reencarnação do império com aura, dotes permanentes e placar por temporada, conquistas, placar de pontuação, integração opcional com a Steam e progressão por nível, pontos de talento **com dois ofícios concorrentes por trilha — assinar um raspa o outro até a próxima vida**, contratos de loja e reputação por facção. A versão alpha é jogável, mas interface, balanceamento e conteúdo ainda precisam de testes.
 
-## Como jogar
+## Baixar e jogar a alpha
+
+- **Windows 10/11 (64 bits):** [baixar Succubus Shop v0.1.0-alpha.1](https://github.com/GMGuimaraes/succubus-shop/releases/tag/v0.1.0-alpha.1), extrair o ZIP e executar `Succubus Shop.exe`. O build é portátil e não exige Godot instalado.
+- **Steam:** o executável Windows também pode ser adicionado à biblioteca pelo menu **Adicionar um jogo → Adicionar um jogo não Steam**. O pacote tem formato compatível com um depot Windows; a publicação como aplicativo próprio na loja Steam ainda depende do AppID, configuração de depots e credenciais do parceiro Steam.
+- Para jogar pelo projeto-fonte, instale Godot 4.7.2, abra `project.godot` e execute a cena principal com **F6/F5**.
+
+Esta é uma versão alpha: faça cópias de segurança dos saves e espere mudanças de balanceamento. O jogo exportado não leva o editor Godot.
+
+## Relatórios de problemas e privacidade
+
+O jogo mantém um log local em `user://logs/godot.log` para ajudar a investigar erros. O log **não é transmitido em segundo plano**. Use **🐞 Relatar** no cabeçalho para preparar um issue com versão, sistema operacional, FPS, memória estática estimada e somente os 1.500 caracteres mais recentes do log; nome é opcional. É necessário marcar o consentimento, revisar o texto no GitHub e publicar manualmente. Issues e logs publicados ficam visíveis publicamente: remova informações pessoais antes de enviar.
+
+## DLCs e anúncios futuros
+
+A camada `commerce.gd` separa catálogo/entitlements da lógica do jogo e a integração Steam oferece pontos de verificação de DLC e acesso à página da loja. Os AppIDs e produtos ainda não foram fornecidos, portanto nenhum DLC pago está ativo. Anúncios também estão **desativados** e não há SDK de anúncios no alpha; o contrato só permitirá posicionamentos explicitamente solicitados e fora do fluxo normal da partida. Não há banners, intersticiais nem anúncios automáticos.
+
+## Como jogar pelo projeto-fonte
 
 1. Instale o Godot 4.7.2.
 2. Baixe ou clone este repositório.
@@ -32,7 +48,7 @@ Isto é uma ilustração de visão — não uma captura de funcionalidades já j
 - **Sistema:** Windows 10 ou posterior, 64 bits. O projeto ainda não foi validado em outras plataformas.
 - **Gráficos:** GPU compatível com OpenGL 3.3; o projeto usa o renderizador GL Compatibility e janela de referência 1280 × 720.
 - **Processador e memória:** estimativa inicial de CPU dual-core e 4 GB de RAM; ainda sem benchmark em hardware de entrada.
-- **Desenvolvimento:** Godot 4.7.2 para abrir e executar o projeto pelo editor. Uma distribuição exportada ainda não foi publicada.
+- **Desenvolvimento:** Godot 4.7.2 para abrir e executar o projeto pelo editor. Builds alpha Windows 64-bit são publicados em Releases.
 
 ## Recursos atuais
 

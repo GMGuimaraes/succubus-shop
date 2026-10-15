@@ -12,6 +12,7 @@ extends Node
 
 signal leaderboard_ready(rows: Array)
 
+const Commerce = preload("res://commerce.gd")
 const HALL_PATH := "user://hall_of_fame.cfg"
 const LEADERBOARD_NAME := "succubus_shop_melhor_negocio"
 
@@ -117,6 +118,26 @@ func board_source() -> String:
 	if steam_available:
 		return "Steam (pedindo placar)"
 	return "Placar local"
+
+## A loja continua funcionando sem Steam; DLC não configurado nunca é tratado como adquirido.
+func owns_dlc(product_id: String) -> bool:
+	var product := Commerce.find_dlc(product_id)
+	if product.is_empty():
+		return false
+	var app_id := int(product.get("app_id", 0))
+	if app_id <= 0 or not steam_available or not _steam.has_method("isDLCInstalled"):
+		return false
+	return bool(_steam.call("isDLCInstalled", app_id))
+
+## Abre a página oficial da loja Steam para um DLC cujo AppID foi configurado.
+func open_dlc_store(product_id: String) -> Error:
+	var product := Commerce.find_dlc(product_id)
+	if product.is_empty():
+		return ERR_DOES_NOT_EXIST
+	var app_id := int(product.get("app_id", 0))
+	if app_id <= 0:
+		return ERR_INVALID_PARAMETER
+	return OS.shell_open("steam://store/%d" % app_id)
 
 func rank_of(score: int) -> int:
 	var rows := board()

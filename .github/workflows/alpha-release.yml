@@ -1,0 +1,56 @@
+name: Build Windows alpha
+
+on:
+  push:
+    tags:
+      - "v*-alpha.*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Godot and export templates
+        shell: pwsh
+        run: |
+          $version = "4.7.2-stable"
+          $godotZip = Join-Path $env:RUNNER_TEMP "godot.zip"
+          $templatesZip = Join-Path $env:RUNNER_TEMP "templates.zip"
+          Invoke-WebRequest "https://github.com/godotengine/godot/releases/download/$version/Godot_v${version}_win64.exe.zip" -OutFile $godotZip
+          Invoke-WebRequest "https://github.com/godotengine/godot/releases/download/$version/Godot_v${version}_export_templates.tpz" -OutFile $templatesZip
+          $godotDir = Join-Path $env:RUNNER_TEMP "godot"
+          $templatesDir = Join-Path $env:RUNNER_TEMP "templates"
+          Expand-Archive $godotZip $godotDir
+          Expand-Archive $templatesZip $templatesDir
+          $godot = Get-ChildItem $godotDir -Filter "Godot_v*_win64.exe" | Select-Object -First 1
+          if ($null -eq $godot) { throw "Godot executable was not found in the official archive." }
+          $templateVersion = "4.7.2.stable"
+          $installDir = Join-Path $env:APPDATA "Godot\export_templates\$templateVersion"
+          New-Item -ItemType Directory -Force $installDir | Out-Null
+          $templateRoot = Join-Path $templatesDir "templates"
+          if (-not (Test-Path $templateRoot)) { throw "Export templates archive has an unexpected layout." }
+          Copy-Item (Join-Path $templateRoot "*") $installDir -Recurse -Force
+          "GODOT=$($godot.FullName)" | Out-File $env:GITHUB_ENV -Append
+      - name: Export Windows build
+        shell: pwsh
+        run: |
+          & $env:GODOT --headless --editor --path . --import
+          if ($LASTEXITCODE -ne 0) { throw "Godot resource import failed with exit code $LASTEXITCODE." }
+          New-Item -ItemType Directory -Force ".export\windows" | Out-Null
+          & $env:GODOT --headless --path . --export-release "Windows Desktop" ".export\windows\Succubus Shop.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Godot Windows export failed with exit code $LASTEXITCODE." }
+      - name: Package alpha
+        shell: pwsh
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP "Succubus-Shop-Windows-Alpha.zip"
+          Compress-Archive -Path ".export\windows\Succubus Shop.exe", "README.md", "LICENSE" -DestinationPath $package
+          "PACKAGE=$package" | Out-File $env:GITHUB_ENV -Append
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" "$env:PACKAGE" --title "$env:GITHUB_REF_NAME" --prerelease --generate-notes

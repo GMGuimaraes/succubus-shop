@@ -18,6 +18,7 @@ const FactionArcs = preload("res://faction_arcs.gd")
 const TalentSpecs = preload("res://talent_specs.gd")
 const Staff = preload("res://staff.gd")
 const SteamBridge = preload("res://steam_bridge.gd")
+const Diagnostics = preload("res://diagnostics.gd")
 
 ## Caixa e despensa com que a loja abre a primeira vida — e cada vida seguinte.
 const BASE_GOLD := 80
@@ -2070,6 +2071,13 @@ func _build_ui() -> void:
 	market_toggle_button.custom_minimum_size = Vector2(104, 42)
 	market_toggle_button.pressed.connect(_toggle_market_panel)
 	header.add_child(market_toggle_button)
+
+	var bug_report_button := Button.new()
+	bug_report_button.text = "🐞 Relatar"
+	bug_report_button.custom_minimum_size = Vector2(100, 42)
+	bug_report_button.tooltip_text = "Revisar um relatório com os logs recentes antes de enviá-lo ao GitHub."
+	bug_report_button.pressed.connect(_show_bug_report_dialog)
+	header.add_child(bug_report_button)
 
 	reception_button = Button.new()
 	reception_button.text = "Recepção"
@@ -7956,6 +7964,40 @@ func _show_save_feedback(message: String) -> void:
 	last_event = message
 	_show_feedback(message, Color(1.0, 0.82, 0.48))
 	_refresh_ui()
+
+func _show_bug_report_dialog() -> void:
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Relatar um problema"
+	dialog.dialog_text = "O relatório inclui nome opcional, versão, sistema operacional, FPS, uso estimado de memória e até 1.500 caracteres do log recente. Ao publicar, ele ficará visível publicamente no GitHub. Nada será enviado antes da sua confirmação no navegador."
+	dialog.get_ok_button().text = "Revisar no GitHub"
+	dialog.get_ok_button().disabled = true
+	var report_fields := VBoxContainer.new()
+	report_fields.add_theme_constant_override("separation", 8)
+	var name_label := Label.new()
+	name_label.text = "Nome no relatório (opcional):"
+	report_fields.add_child(name_label)
+	var player_name := LineEdit.new()
+	player_name.placeholder_text = "Anônimo"
+	player_name.max_length = 40
+	report_fields.add_child(player_name)
+	var consent := CheckBox.new()
+	consent.text = "Entendo que o issue publicado será público."
+	report_fields.add_child(consent)
+	consent.toggled.connect(func(checked: bool) -> void:
+		dialog.get_ok_button().disabled = not checked
+	)
+	dialog.add_child(report_fields)
+	dialog.confirmed.connect(func() -> void:
+		var open_error := OS.shell_open(Diagnostics.issue_url(player_name.text))
+		if open_error != OK:
+			_show_save_feedback("Não foi possível abrir o navegador para o relatório (erro %d)." % open_error)
+		else:
+			_show_feedback("Relatório aberto para revisão. O envio só acontece quando você publicar o issue no GitHub.", Color(0.75, 1.0, 0.82))
+		dialog.queue_free()
+	)
+	dialog.canceled.connect(dialog.queue_free)
+	add_child(dialog)
+	dialog.popup_centered(Vector2i(600, 300))
 
 func _confirm_full_reset() -> void:
 	hard_reset_dialog.popup_centered()
