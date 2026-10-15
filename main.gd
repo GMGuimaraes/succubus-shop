@@ -658,6 +658,10 @@ const STAGE_FRONT_DEPTH := 0.82
 ## Janela de uma visita: ele tem de chegar ao balcão antes do próximo tique, mas
 ## sem correr parado.
 const STAGE_ARRIVE_SECONDS := 2.8
+## Quanto do tique a chegada ocupa. O resto é o respiro no balcão: sem ele o
+## freguês encosta no balcão no mesmo instante em que o próximo corpo nasce na
+## quarta parede, e a leitura é um boneco refazendo o trajeto sem fim.
+const STAGE_ARRIVE_TICK_FRACTION := 0.62
 const OFFLINE_FARM_MAX_SECONDS := 12.0 * 60.0 * 60.0
 const OFFLINE_FARM_BRANCH_PERIOD := 60.0 * 60.0
 const OFFLINE_REPORT_MIN_SECONDS := 60.0
@@ -1264,7 +1268,7 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 	# ninguém desliza pelo chão nem corre com as pernas paradas.
 	var arrival_window := STAGE_ARRIVE_SECONDS
 	if is_instance_valid(world_timer) and not world_timer.is_stopped():
-		arrival_window = minf(arrival_window, world_timer.wait_time * 0.9)
+		arrival_window = minf(arrival_window, world_timer.wait_time * STAGE_ARRIVE_TICK_FRACTION)
 	var path_time := _path_time(stage_customer, path)
 	var pace := maxf(1.0, path_time / maxf(0.25, arrival_window))
 	# Quanto falta para ele parar, guardado no corpo: uma cena que queira o
@@ -1357,16 +1361,24 @@ func _path_time(node: Control, path: Array[Vector2]) -> float:
 		x = point.x
 	return total
 
-## Acrescenta a uma caminhada o percurso pela lista de pontos do chão.
-func _walk_path(trip: Tween, node: Control, path: Array[Vector2], pace := 1.0) -> void:
+## Acrescenta a uma caminhada o percurso pela lista de pontos do chão. O ponto de
+## partida é passado adiante de uma perna para a outra porque a cadeia inteira é
+## montada antes do primeiro passo: quem lesse a própria posição veria o corpo
+## ainda no começo do caminho, e cada perna voltaria à quarta parede em vez de
+## continuar de onde a anterior parou.
+func _walk_path(trip: Tween, node: Control, path: Array[Vector2], pace := 1.0, from_point := Vector2(INF, INF)) -> void:
+	var from := from_point
+	if is_inf(from.x):
+		from = Vector2(float(node.get_meta("stage_depth", STAGE_FRONT_DEPTH)), node.position.x + node.size.x * 0.5)
 	for point in path:
-		_stroll_leg(trip, node, point.y, point.x, pace)
+		_stroll_leg(trip, node, point.y, point.x, pace, from)
+		from = Vector2(point.y, point.x)
 
 ## Um trecho da caminhada, com a meia-volta antes do primeiro passo. Trechos sem
 ## comprimento não entram na fila: tween de duração zero só emite aviso.
-func _stroll_leg(trip: Tween, node: Control, to_depth: float, to_x: float, pace := 1.0) -> void:
-	var from_depth := float(node.get_meta("stage_depth", to_depth))
-	var from_x := node.position.x + node.size.x * 0.5
+func _stroll_leg(trip: Tween, node: Control, to_depth: float, to_x: float, pace := 1.0, from_point := Vector2(INF, INF)) -> void:
+	var from_depth := float(node.get_meta("stage_depth", to_depth)) if is_inf(from_point.x) else from_point.x
+	var from_x := node.position.x + node.size.x * 0.5 if is_inf(from_point.y) else from_point.y
 	var time := _stage_walk_time(from_depth, from_x, to_depth, to_x) / pace
 	if time < 0.05:
 		return
@@ -1608,10 +1620,12 @@ func _release_to_floor(body: int, depth: float, center_x: float, served: bool) -
 	stride.tween_property(stroller, "rotation_degrees", -1.6, STAGE_STEP_SECONDS).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	stride.tween_callback(_advance_stage_frame.bind(stroller))
 	var trip := create_tween()
+	var from := Vector2(depth, center_x)
 	var spots: Array = STAGE_ROOM_BROWSE.get(_stage_room, [])
 	if served and not spots.is_empty():
 		var spot: Vector2 = spots.pick_random()
-		_stroll_leg(trip, stroller, spot.y, spot.x * stage_layer.size.x)
+		_stroll_leg(trip, stroller, spot.y, spot.x * stage_layer.size.x, 1.0, from)
+		from = Vector2(spot.y, spot.x * stage_layer.size.x)
 		trip.tween_callback(stroller.set_meta.bind("walk_frames", 1))
 		trip.tween_callback(_show_stage_emotion.bind(stroller, str(STAGE_BROWSE_POSES.pick_random())))
 		trip.tween_interval(1.7)
@@ -1619,7 +1633,7 @@ func _release_to_floor(body: int, depth: float, center_x: float, served: bool) -
 		trip.tween_interval(1.0)
 		trip.tween_callback(stroller.set_meta.bind("walk_frames", _stage_crowd_frames(body).size()))
 	var back := _room_exit_path()
-	_walk_path(trip, stroller, back)
+	_walk_path(trip, stroller, back, 1.0, from)
 	# No ponto de fuga o corpo some junto com a própria opacidade: sem o fade ele
 	# ficaria plantado no rodapé da parede pintada, do tamanho de um boneco de
 	# tabuleiro, e a sala perderia a ilusão de que a porta é longe.
@@ -2028,9 +2042,66 @@ func _turn_stage_walker(walker: Control) -> void:
 	walker.set_meta("stage_step", 0)
 	_set_stage_flip(walker, not bool(walker.get_meta("stage_flip", false)))
 
-## Sem sombra de contato nenhuma figura fica de pé numa arte pintada. Os elipses
-## acompanham o pé de cada personagem e são desenhados antes dos filhos da camada.
+## Os dois pontos de luz que mandam na sombra de um pé: o mais perto e o segundo
+## mais perto. Mais que isso mancharia o chão em vez de sombrear ninguém.
+func _nearest_lights(foot: Vector2, lights: Array[Vector2]) -> Array[int]:
+	var first := -1
+	var second := -1
+	var closest := INF
+	var runner_up := INF
+	for i in range(lights.size()):
+		var distance := foot.distance_to(lights[i])
+		if distance < closest:
+			second = first
+			runner_up = closest
+			first = i
+			closest = distance
+		elif distance < runner_up:
+			second = i
+			runner_up = distance
+	var picked: Array[int] = []
+	if first >= 0:
+		picked.append(first)
+	if second >= 0:
+		picked.append(second)
+	return picked
+
+## Onde a sala tem fogo aceso, em fração da tela: as velas pintadas na arte. O
+## pavio tremula, então cada chama oscila um pouco a cada quadro e a sombra do
+## elenco acompanha o balanço — é isso que faz a loja parecer iluminada por vela
+## em vez de por refletor de estúdio.
+func _stage_lights(now_ms: int) -> Array[Vector2]:
+	var lamps: Array = STAGE_ROOM_LIGHTS.get(_stage_room, [])
+	var out: Array[Vector2] = []
+	for i in range(lamps.size()):
+		var lamp: Vector2 = lamps[i]
+		out.append(Vector2(
+			(lamp.x + sin(float(now_ms) / (1129.0 + float(i) * 61.0)) * 0.006) * stage_layer.size.x,
+			(lamp.y + sin(float(now_ms) / (421.0 + float(i) * 97.0)) * 0.008) * stage_layer.size.y))
+	return out
+
+## O halo de cada vela na parede e o poço de luz no chão embaixo dela. Tudo aqui é
+## desenhado antes dos filhos da camada, então a luz nunca tapa um corpo.
+func _draw_light_pools(layer: Control, lights: Array[Vector2], now_ms: int) -> void:
+	var floor_y := float(_lane_at(0.5)["floor_y"])
+	for i in range(lights.size()):
+		var lamp := lights[i]
+		var breath := 0.88 + 0.12 * sin(float(now_ms) / (421.0 + float(i) * 97.0))
+		for ring in range(5):
+			layer.draw_circle(lamp, (24.0 + float(ring) * 21.0) * breath, Color(1.0, 0.72, 0.34, 0.026))
+		layer.draw_set_transform(Vector2(lamp.x, floor_y), 0.0, Vector2(78.0 * breath, 17.0))
+		layer.draw_circle(Vector2.ZERO, 1.0, Color(1.0, 0.64, 0.28, 0.05))
+		layer.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+## Sem sombra nenhuma figura fica de pé numa arte pintada. Cada corpo recebe duas:
+## a de contato, colada no pé, e a projetada pelas velas, que deita no chão na
+## direção oposta à luz. O pé é lido pela transformada global porque a chefe
+## inclina e escala no meio do atendimento, e a elipse fica deitada — sombra em pé
+## na tela é exatamente o que fazia o elenco flutuar sobre o próprio risco.
 func _draw_stage_shadows(layer: Control) -> void:
+	var now_ms := Time.get_ticks_msec()
+	var lights := _stage_lights(now_ms)
+	_draw_light_pools(layer, lights, now_ms)
 	var figures: Array[Control] = []
 	if is_instance_valid(stage_seller) and stage_seller.visible:
 		figures.append(stage_seller_body)
@@ -2042,25 +2113,37 @@ func _draw_stage_shadows(layer: Control) -> void:
 			figures.append(entry["node"])
 	if is_instance_valid(stage_customer) and stage_customer.visible:
 		figures.append(stage_customer)
+	if lights.is_empty():
+		lights.append(Vector2(layer.size.x * 0.5, layer.size.y * 0.1))
+	var to_layer := layer.get_global_transform().affine_inverse()
+	var layer_zoom := maxf(0.0001, layer.get_global_transform().get_scale().x)
 	for figure in figures:
-		var parent := figure.get_parent()
-		var origin: Vector2 = parent.position if parent is Control else Vector2.ZERO
-		var foot := origin + Vector2(figure.position.x + figure.size.x * 0.5, figure.position.y + figure.size.y * (figure.scale.y + 1.0) * 0.5 - 2.0)
-		var radius := figure.size.x * figure.scale.x * 0.40
-		var closest_light := Vector2(layer.size.x * 0.5, layer.size.y * 0.1)
-		var closest_distance := INF
-		for light: Vector2 in STAGE_ROOM_LIGHTS.get(_stage_room, []):
-			var light_position := Vector2(light.x * layer.size.x, light.y * layer.size.y)
-			var distance := foot.distance_to(light_position)
-			if distance < closest_distance:
-				closest_distance = distance
-				closest_light = light_position
-		var away_from_light := foot - closest_light
-		var shadow_offset := away_from_light.normalized() * clampf(9.0 - closest_distance * 0.012, 1.5, 8.0)
-		var shadow_alpha := clampf(0.38 - closest_distance / maxf(1.0, layer.size.x) * 0.12, 0.20, 0.38)
-		layer.draw_set_transform(foot + shadow_offset, away_from_light.angle(), Vector2(radius, maxf(5.0, radius * 0.17)))
-		layer.draw_circle(Vector2.ZERO, 1.0, Color(0.04, 0.01, 0.05, shadow_alpha))
+		var world := figure.get_global_transform()
+		var foot: Vector2 = to_layer * world * Vector2(figure.size.x * 0.5, figure.size.y)
+		var zoom := world.get_scale().x / layer_zoom
+		var radius := maxf(8.0, figure.size.x * zoom * 0.40)
+		var contact_tall := maxf(4.5, radius * 0.30)
+		layer.draw_set_transform(foot + Vector2(0.0, contact_tall * 0.35), 0.0, Vector2(radius, contact_tall))
+		layer.draw_circle(Vector2.ZERO, 1.0, Color(0.03, 0.01, 0.045, 0.40))
 		layer.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		for pick in _nearest_lights(foot, lights):
+			var lamp := lights[pick]
+			var above := maxf(48.0, foot.y - lamp.y)
+			var dx := foot.x - lamp.x
+			# Comprimento de um corpo iluminado de lado: quanto mais rasante a chama,
+			# mais a sombra corre pelo chão. Ela nasce na beirada do pé e vai embora,
+			# porque sombra que descola do pé é gente flutuando.
+			var reach := clampf(figure.size.y * zoom * absf(dx) / above, radius * 0.4, radius * 2.2)
+			var away := 1.0 if dx >= 0.0 else -1.0
+			var wide := reach * 0.5 + radius * 0.6
+			var cast_tall := maxf(3.5, wide * 0.2)
+			layer.draw_set_transform(
+				foot + Vector2(away * (wide - radius * 0.55), cast_tall * 0.3),
+				-away * clampf(absf(dx) / above, 0.0, 1.2) * 0.16,
+				Vector2(wide, cast_tall))
+			layer.draw_circle(Vector2.ZERO, 1.0, Color(0.02, 0.005, 0.03, clampf(
+				0.14 - foot.distance_to(lamp) / maxf(1.0, layer.size.x) * 0.10, 0.04, 0.14)))
+			layer.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 func _build_ui() -> void:
