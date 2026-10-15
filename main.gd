@@ -164,6 +164,40 @@ const VANDAL_NAMES: Array[String] = [
 	"Rufino Meia-Noite", "Boca-Salgada Vera", "Caco Tiracolo",
 	"Nino do Beco Sem Nome", "Zeca Pé-de-Ferro", "Amparo Mão-Leve",
 ]
+## Faixas de progresso que mudam a cara do salão. A régua é o mesmo placar que o
+## painel já mostra (`business_score`), então a loja não ganha meta nova: ela ganha
+## consequência visível do que já é.
+const PROGRESS_BAND_SCORES: Array[int] = [0, 900, 2400, 5200, 9000]
+const PROGRESS_BAND_NAMES: Array[String] = [
+	"loja de beco", "balcão arrumado", "casa respeitada", "endereço no bairro", "império da rua",
+]
+## O que cada faixa acende. É a mesma lista que a camada desenhada em código lê,
+## escrita para o painel: ninguém decora o que a chefe não consegue nomear.
+const PROGRESS_BAND_GIFTS: Array[String] = [
+	"o salão cru, com uma vela e o balcão de sempre",
+	"piso encerado e tapete realçado na faixa de passeio",
+	"+ cordão de velas acesas nas paredes do salão",
+	"+ caixilho dourado na moldura da tela",
+	"+ lustre aceso no teto e poeira dourada no ar",
+]
+## Onde a arte de cada sala já pintou o próprio tapete, em fração da tela. A camada
+## não desenha móvel novo por cima de móvel velho: ela realça o que já está lá.
+## Sala sem entrada aqui recebe a faixa de passeio no lugar.
+const PROGRESS_RUG := {
+	"res://assets/shop_scene.png": [
+		Vector2(0.30, 0.72), Vector2(0.70, 0.72), Vector2(0.83, 1.0), Vector2(0.19, 1.0),
+	],
+	"res://assets/library_room_scene.png": [
+		Vector2(0.26, 0.78), Vector2(0.74, 0.78), Vector2(0.86, 1.0), Vector2(0.14, 1.0),
+	],
+}
+## Faixa atual e a camada que a desenha. Camada própria, acima do fundo pintado e
+## abaixo do elenco: a decoração não compete com corpo nem come o clique de ninguém.
+var _progress_band: int = 0
+## O primeiro painel da sessão não comemora: a casa pode abrir já crescida, e
+## festa de carregamento é festa falsa.
+var _progress_quiet: bool = true
+var _progress_layer: Control
 ## Pedidos de facção já entregues (facção → quantos). É nome, não ouro: fica na
 ## conta salva depois da ruína e da reencarnação, e o privilégio do arco fechado
 ## continua valendo na vida seguinte.
@@ -466,6 +500,7 @@ var branch_buttons: Array = []
 var staff_summary_label: Label
 var queue_label: Label
 var mess_label: Label
+var progress_label: Label
 var sweep_button: Button
 var cell_label: Label
 var release_button: Button
@@ -797,6 +832,9 @@ var _stage_waiters: Array[Dictionary] = []
 var _stage_back_band: Control
 var _market_top_guard: Control
 var _stage_room: String = "res://assets/shop_scene.png"
+## Se a sala atual tem chão andável. A camada de progresso respeita a flag: sem
+## chão pintado (close-up de cena), não há tapete nem lustre onde desenhar.
+var _stage_walkable: bool = true
 var _seller_home: Vector2 = Vector2.ZERO
 var _stage_layout_key := Vector2(-1.0, -1.0)
 var _seller_lean_tween: Tween
@@ -1261,6 +1299,11 @@ func _show_stage_for_room(scene_path: String, walkable: bool) -> void:
 		if stale.is_valid():
 			stale.kill()
 	_stage_fade_tweens.clear()
+	# A decoração por faixa é desenhada na geometria da sala: mudou a sala, muda o
+	# chão, muda o tapete.
+	_stage_walkable = walkable
+	if is_instance_valid(_progress_layer):
+		_progress_layer.queue_redraw()
 	_apply_room_props(scene_path)
 	# A sala nova tem outro ponto de encontro: sem isso a chefe ficaria parada na
 	# marca da sala anterior, porque o resto do layout não mudou.
@@ -2244,6 +2287,18 @@ func _build_ui() -> void:
 	bg.z_index = -1000
 	add_child(bg)
 
+	# A camada da faixa de progresso fica entre o fundo pintado e as figuras: o
+	# tapete no chão, as velas na parede e o lustre no teto são desenhados por
+	# código, sobre a arte que a casa já tinha.
+	_progress_layer = Control.new()
+	_progress_layer.name = "ProgressDecor"
+	_progress_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_progress_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_progress_layer.z_index = -900
+	_progress_layer.draw.connect(_draw_progress_decor)
+	_progress_layer.resized.connect(_progress_layer.queue_redraw)
+	add_child(_progress_layer)
+
 	ambient_particles = CPUParticles2D.new()
 	ambient_particles.amount = 32
 	ambient_particles.lifetime = 3.2
@@ -2686,7 +2741,7 @@ func _build_ui() -> void:
 	reception_box.add_child(queue_label)
 
 	reception_box.add_child(_make_section_title("CONSERVA DA CASA E CELA", Color(0.86, 0.80, 1.0)))
-	reception_box.add_child(_make_section_hint("Barro no chão é conta, não cenário: encurta a paciência da fila, derruba a etiqueta e chama vândalo para a porta. A criada varre por salário, o servo apaixonado varre por afeto e a chefe varre em ouro. Quem é pego com a mão na prateleira pode acabar na cela do santuário — que rende sangue para a forja e prato na conta da virada."))
+	reception_box.add_child(_make_section_hint("Barro no chão é conta, não cenário: encurta a paciência da fila, derruba a etiqueta e chama vândalo para a porta. A criada varre por salário, o servo apaixonado varre por afeto e a chefe varre em ouro. Quem é pego com a mão na prateleira pode acabar na cela do santuário — que rende sangue para a forja e prato na conta da virada. O placar da casa também acende o salão: piso encerado, velas, caixilho dourado e lustre entram no palco conforme a loja sobe de faixa."))
 	var house_card := _make_sector_card(Color(0.06, 0.05, 0.09, 0.94), Color(0.46, 0.42, 0.68, 0.95))
 	reception_box.add_child(house_card)
 	var house_row := HBoxContainer.new()
@@ -2705,13 +2760,18 @@ func _build_ui() -> void:
 	cell_label.add_theme_font_size_override("font_size", 13)
 	cell_label.add_theme_color_override("font_color", Color(0.82, 0.80, 0.96))
 	house_info.add_child(cell_label)
+	progress_label = Label.new()
+	progress_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	progress_label.add_theme_font_size_override("font_size", 13)
+	progress_label.add_theme_color_override("font_color", Color(0.96, 0.88, 0.60))
+	house_info.add_child(progress_label)
 	var house_buttons := VBoxContainer.new()
 	house_buttons.add_theme_constant_override("separation", 8)
 	house_row.add_child(house_buttons)
 	sweep_button = Button.new()
 	sweep_button.custom_minimum_size = Vector2(190, 40)
 	sweep_button.add_theme_font_size_override("font_size", 14)
-	sweep_button.text = "🧹 Varref o salão"
+	sweep_button.text = "🧹 Varrer o salão"
 	sweep_button.pressed.connect(_sweep_floor)
 	house_buttons.add_child(sweep_button)
 	release_button = Button.new()
@@ -5477,6 +5537,9 @@ func _refresh_ui() -> void:
 		sweep_button.disabled = mess <= 0 or gold < mop
 	if is_instance_valid(cell_label):
 		cell_label.text = _cell_line()
+	_apply_progress_decor()
+	if is_instance_valid(progress_label):
+		progress_label.text = _progress_line()
 	var has_prisoner := not prisoners.is_empty()
 	for seat_button in [release_button, deliver_button, banish_button]:
 		if is_instance_valid(seat_button):
@@ -8175,6 +8238,137 @@ func _banish_prisoner() -> void:
 ## Um freguês banido não volta: é a única porta da casa que tranca por fora.
 func _regular_banned(regular_id: String) -> bool:
 	return banned_regulars.has(regular_id)
+
+## Faixa atual, medida no placar que o painel já mostra.
+func _progress_band_now() -> int:
+	var score := business_score()
+	var band := 0
+	for i in range(PROGRESS_BAND_SCORES.size()):
+		if score >= PROGRESS_BAND_SCORES[i]:
+			band = i
+	return band
+
+## Aplica a faixa: redesenha a camada, esquenta o fundo pintado do mesmo salão e
+## engorda a poeira do ar. Roda a cada atualização de painel e só faz alguma coisa
+## quando a faixa realmente muda, para não redesenhar o salão a cada tique.
+func _apply_progress_decor() -> void:
+	var band := _progress_band_now()
+	var antes := _progress_band
+	var quiet := _progress_quiet
+	_progress_quiet = false
+	if band == antes:
+		return
+	_progress_band = band
+	if is_instance_valid(_progress_layer):
+		_progress_layer.queue_redraw()
+	# O mesmo PNG, um degrau mais quente e mais aceso: a casa não troca de arte,
+	# troca de luz, e é a luz que o olho lê como "essa loja cresceu". A faixa 0 é
+	# a cor original da pintura — o aquecimento é o prêmio, não o ponto de partida.
+	if is_instance_valid(background_layer):
+		var lift := float(band) * 0.045
+		background_layer.modulate = Color(1.0 + lift * 0.6, 1.0 + lift * 0.35, 1.0 - lift * 0.3)
+		background_layer.modulate.a = 1.0
+	if is_instance_valid(ambient_particles):
+		ambient_particles.amount = 24 + band * 12
+	# A faixa sobe sozinha, mas quem avisa é a chefe: ninguém pode descobrir o
+	# salão novo por acidente no meio de uma venda.
+	if band > antes and not quiet:
+		last_event = "A casa virou %s: %s" % [PROGRESS_BAND_NAMES[band], PROGRESS_BAND_GIFTS[band]]
+		_show_stage_emotion(stage_seller_body, "felicidade")
+
+## A camada em si: tudo desenhado em código, em coordenadas normalizadas da sala,
+## para funcionar nas quatro salas sem arte nova e sem arquivo novo no repositório.
+func _draw_progress_decor() -> void:
+	if _progress_band <= 0 or not _stage_walkable or _progress_layer.size.x <= 0.0:
+		return
+	var wide := _progress_layer.size.x
+	var tall := _progress_layer.size.y
+	var floor_line: Vector2 = STAGE_ROOM_FLOOR.get(_stage_room, Vector2(0.60, 0.80))
+	var ground := Vector2(wide * floor_line.x, tall * floor_line.y)
+	# Faixa 1 — o piso encerado: a camada não desenha um tapete novo por cima do
+	# que a arte já pintou, ela realça o tapete que está lá. Uma lavagem quente e
+	# outra funda na mesma silhueta, e o brilho da borda de trás.
+	var mat := PackedVector2Array([])
+	var rug: Array = PROGRESS_RUG.get(_stage_room, [])
+	if rug.size() == 4:
+		for corner in rug:
+			mat.append(Vector2(wide * (corner as Vector2).x, tall * (corner as Vector2).y))
+	else:
+		var w := wide * 0.30
+		var deep := tall * 0.055
+		mat = PackedVector2Array([
+			ground + Vector2(-w * 0.55, -deep * 2.0),
+			ground + Vector2(w * 0.55, -deep * 2.0),
+			ground + Vector2(w, deep),
+			ground + Vector2(-w, deep),
+		])
+	_progress_layer.draw_colored_polygon(mat, Color(1.0, 0.70, 0.36, 0.09))
+	_progress_layer.draw_colored_polygon(mat, Color(0.20, 0.02, 0.09, 0.16))
+	_progress_layer.draw_line(mat[0], mat[1], Color(0.88, 0.70, 0.34, 0.28), 2.0)
+	if _progress_band < 2:
+		return
+	# Faixa 2 — velas acesas: cada luz que a sala já tem na arte ganha o próprio
+	# halo, largo e fraco, para parecer chama e não mancha.
+	var lamps: Array = STAGE_ROOM_LIGHTS.get(_stage_room, [])
+	for lamp in lamps:
+		var here := Vector2(wide * (lamp as Vector2).x, tall * (lamp as Vector2).y)
+		_progress_layer.draw_circle(here, wide * 0.055, Color(1.0, 0.72, 0.30, 0.05))
+		_progress_layer.draw_circle(here, wide * 0.030, Color(1.0, 0.76, 0.34, 0.07))
+		_progress_layer.draw_circle(here, wide * 0.010, Color(1.0, 0.88, 0.55, 0.30))
+	if _progress_band < 3:
+		return
+	# Faixa 3 — caixilho dourado: a moldura nasce na beirada da tela, então ela
+	# emoldura o salão em vez de entrar dentro dele.
+	var trim := maxf(2.0, wide * 0.0022)
+	for edge_y in [0.0, tall - trim]:
+		_progress_layer.draw_rect(Rect2(Vector2(0.0, edge_y), Vector2(wide, trim)),
+			Color(0.82, 0.66, 0.30, 0.42))
+	for edge_x in [0.0, wide - trim]:
+		_progress_layer.draw_rect(Rect2(Vector2(edge_x, 0.0), Vector2(trim, tall)),
+			Color(0.82, 0.66, 0.30, 0.42))
+	for corner_x in [0.03, 0.97]:
+		_progress_layer.draw_circle(Vector2(wide * corner_x, tall * 0.03), wide * 0.008,
+			Color(1.0, 0.84, 0.46, 0.18))
+	if _progress_band < 4:
+		return
+	# Faixa 4 — lustre aceso: a luz principal desce do teto em cone fraco e ganha
+	# corpo de brilho, sem ferragem desenhada por cima do lustre que a arte já tem.
+	# O centro é a luz pintada mais próxima do meio do teto, não o meio geométrico
+	# da tela — é ali que o olho já procura o lustre.
+	var crown := Vector2(ground.x, tall * 0.05)
+	var best := 9.9
+	for lamp in lamps:
+		var score := absf((lamp as Vector2).x - 0.5) + (lamp as Vector2).y
+		if score < best:
+			best = score
+			crown = Vector2(wide * (lamp as Vector2).x, tall * (lamp as Vector2).y)
+	_progress_layer.draw_colored_polygon(PackedVector2Array([
+		crown + Vector2(-wide * 0.05, 0.0),
+		crown + Vector2(wide * 0.05, 0.0),
+		crown + Vector2(wide * 0.13, tall * 0.30),
+		crown + Vector2(-wide * 0.13, tall * 0.30),
+	]), Color(1.0, 0.84, 0.46, 0.06))
+	for ring in range(4):
+		_progress_layer.draw_circle(crown, wide * (0.09 - float(ring) * 0.022),
+			Color(1.0, 0.82, 0.44, 0.05 + float(ring) * 0.05))
+	# Poeira dourada suspensa: pontos fixos por posição derivada do índice, sem
+	# RNG, para o salão continuar o mesmo entre dois redraws.
+	for mote in range(26):
+		var mx := fmod(float(mote) * 0.137, 1.0)
+		var my := fmod(float(mote) * 0.311, 1.0)
+		_progress_layer.draw_circle(Vector2(wide * mx, tall * (0.12 + my * 0.62)),
+			wide * 0.0022, Color(1.0, 0.86, 0.48, 0.42))
+
+## O que o painel diz da faixa: nome, o que ela acendeu e quanto falta para a
+## próxima — a decoração precisa ter número, senão é enfeite sem meta.
+func _progress_line() -> String:
+	var band := _progress_band_now()
+	var next_score: int = PROGRESS_BAND_SCORES[band + 1] if band + 1 < PROGRESS_BAND_SCORES.size() else 0
+	var missing: int = next_score - business_score()
+	return "A CASA ESTÁ: %s (placar %d) — %s%s" % [
+		PROGRESS_BAND_NAMES[band], business_score(), PROGRESS_BAND_GIFTS[band],
+		"" if missing <= 0 else " Próxima faixa em %d de placar." % missing
+	]
 
 ## Entregar à guilda é o meio-termo que existe só porque a cela existe: a casa
 ## ganha a rua como aliada e abre mão do sangue que aquele prisioneiro daria.
