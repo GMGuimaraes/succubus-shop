@@ -25,8 +25,11 @@ jobs:
           $templatesDir = Join-Path $env:RUNNER_TEMP "templates"
           Expand-Archive $godotZip $godotDir
           Expand-Archive $templatesZip $templatesDir
-          $godot = Get-ChildItem $godotDir -Filter "Godot_v*_win64.exe" | Select-Object -First 1
-          if ($null -eq $godot) { throw "Godot executable was not found in the official archive." }
+          $godot = Get-ChildItem $godotDir -Filter "Godot_v*_win64_console.exe" | Select-Object -First 1
+          if ($null -eq $godot) { throw "Godot console executable was not found in the official archive." }
+          if (-not (Test-Path (Join-Path $godotDir "Godot_v4.7.2-stable_win64.exe"))) {
+            throw "Godot editor binary required by the console launcher was not found."
+          }
           $templateVersion = "4.7.2.stable"
           $installDir = Join-Path $env:APPDATA "Godot\export_templates\$templateVersion"
           New-Item -ItemType Directory -Force $installDir | Out-Null
@@ -45,6 +48,10 @@ jobs:
           New-Item -ItemType Directory -Force ".export\windows" | Out-Null
           $exportLog = Join-Path $env:RUNNER_TEMP "godot-export.log"
           & $env:GODOT --headless --verbose --log-file $exportLog --path . --export-release "Windows Desktop" ".export\windows\Succubus Shop.exe"
+          if ($LASTEXITCODE -ne 0) {
+            if (Test-Path $exportLog) { Get-Content $exportLog -Tail 100 }
+            throw "Godot export failed with exit code $LASTEXITCODE."
+          }
           $executable = Get-Item ".export\windows\Succubus Shop.exe" -ErrorAction SilentlyContinue
           if ($null -eq $executable -or $executable.Length -lt 1048576) {
             if (Test-Path $exportLog) { Get-Content $exportLog -Tail 100 }
