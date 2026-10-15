@@ -568,7 +568,7 @@ const STAGE_ROOM_PROPS := {
 const STAGE_ROOM_PROP_DEPTHS := {
 	"res://assets/library_room_scene.png": [0.32, 0.40, 0.40],
 	"res://assets/sanctum_room_scene.png": [0.56, 0.56, 0.39, 0.39],
-	"res://assets/forge_scene.png": [0.38, 0.60, 0.52],
+	"res://assets/forge_scene.png": [0.12, 0.60, 0.52],
 }
 ## Quantos contornos de móvel o shader aguenta ao mesmo tempo.
 const STAGE_PROP_SLOTS := 8
@@ -4384,7 +4384,9 @@ func _draw_visitor_profile() -> Dictionary:
 
 func _on_customer_tick() -> void:
 	ticks += 1
-	_stage_customer_leaves()
+	var customer_arriving := _customer_walk_tween != null and _customer_walk_tween.is_valid()
+	if not customer_arriving:
+		_stage_customer_leaves()
 	_advance_service_queue()
 	_advance_craft_jobs(3.0)
 	Sanctum.advance(active_buffs, 3.0)
@@ -4454,6 +4456,12 @@ func _on_customer_tick() -> void:
 			_show_day_report(balance)
 	if imp_hired and ticks % 3 == 0:
 		_imp_work()
+
+	# Deixa a visita anterior terminar antes de avançar outra fila ou iniciar uma
+	# nova cena. Uma troca de velocidade não pode reiniciar o trajeto pela tela.
+	if customer_arriving or (_customer_walk_tween != null and _customer_walk_tween.is_valid()):
+		_refresh_ui()
+		return
 
 	# A última rodada não é venda. Um freguês por tique entra, olha o salão, acena e
 	# volta a sair pela porta; a loja segue fabricando e expedindo enquanto isso.
