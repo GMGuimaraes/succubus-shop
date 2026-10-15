@@ -1027,6 +1027,10 @@ func _spawn_stage_walker() -> void:
 	# quem entrar sem repetir alguém.
 	if _stage_walkers.size() >= mini(STAGE_CROWD_BODIES.size() - 1, STAGE_MAX_WALKERS):
 		return
+	# Evitar que transeuntes nasçam enquanto um cliente do turno está chegando
+	# — isso causa aparições visuais repetidas pela mesma trilha.
+	if _customer_walk_tween != null and _customer_walk_tween.is_valid():
+		return
 	var crowd := _free_crowd_index()
 	if crowd < 0:
 		return
@@ -1289,11 +1293,15 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 ## frente. Sala sem chegada escrita entra pela porta antiga.
 func _room_path() -> Array[Vector2]:
 	var path: Array[Vector2] = []
-	for point in STAGE_ROOM_ARRIVE.get(_stage_room, []):
-		path.append(point)
-	if path.is_empty():
-		for point in STAGE_ROOM_DOOR.get(_stage_room, []):
-			path.append(point)
+	# Use apenas o primeiro ponto de chegada para evitar múltiplos trechos
+	var arrive_list := STAGE_ROOM_ARRIVE.get(_stage_room, [])
+	if arrive_list.size() > 0:
+		path.append(arrive_list[0])
+	else:
+		var door := STAGE_ROOM_DOOR.get(_stage_room, [])
+		if door.size() > 0:
+			path.append(door[0])
+	# fallback
 	if path.is_empty():
 		path.append(Vector2(0.0, STAGE_ENTRY_DEPTH))
 	path.append(Vector2(_room_meet().y, STAGE_FRONT_DEPTH))
@@ -1324,11 +1332,13 @@ func _place_stage_figure(node: Control, depth: float, center_x: float) -> void:
 	var figure_scale: float = lane["scale"]
 	node.set_meta("stage_depth", depth)
 	node.z_index = _stage_z_for_depth(depth)
+	# apply scale and compute scaled size for stable placement
 	node.scale = Vector2(figure_scale, figure_scale)
-	node.position = Vector2(
-		center_x - node.size.x * 0.5,
-		float(lane["floor_y"]) - node.size.y * (1.0 + figure_scale) * 0.5
-	)
+	var scaled_size := Vector2(node.size.x * figure_scale, node.size.y * figure_scale)
+	# Garantir pivô central para consistência entre tipos de figura
+	node.pivot_offset = node.size / 2.0
+	# posicionar de modo que os pés toquem o floor_y após a escala
+	node.position = Vector2(center_x - scaled_size.x * 0.5, float(lane["floor_y"]) - (scaled_size.y * 0.5))
 
 func _stage_z_for_depth(depth: float) -> int:
 	return roundi(inverse_lerp(0.0, STAGE_FOURTH_WALL_DEPTH, clampf(depth, 0.0, STAGE_FOURTH_WALL_DEPTH)) * 400.0)
@@ -2062,6 +2072,20 @@ func _draw_stage_shadows(layer: Control) -> void:
 		layer.draw_circle(Vector2.ZERO, 1.0, Color(0.04, 0.01, 0.05, shadow_alpha))
 		layer.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
+
+func _apply_store_visual(level: int) -> void:
+	# Níveis visuais do shop (placeholders). Cada entrada pode conter bg e overlays.
+	var visuals := [
+		{"bg": "res://assets/shop_scene.png", "overlays": []},
+		{"bg": "res://assets/shop_stage1.png", "overlays": []},
+		{"bg": "res://assets/shop_stage2.png", "overlays": []}
+	]
+	level = clampi(level, 0, visuals.size() - 1)
+	var v := visuals[level]
+	if is_instance_valid(background_layer) and ResourceLoader.exists(v["bg"]):
+		background_layer.texture = load(v["bg"])
+	# Overlays / móveis por nível poderão ser aplicados aqui (occluders, props).
+	# TODO: mapear "overlays" para _apply_room_props / _rebuild_stage_depth_occluders
 
 func _build_ui() -> void:
 	var bg := TextureRect.new()
