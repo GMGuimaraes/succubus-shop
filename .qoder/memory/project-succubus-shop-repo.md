@@ -18,3 +18,5 @@ Environment facts that are not derivable from the code:
 **Why:** The user treats GitHub as the single source of truth so everyone gets the newest version.
 
 **How to apply:** Target `D:\Downloads\succubus-shop`, expect the checkout to be behind `origin/main` with stray local WIP, and follow [[feedback-github-sync-workflow]] plus [[feedback-main-branch-only]].
+
+Since 2026-10-15 the repo also tracks `.qoder/skills/godot-headless-probe-and-push-gate/SKILL.md` and `.qoder/memory/*.md` (the user chose to publish the notes in full). Those are **copies** — the live Skill and the live memory still load from `C:\Users\gmore\.qoder\`, so an edit to either must be mirrored into the repo and pushed, or the two drift apart. Related: [[probes-are-assets-not-junk]].
