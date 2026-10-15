@@ -135,6 +135,16 @@ env APPDATA="D:\\Downloads\\tmp-userdata" "$GODOT" --headless --path . \
   --quit-after 1800 --script res://_tmp_<assunto>.gd > /d/Downloads/tmp-userdata/probe.log 2>&1
 ```
 
+**Sonda que fotografa o palco corre SEM `--headless`.** O display server headless nao tem
+rasterizador, entao `get_root().get_texture().get_image()` devolve null e cada
+`save_png`/`get_region` reprova com `ERROR: Parameter "t" is null` +
+`SCRIPT ERROR: Cannot call method 'save_png' on a null value`. A sonda roda, mede certo e
+parece aprovada - so que o olhar nao existe. Regra: logica pura = `--headless`;
+recorte de frame de cena = janela (`--path .` sem flag), e `mkdir -p` da pasta de saida
+antes, porque `save_png` falha em silencio para diretorio inexistente.
+`tools/probes/trajeto.gd` ja carrega essa dica no cabecalho ("janela: precisa de
+viewport para os recortes").
+
 - `APPDATA` inline no comando, nunca `export` no shell compartilhado.
 - Delete do save descartavel antes da rodada, para o probe nao ler progresso de teste
   antigo como se fosse real

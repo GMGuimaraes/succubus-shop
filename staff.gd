@@ -2,8 +2,9 @@ extends RefCounted
 ## Quadro de funcionários: gente fixa não é prêmio, é conta. Cada vaga tem taxa de
 ## contratação, **salário cobrado a cada virada de dia dentro da conta da casa** e
 ## uma única entrega, sempre dentro de uma fórmula que o jogo já tinha: a ronda
-## barra furto, o aprendiz encurta a forja, a escrevente abate a dívida e a cozinha
-## derruba a fúria. Ninguém fabrica número novo em painel novo — o salário entra na
+## barra furto, o aprendiz encurta a forja, a escrevente abate a dívida, a cozinha
+## derruba a fúria e a criada varre o salão. Ninguém fabrica número novo em painel
+## novo — o salário entra na
 ## mesma conta que a Biblioteca e as filiais já engrossavam, então contratar é
 ## decisão com risco, não botão de melhoria.
 ##
@@ -41,6 +42,13 @@ const DATA: Array[Dictionary] = [
 		"bg": "Fez sopa para três exércitos e nenhuma guerra. Diz que fúria de balcão é fome disfarçada de opinião.",
 		"does": "Um ponto de fúria a menos a cada virada — e fúria custa 5% de etiqueta por ponto.",
 		"calm": 1,
+	},
+	{
+		"id": "createda", "name": "Anica Cerdha", "role": "Criada de salão",
+		"hire": 200, "wage": 20, "chapter": 1, "rep": 12,
+		"bg": "Varreu o chão de duas tavernas que faliram e de uma que não, e jura que a diferença estava na vassoura. Fala pouco, anda rápido, não larga balde.",
+		"does": "Varre 20 de sujeira do salão a cada virada — barro custa tique de fila e ponto de etiqueta.",
+		"sweep": 20,
 	},
 ]
 
@@ -97,6 +105,12 @@ static func debt_dig_share(ids: Array) -> float:
 
 static func calm_per_turn(ids: Array) -> int:
 	return int(find("cozinha")["calm"]) if ids.has("cozinha") else 0
+
+## Quanto da sujeira do salão some em cada virada porque alguém foi contratado
+## para tirar o pé do chão. É a única entrega da casa que mexe numa conta que
+## antes só a chefe pagava em ouro.
+static func sweep_per_turn(ids: Array) -> int:
+	return int(find("createda")["sweep"]) if ids.has("createda") else 0
 
 ## A folha escrita para o painel: quem está no balcão e quanto cobra por virada.
 static func roster_line(ids: Array) -> String:
