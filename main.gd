@@ -989,12 +989,36 @@ const SUCCUBUS_NEGOTIATION_LINES := [
 "A chefe pisca: “Não é magia. É só você querendo muito me impressionar.”",
 "Ela desliza o item pelo balcão: “Leve. O preço é pequeno perto da história que você vai contar.”"
 ]
+const MEME_CUSTOMER_NAMES := ["Mago do Quero Mana", "Fiscal do Pix Astral", "Só Mais Uma Run", "Ladino do Ctrl+C", "Cliente do É Sobre Isso"]
 const MEME_FLIRT_LINES := [
 "A chefe responde ao Mago do Quero Mana: “Mana eu tenho. Quero ver se você aguenta o preço.”",
 "Ela encara o Fiscal do Pix Astral: “Aproxima o cristal, querido. Se der erro, você paga com um elogio.”",
 "A succubus provoca o corredor: “Só mais uma run? Então fica mais uma negociação comigo.”",
 "Ela sorri para o cliente do bordão: “É sobre isso. E sobre você voltar amanhã.”",
 "A chefe aponta para o ladrão: “Ctrl+C não copia meu charme. Esse é proprietário.”"
+]
+## O mesmo balcão dito em outra voz: com o filtro de cenas desligado a negociação
+## continua sendo confiança e ficha no caderno, nunca menos negócio. O interruptor
+## troca o texto, jamais a chance, o efeito ou a porta que ele abre.
+const TRUST_NEGOTIATION_LINES := [
+"A chefe anota o nome no caderno: “Leva agora e paga na volta. Confiança também é moeda aqui.”",
+"Ela apoia o cotovelo no balcão: “Para um freguês tão constante, eu sempre arrumo um jeito.”",
+"A chefe assente devagar: “Não é magia. É você voltar toda manhã desde aquele primeiro dia.”",
+"Ela desliza o item pelo balcão: “Leve. O preço é pequeno perto da propaganda que você vai fazer.”"
+]
+const MEME_TRUST_LINES := [
+"A chefe responde ao Mago do Quero Mana: “Mana eu tenho. Quero ver se você sustenta a etiqueta.”",
+"Ela encara o Fiscal do Pix Astral: “Aproxima o cristal. Se der erro, você resolve com a própria banca.”",
+"A chefe conta as runas do corredor: “Só mais uma run? Então fica mais uma compra consignada.”",
+"Ela anota o bordão do cliente: “É sobre isso. E sobre você voltar amanhã com o bolso cheio.”",
+"A chefe aponta para o ladrão: “Ctrl+C não copia ficha de fidelidade. Essa é proprietária.”"
+]
+## Os momentos só da loja na versão sem cena: a chefe baixa a voz do mesmo jeito,
+## só que o que ela entrega é a confiança da casa, não o flerte.
+const TRUST_MOMENTS := [
+"A chefe inclina a cabeça, puxa a cadeira para perto e abaixa a voz: “Isso aqui não sai da loja, combinado?”",
+"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais da casa quando nossa parceria ficar ainda mais lucrativa.”",
+"A chefe bate o punho no balcão e ri baixo: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”"
 ]
 ## A escada de confiança de um freguês: cada degrau cobra visitas de balcão e
 ## ouro na hora, e paga de volta para sempre na conta dele. O degrau três é o
@@ -3859,31 +3883,38 @@ func _play_sensual_reception_moment() -> void:
 	sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.42)
 
 func _play_seduction_peak_pose() -> void:
-	if not adult_content_enabled or not is_instance_valid(seller_portrait):
-		return
-	_show_stage_emotion(stage_seller_body, "beijo")
-	if sensual_tween != null and sensual_tween.is_valid():
-		sensual_tween.kill()
-	seller_portrait.pivot_offset = seller_portrait.size / 2.0
-	sensual_tween = create_tween()
-	sensual_tween.tween_property(seller_portrait, "position", Vector2(0, -12), 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	sensual_tween.tween_property(seller_portrait, "rotation", -0.045, 0.22).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.12, 1.12), 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	sensual_tween.tween_property(seller_portrait, "modulate", Color(1.0, 0.70, 0.90, 1.0), 0.25)
-	sensual_tween.tween_interval(1.1)
-	sensual_tween.tween_property(seller_portrait, "rotation", 0.045, 0.18)
-	sensual_tween.tween_property(seller_portrait, "position", Vector2(0, 4), 0.24)
-	sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.04, 1.04), 0.22)
-	sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.28)
-	sensual_tween.tween_property(seller_portrait, "rotation", 0.0, 0.12)
-	sensual_tween.tween_property(seller_portrait, "position", Vector2.ZERO, 0.18)
-	sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.24)
-	last_event = "MEDIDOR DE SEDUÇÃO CHEIO! A chefe sobe no balcão por um instante: “Agora você entende por que ninguém sai daqui pensando direito.”"
+	if adult_content_enabled and is_instance_valid(seller_portrait):
+		_show_stage_emotion(stage_seller_body, "beijo")
+		if sensual_tween != null and sensual_tween.is_valid():
+			sensual_tween.kill()
+		seller_portrait.pivot_offset = seller_portrait.size / 2.0
+		sensual_tween = create_tween()
+		sensual_tween.tween_property(seller_portrait, "position", Vector2(0, -12), 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		sensual_tween.tween_property(seller_portrait, "rotation", -0.045, 0.22).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.12, 1.12), 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		sensual_tween.tween_property(seller_portrait, "modulate", Color(1.0, 0.70, 0.90, 1.0), 0.25)
+		sensual_tween.tween_interval(1.1)
+		sensual_tween.tween_property(seller_portrait, "rotation", 0.045, 0.18)
+		sensual_tween.tween_property(seller_portrait, "position", Vector2(0, 4), 0.24)
+		sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.04, 1.04), 0.22)
+		sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.28)
+		sensual_tween.tween_property(seller_portrait, "rotation", 0.0, 0.12)
+		sensual_tween.tween_property(seller_portrait, "position", Vector2.ZERO, 0.18)
+		sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.24)
+	# O medidor cheio paga igual nos dois modos: o interruptor segura a pose desenhada
+	# na tela, nunca o degrau, o XP ou o momento que entra no placar da casa.
+	if adult_content_enabled:
+		last_event = "MEDIDOR DE SEDUÇÃO CHEIO! A chefe sobe no balcão por um instante: “Agora você entende por que ninguém sai daqui pensando direito.”"
+	else:
+		last_event = "MEDIDOR DE CONFIANÇA CHEIO! A chefe abre o caderno da casa na sua frente: “Agora você entende por que ninguém fecha a conta daqui sem voltar.”"
 	private_moments_unlocked += 1
 	reputation += 3
 	_add_xp(15)
 	audio.play("talent")
-	_show_feedback("♥ Pose especial desbloqueada!", Color(1.0, 0.62, 0.88))
+	if adult_content_enabled:
+		_show_feedback("♥ Pose especial desbloqueada!", Color(1.0, 0.62, 0.88))
+	else:
+		_show_feedback("♥ Confiança da casa conquistada!", Color(1.0, 0.62, 0.88))
 
 func _setup_background_music() -> void:
 	var music_path := "res://assets/shop_theme_loop.mp3"
@@ -4876,7 +4907,7 @@ func _on_customer_tick() -> void:
 	_advance_craft_jobs(3.0)
 	Sanctum.advance(active_buffs, 3.0)
 	_advance_expeditions(3.0)
-	_set_seller_mood("demonic" if demonic_form_active else "neutral")
+	_set_seller_mood(_fury_mood())
 	if is_instance_valid(reaction_label):
 		reaction_label.text = ""
 	if ticks % 20 == 0:
@@ -5049,7 +5080,7 @@ func _on_customer_tick() -> void:
 			if _shelf_price(affordable_index) <= current_customer_budget:
 				affordable.append(affordable_index)
 		if affordable.is_empty():
-			var charm_negotiation := adult_content_enabled and charm_rank > 0 and randi() % 100 < 25 + charm_rank * 12 + sanctum_upgrade_level * 5
+			var charm_negotiation := charm_rank > 0 and randi() % 100 < 25 + charm_rank * 12 + sanctum_upgrade_level * 5
 			if charm_negotiation and available.size() > 0:
 				seduction_used = true
 				seduction_attempts += 1
@@ -5057,7 +5088,8 @@ func _on_customer_tick() -> void:
 				current_customer_budget += 20 + charm_rank * 10
 				_add_affection(2 + charm_rank)
 				reputation += 1 + _reputation_seduction_bonus()
-				last_event = "%s suspira: “Meu orçamento é curto...” %s O cliente reconsidera." % [profile["name"], SUCCUBUS_NEGOTIATION_LINES.pick_random()]
+				var plea := "suspira: “Meu orçamento é curto...”" if adult_content_enabled else "bate no bolso: “Meu orçamento é curto...”"
+				last_event = "%s %s %s O cliente reconsidera." % [profile["name"], plea, _negotiation_line(str(profile["name"]))]
 				for affordable_index in available:
 					if _shelf_price(affordable_index) <= current_customer_budget:
 						affordable.append(affordable_index)
@@ -5080,7 +5112,7 @@ func _on_customer_tick() -> void:
 			chosen_index = preferred_index
 			# Ele viu o que queria do outro lado do salão e aponta antes de pedir.
 			_show_stage_emotion(stage_customer, "aponta")
-			if not seduction_used and adult_content_enabled and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 + sanctum_upgrade_level * 3 and (preferred_index == chosen_index or current_customer_patience <= 1):
+			if not seduction_used and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 + sanctum_upgrade_level * 3 and (preferred_index == chosen_index or current_customer_patience <= 1):
 				seduction_used = true
 				seduction_attempts += 1
 				seduction_successes += 1
@@ -5212,7 +5244,7 @@ func _on_customer_tick() -> void:
 		last_event = "A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”"
 		_play_sensual_reception_moment()
 	elif affection > 0 and affection % 5 == 0:
-		last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor, querido.”"
+		last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor, querido.”" if adult_content_enabled else "A chefe assina o caderno: “Olha só, estamos nos entendendo melhor.”"
 
 	_check_achievements()
 	_save_game()
@@ -5302,8 +5334,14 @@ func _trigger_random_event() -> void:
 		_show_stage_emotion(stage_seller_body, "pensativo")
 	audio.play("rare")
 	_show_feedback("Evento raro!", Color(1.0, 0.86, 0.45))
-	if adult_content_enabled and affection >= 5 and randi() % 2 == 0:
-		last_event += "\nA súcubo ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui, querido.”"
+	# A moeda do complemento gira nos dois modos: se ela só girasse com o filtro
+	# ligado, a sorte da loja passaria a depender do interruptor e a mesma semente
+	# deixaria de render a mesma partida.
+	if affection >= 5 and randi() % 2 == 0:
+		if adult_content_enabled:
+			last_event += "\nA súcubo ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui, querido.”"
+		else:
+			last_event += "\nA chefe ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui.”"
 
 func _animate_customer_arrival(profile: Dictionary) -> void:
 	if not is_instance_valid(customer_portrait):
@@ -5482,6 +5520,15 @@ const CHAPTER_SELLER_LINES := {
 	],
 }
 
+## A fala da negociação de charme depende só do filtro de cenas: o meme continua meme
+## nas duas versões e o que muda é a voz da chefe, nunca o que a fala paga em ouro,
+## reputação ou vaga de servo.
+func _negotiation_line(customer_name := "") -> String:
+	var meme := customer_name in MEME_CUSTOMER_NAMES
+	if adult_content_enabled:
+		return str(MEME_FLIRT_LINES.pick_random() if meme else SUCCUBUS_NEGOTIATION_LINES.pick_random())
+	return str(MEME_TRUST_LINES.pick_random() if meme else TRUST_NEGOTIATION_LINES.pick_random())
+
 func _set_negotiation_dialogue(profile: Dictionary, item: Dictionary, seduction_used: bool, favorite_item: bool) -> void:
 	if not is_instance_valid(seller_speech_label):
 		return
@@ -5494,8 +5541,7 @@ func _set_negotiation_dialogue(profile: Dictionary, item: Dictionary, seduction_
 	if current_customer_patience <= 1:
 		customer_line = "“Rápido, por favor. Tenho um dragão me esperando.”"
 	if seduction_used:
-		var flirt_line: String = str(MEME_FLIRT_LINES.pick_random() if customer_name in ["Mago do Quero Mana", "Fiscal do Pix Astral", "Só Mais Uma Run", "Ladino do Ctrl+C", "Cliente do É Sobre Isso"] else SUCCUBUS_NEGOTIATION_LINES.pick_random())
-		seller_speech_label.text = "CHEFE: %s\n%s: %s" % [flirt_line, customer_name, customer_line]
+		seller_speech_label.text = "CHEFE: %s\n%s: %s" % [_negotiation_line(customer_name), customer_name, customer_line]
 	else:
 		var offer := "“%s por %d ouro. Quer levar?”" % [str(item.get("name", "isto")), int(item.get("price", 0))]
 		var chapter_seller: Array = CHAPTER_SELLER_LINES.get(chapter_key, [])
@@ -5570,7 +5616,7 @@ func _react_to_visit(mood: String, charm_save: bool = false) -> void:
 	if animation != "disappointed" and not theft_recovery_available:
 		fury = maxi(0, fury - 1)
 		_update_demonic_form()
-	if adult_content_enabled and affection >= 100 and not seduction_peak_triggered:
+	if affection >= 100 and not seduction_peak_triggered:
 		seduction_peak_triggered = true
 		_play_seduction_peak_pose()
 
@@ -5605,6 +5651,13 @@ func _play_customer_reaction(mood: String) -> void:
 			tween.tween_property(customer_portrait, "modulate:a", 0.35, 0.55)
 		_:
 			tween.tween_property(customer_portrait, "modulate:a", 0.45, 0.9)
+
+## O humor que a fúria manda para o retrato. A forma demoníaca é consequência de fúria
+## e não de conteúdo: o estado, o selo no painel e o preço da etiqueta correm nos dois
+## modos. O que o filtro segura é a arte provocante do retrato, que volta inteira ao
+## ligar o interruptor no meio da fúria.
+func _fury_mood() -> String:
+	return "demonic" if (demonic_form_active and adult_content_enabled) else "neutral"
 
 func _set_seller_mood(mood: String) -> void:
 	if is_instance_valid(seller_portrait) and seller_portrait_paths.has(mood):
@@ -5680,12 +5733,12 @@ func _restore_stage_walk_frame(figure_id: int) -> void:
 	_set_stage_frame(figure, _stage_walk_sequence(frames)[step % frames])
 
 func _update_demonic_form() -> void:
-	if adult_content_enabled and fury >= 4 and not demonic_form_active:
+	if fury >= 4 and not demonic_form_active:
 		demonic_form_active = true
-		_set_seller_mood("demonic")
+		_set_seller_mood(_fury_mood())
 		_show_stage_emotion(stage_seller_body, "briga")
 		_show_stage_emotion(stage_customer, "medo")
-		last_event = "A FÚRIA CHEGOU AO LIMITE! A succubus assume sua forma demoníaca: “Respirem. Eu ainda sei negociar.”"
+		last_event = "A FÚRIA CHEGOU AO LIMITE! A succubus assume sua forma demoníaca: “Respirem. Eu ainda sei negociar.”" if adult_content_enabled else "A FÚRIA CHEGOU AO LIMITE! A chefe assume a forma demoníaca: “Respirem. Eu ainda sei negociar.”"
 		if is_instance_valid(seller_portrait):
 			seller_portrait.modulate = Color(1.0, 0.55, 0.62, 1.0)
 			var demon_tween := create_tween()
@@ -5695,8 +5748,8 @@ func _update_demonic_form() -> void:
 		_show_feedback("Forma demoníaca ativada.", Color(1.0, 0.48, 0.58))
 	elif demonic_form_active and fury <= 1:
 		demonic_form_active = false
-		_set_seller_mood("neutral")
-		last_event = "A succubus respira fundo e retorna à forma habitual. A loja sobreviveu ao drama."
+		_set_seller_mood(_fury_mood())
+		last_event = "A succubus respira fundo e retorna à forma habitual. A loja sobreviveu ao drama." if adult_content_enabled else "A chefe respira fundo e retorna à forma habitual. A loja sobreviveu ao drama."
 
 func _refresh_ui() -> void:
 	if not is_instance_valid(gold_label):
@@ -6744,7 +6797,7 @@ func _load_game() -> void:
 	prestige_goals_paid = int(config.get_value("game", "prestige_goals_paid", prestige_goals_paid))
 	adult_content_confirmed = bool(config.get_value("game", "adult_content_confirmed", false))
 	adult_content_enabled = adult_content_confirmed and bool(config.get_value("game", "adult_content_enabled", false))
-	demonic_form_active = adult_content_enabled and fury >= 4
+	demonic_form_active = fury >= 4
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
 	imp_hired = bool(config.get_value("game", "imp_hired", imp_hired))
@@ -8491,6 +8544,7 @@ func _reset_run() -> void:
 	affection = 0
 	fury = 0
 	demonic_form_active = false
+	seduction_peak_triggered = false
 	private_moments_unlocked = 0
 	ad_level = 0
 	imp_hired = false
@@ -8584,7 +8638,7 @@ func _board_text() -> String:
 	return "\n".join(lines)
 
 func _play_achievement_pose(pose: String) -> void:
-	if not adult_content_enabled or not is_instance_valid(seller_portrait):
+	if not is_instance_valid(seller_portrait):
 		return
 	if sensual_tween != null and sensual_tween.is_valid():
 		sensual_tween.kill()
@@ -9601,6 +9655,10 @@ func _advance_romance_step() -> void:
 	_play_sensual_reception_moment()
 	var wait := _summon_romance_partner(regular_id, int(invited["portrait"]))
 	var pose := str(requirement["pose"])
+	if not adult_content_enabled:
+		# Com o filtro desligado o salão aperta a mão em vez de beijar: o corpo muda,
+		# o degrau, o vínculo e o bônus permanente são os mesmos.
+		pose = "aprovacao"
 	# A cena acontece quando ele para no balcão, não antes: por isso a chefe espera
 	# o tempo da caminhada antes de contornar o balcão e os dois assumirem a pose.
 	if _romance_cue != null and _romance_cue.is_valid():
@@ -9629,11 +9687,12 @@ func _advance_romance_step() -> void:
 
 func _show_private_moment() -> void:
 	if affection < 5:
-		last_event = "“Paciência, querido. Primeiro conquiste minha confiança.”"
-	elif not adult_content_enabled:
-		last_event = "O momento especial está desativado nas opções de conteúdo adulto."
-	else:
-		private_moments_unlocked += 1
+		last_event = "“Paciência, querido. Primeiro conquiste minha confiança.”" if adult_content_enabled else "“Paciência. Primeiro conquiste minha confiança: o caderno da casa registra quem volta.”"
+		_save_game()
+		_refresh_ui()
+		return
+	private_moments_unlocked += 1
+	if adult_content_enabled:
 		var moments: Array[String] = [
 				"A súcubo inclina a cabeça, dá uma piscadela e puxa você para mais perto: “Esse é nosso segredinho, combinado?”",
 				"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais de mim quando nossa parceria ficar ainda mais lucrativa.”",
@@ -9641,17 +9700,18 @@ func _show_private_moment() -> void:
 			]
 		last_event = moments[(private_moments_unlocked - 1) % moments.size()]
 		_play_sensual_reception_moment()
+	else:
+		last_event = str(TRUST_MOMENTS[(private_moments_unlocked - 1) % TRUST_MOMENTS.size()])
+	_show_feedback("♥ Momento só da casa.", Color(1.0, 0.62, 0.88))
 	_save_game()
 	_refresh_ui()
 
 func _toggle_adult_content() -> void:
 	adult_content_enabled = not adult_content_enabled
 	adult_content_confirmed = true
-	if not adult_content_enabled:
-		demonic_form_active = false
-		_set_seller_mood("neutral")
+	_set_seller_mood(_fury_mood())
 	_set_sector(current_sector)
-	last_event = "Cenas sensuais ativadas. As recompensas especiais estão disponíveis." if adult_content_enabled else "Cenas sensuais desativadas. A progressão e a economia continuam normalmente."
+	last_event = "Cenas sensuais ativadas: a arte da recepção, as poses e o tom de flerte voltam para a tela." if adult_content_enabled else "Cenas sensuais desativadas: nenhuma arte provocante, pose ou flerte aparece no balcão. Progressão, economia, servos, momentos e conquistas seguem exatamente as mesmas — o que muda é a voz, nunca a porta."
 	_save_game()
 	_refresh_ui()
 
