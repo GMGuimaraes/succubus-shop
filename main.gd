@@ -713,6 +713,7 @@ var _stage_waiters: Array[Dictionary] = []
 var _stage_back_band: Control
 var _market_top_guard: Control
 var _stage_room: String = "res://assets/shop_scene.png"
+var _active_store_visual_path: String = ""
 var _seller_home: Vector2 = Vector2.ZERO
 var _stage_layout_key := Vector2(-1.0, -1.0)
 var _seller_lean_tween: Tween
@@ -861,6 +862,7 @@ func _ready() -> void:
 	_mark_day_start()
 	_sync_quality_stock()
 	_build_ui()
+	_apply_store_visual(player_level)
 	_apply_sector_visibility()
 	_setup_background_music()
 	_apply_music_settings()
@@ -1049,7 +1051,7 @@ func _spawn_stage_walker() -> void:
 	var half_body := walker.size * 0.5
 	var floor_y: float = lane["floor_y"]
 	var to_the_right := randi() % 2 == 0
-	var span: Vector2 = STAGE_ROOM_WALK.get(_stage_room, Vector2(0.0, 1.0))
+	var span: Vector2 = STAGE_ROOM_WALK.get(_room_layout_key(), Vector2(0.0, 1.0))
 	var turns := (to_the_right and span.y < 0.99) or ((not to_the_right) and span.x > 0.01)
 	# Onde o piso vai de uma borda à outra a figura entra e sai pela beirada da
 	# tela. Onde o balcão ocupa o resto da sala ela nasce na ponta do piso andável,
@@ -1302,12 +1304,13 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 func _room_path() -> Array[Vector2]:
 	var path: Array[Vector2] = []
 	# Os pontos são marcos de um único caminho contínuo, não reinícios da animação.
-	var arrive_list: Array = STAGE_ROOM_ARRIVE.get(_stage_room, [])
+	var room_key := _room_layout_key()
+	var arrive_list: Array = STAGE_ROOM_ARRIVE.get(room_key, [])
 	if not arrive_list.is_empty():
 		for point: Vector2 in arrive_list:
 			path.append(point)
 	else:
-		var door := STAGE_ROOM_DOOR.get(_stage_room, [])
+		var door: Array = STAGE_ROOM_DOOR.get(room_key, [])
 		if door.size() > 0:
 			path.append(door[0])
 	# fallback
@@ -1322,7 +1325,7 @@ func _room_path() -> Array[Vector2]:
 ## dentro da sala, encolhe até o ponto de fuga e some ali, porque a loja tem uma
 ## porta só e quem entra pela frente tem de sair pelo fundo.
 func _room_exit_path() -> Array[Vector2]:
-	var door: Array = STAGE_ROOM_DOOR.get(_stage_room, [Vector2(0.02, STAGE_ENTRY_DEPTH)])
+	var door: Array = STAGE_ROOM_DOOR.get(_room_layout_key(), [Vector2(0.02, STAGE_ENTRY_DEPTH)])
 	var path: Array[Vector2] = []
 	for i in range(door.size() - 1, -1, -1):
 		path.append(door[i])
@@ -1539,7 +1542,7 @@ func _next_served_profile() -> Dictionary:
 func _spawn_waiter(entry: Dictionary) -> void:
 	if not is_instance_valid(stage_layer) or stage_layer.size.x <= 0:
 		return
-	var spots: Array = STAGE_ROOM_QUEUE.get(_stage_room, [])
+	var spots: Array = STAGE_ROOM_QUEUE.get(_room_layout_key(), [])
 	if _stage_waiters.size() >= mini(QUEUE_SPOTS, spots.size()):
 		return
 	var profile: Dictionary = entry["profile"]
@@ -1561,7 +1564,7 @@ func _spawn_waiter(entry: Dictionary) -> void:
 func _reline_waiters() -> void:
 	if not is_instance_valid(stage_layer) or stage_layer.size.x <= 0:
 		return
-	var spots: Array = STAGE_ROOM_QUEUE.get(_stage_room, [])
+	var spots: Array = STAGE_ROOM_QUEUE.get(_room_layout_key(), [])
 	if spots.is_empty():
 		return
 	for i in range(_stage_waiters.size()):
@@ -1641,7 +1644,7 @@ func _release_to_floor(body: int, depth: float, center_x: float, served: bool) -
 	stride.tween_property(stroller, "rotation_degrees", -1.6, STAGE_STEP_SECONDS).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	stride.tween_callback(_advance_stage_frame.bind(stroller))
 	var trip := create_tween()
-	var spots: Array = STAGE_ROOM_BROWSE.get(_stage_room, [])
+	var spots: Array = STAGE_ROOM_BROWSE.get(_room_layout_key(), [])
 	if served and not spots.is_empty():
 		var spot: Vector2 = spots.pick_random()
 		_stroll_leg(trip, stroller, spot.y, spot.x * stage_layer.size.x)
@@ -1706,7 +1709,7 @@ func _lane(depth: int) -> Dictionary:
 ## escala da frente da sala, porque quem entra pelo pé do tapete chega perto
 ## demais para caber inteiro.
 func _lane_at(depth: float) -> Dictionary:
-	var floor_line: Vector2 = STAGE_ROOM_FLOOR.get(_stage_room, Vector2(0.60, 0.80))
+	var floor_line: Vector2 = STAGE_ROOM_FLOOR.get(_room_layout_key(), Vector2(0.60, 0.80))
 	var floor_y := lerpf(floor_line.x, floor_line.y, clampf(depth, -0.25, 1.0))
 	if depth > 1.0:
 		floor_y += STAGE_FOURTH_FLOOR_DROP * (depth - 1.0)
@@ -1730,7 +1733,7 @@ func _lane_height(depth: int) -> float:
 
 ## (x da chefe, x do cliente) em fração da largura da sala atual.
 func _room_meet() -> Vector2:
-	return STAGE_ROOM_MEET.get(_stage_room, Vector2(0.505, 0.37))
+	return STAGE_ROOM_MEET.get(_room_layout_key(), Vector2(0.505, 0.37))
 
 func _layout_stage_figures() -> void:
 	if not is_instance_valid(stage_layer) or stage_layer.size.x <= 0:
@@ -1837,8 +1840,9 @@ func _apply_room_props(scene_path: String) -> void:
 	_stage_room = scene_path
 	if _stage_occluder_material == null:
 		return
-	var props: Array = STAGE_ROOM_PROPS.get(scene_path, [])
-	var prop_depths: Array = STAGE_ROOM_PROP_DEPTHS.get(scene_path, [])
+	var room_key := _room_layout_key(scene_path)
+	var props: Array = STAGE_ROOM_PROPS.get(room_key, [])
+	var prop_depths: Array = STAGE_ROOM_PROP_DEPTHS.get(room_key, [])
 	for i in range(STAGE_PROP_SLOTS):
 		var is_depth_sorted := i < prop_depths.size()
 		var corners := _prop_corners(props[i]) if i < props.size() and not is_depth_sorted else _blank_corners()
@@ -2082,7 +2086,7 @@ func _draw_stage_shadows(layer: Control) -> void:
 		var radius := figure.size.x * figure.scale.x * 0.40
 		var closest_light := Vector2(layer.size.x * 0.5, layer.size.y * 0.1)
 		var closest_distance := INF
-		for light: Vector2 in STAGE_ROOM_LIGHTS.get(_stage_room, []):
+		for light: Vector2 in STAGE_ROOM_LIGHTS.get(_room_layout_key(), []):
 			var light_position := Vector2(light.x * layer.size.x, light.y * layer.size.y)
 			var distance := foot.distance_to(light_position)
 			if distance < closest_distance:
@@ -2096,19 +2100,39 @@ func _draw_stage_shadows(layer: Control) -> void:
 		layer.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
+func _store_visual_for_level(level: int) -> Dictionary:
+	if level >= 15:
+		return {"path": "res://assets/shop_scene.png", "name": "Empório de prestígio"}
+	if level >= 10:
+		return {"path": "res://assets/shop_stage3.svg", "name": "Loja estabelecida"}
+	if level >= 6:
+		return {"path": "res://assets/shop_stage2.svg", "name": "Salão reformado"}
+	if level >= 3:
+		return {"path": "res://assets/shop_stage1.svg", "name": "Balcão em recuperação"}
+	return {"path": "res://assets/shop_stage0.svg", "name": "Beco improvisado"}
+
+func _room_layout_key(scene_path: String = "") -> String:
+	var path := scene_path if not scene_path.is_empty() else _stage_room
+	if path.begins_with("res://assets/shop_stage"):
+		return "res://assets/shop_scene.png"
+	return path
+
 func _apply_store_visual(level: int) -> void:
-	# Níveis visuais do shop (placeholders). Cada entrada pode conter bg e overlays.
-	var visuals := [
-		{"bg": "res://assets/shop_scene.png", "overlays": []},
-		{"bg": "res://assets/shop_stage1.png", "overlays": []},
-		{"bg": "res://assets/shop_stage2.png", "overlays": []}
-	]
-	level = clampi(level, 0, visuals.size() - 1)
-	var v := visuals[level]
-	if is_instance_valid(background_layer) and ResourceLoader.exists(v["bg"]):
-		background_layer.texture = load(v["bg"])
-	# Overlays / móveis por nível poderão ser aplicados aqui (occluders, props).
-	# TODO: mapear "overlays" para _apply_room_props / _rebuild_stage_depth_occluders
+	var visual := _store_visual_for_level(level)
+	var path := str(visual["path"])
+	if path == _active_store_visual_path:
+		return
+	_active_store_visual_path = path
+	if current_sector != "reception" or not is_instance_valid(background_layer):
+		return
+	var texture := load(path) as Texture2D
+	if texture == null:
+		push_error("Não foi possível carregar a etapa visual da loja: %s" % path)
+		return
+	background_layer.texture = texture
+	if is_instance_valid(stage_layer):
+		_apply_room_props(path)
+		_layout_stage_figures()
 
 func _build_ui() -> void:
 	var bg := TextureRect.new()
@@ -3378,7 +3402,7 @@ func _activate_sector_feature() -> void:
 ## anda; onde só existe o close de um rosto, o elenco fica nos bastidores, porque
 ## personagem caminhando por cima de uma cara enorme lê como fantasma.
 func _sector_scene(sector: String) -> Dictionary:
-	var room := "res://assets/shop_scene.png"
+	var room := str(_store_visual_for_level(player_level)["path"]) if sector == "reception" else "res://assets/shop_scene.png"
 	var close := ""
 	if sector == "forge":
 		room = "res://assets/forge_scene.png"
@@ -5040,6 +5064,7 @@ func _update_demonic_form() -> void:
 func _refresh_ui() -> void:
 	if not is_instance_valid(gold_label):
 		return
+	_apply_store_visual(player_level)
 	gold_label.text = "Ouro: %d" % gold
 	rep_label.text = "Reputação: %d • %s (+%d%%)" % [reputation, _reputation_title(), int(round((_reputation_price_multiplier() - 1.0) * 100.0))]
 	# O número do painel é o corpo desenhado no salão agora, e a fila à parte:
@@ -5111,7 +5136,9 @@ func _refresh_ui() -> void:
 			])
 		faction_label.text = "\n".join(faction_lines)
 	if is_instance_valid(progression_label):
-		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Pontos de talento: %d  •  Dia %d" % [player_level, player_xp, _xp_required(), skill_points, shop_day]
+		var store_visual := _store_visual_for_level(player_level)
+		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Talentos: %d  •  Dia %d  •  Loja: %s" % [
+			player_level, player_xp, _xp_required(), skill_points, shop_day, str(store_visual["name"])]
 	if is_instance_valid(talent_label):
 		talent_label.text = "TALENTOS • Alquimia %d/5 | Comércio %d/5 | Carisma %d/5 | Logística %d/5 | Casa %d/5" % [alchemy_rank, trade_rank, charm_rank, logistics_rank, house_rank]
 	for talent_button in [alchemy_button, trade_button, charm_button]:
