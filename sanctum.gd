@@ -118,11 +118,11 @@ static func is_active(active: Dictionary, id: String) -> bool:
 	return float(active.get(id, 0.0)) > 0.0
 
 ## Segundos restantes viram leitura humana no card do santuário.
-static func remaining_label(active: Dictionary, id: String) -> String:
-	var seconds := float(active.get(id, 0.0))
+static func remaining_label(active: Dictionary, id: String, elapsed_game_seconds: float = 0.0) -> String:
+	var seconds := float(active.get(id, 0.0)) - elapsed_game_seconds
 	if seconds <= 0.0:
 		return "encerrado"
-	return "%ds" % int(ceil(seconds / 3.0))
+	return "%ds" % int(ceil(seconds))
 
 static func start(active: Dictionary, id: String, level: int) -> void:
 	var item := find(id)
@@ -164,7 +164,7 @@ static func luck_bonus(active: Dictionary) -> int:
 static func patience_bonus(active: Dictionary) -> int:
 	return int(round(sum(active, "patience")))
 
-static func summary(active: Dictionary) -> String:
+static func summary(active: Dictionary, elapsed_game_seconds: float = 0.0) -> String:
 	if active.is_empty():
 		return "Nenhum ritual em curso. O santuário está só decorando poeira."
 	var parts: Array[String] = []
@@ -172,5 +172,5 @@ static func summary(active: Dictionary) -> String:
 		var item := find(str(id))
 		if item.is_empty():
 			continue
-		parts.append("%s %s (%s)" % [item.get("icon", "✦"), item["name"], remaining_label(active, str(id))])
+		parts.append("%s %s (%s)" % [item.get("icon", "✦"), item["name"], remaining_label(active, str(id), elapsed_game_seconds)])
 	return " | ".join(parts)

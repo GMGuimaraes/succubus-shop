@@ -109,7 +109,8 @@ var faction_customers: Dictionary = {}
 ## do império na cena do andar de cima sem empilhar os dois quadros.
 var _origin_next: Callable = Callable()
 var faction_standing: Dictionary = {}
-var adult_content_enabled: bool = true
+var adult_content_enabled: bool = false
+var adult_content_confirmed: bool = false
 var private_moments_unlocked: int = 0
 var ad_level: int = 0
 var imp_hired: bool = false
@@ -428,12 +429,16 @@ var prestige_label: Label
 var prestige_perk_buttons: Array = []
 var prestige_button: Button
 var adult_toggle_button: Button
+var save_file_dialog: FileDialog
+var hard_reset_dialog: ConfirmationDialog
 var recover_theft_button: Button
 var fury_label: Label
 var seller_portrait: TextureRect
 var reaction_label: Label
 var seller_speech_label: Label
 var customer_tween: Tween
+var _customer_walk_tween: Tween
+var _timed_ui_refresh_accumulator: float = 0.0
 var happy_customers: int = 0
 var disappointed_customers: int = 0
 var seduction_attempts: int = 0
@@ -625,6 +630,12 @@ const STAGE_ROOM_FLOOR := {
 	"res://assets/library_room_scene.png": Vector2(0.655, 0.84),
 	"res://assets/sanctum_room_scene.png": Vector2(0.585, 0.79),
 }
+const STAGE_ROOM_LIGHTS := {
+	"res://assets/shop_scene.png": [Vector2(0.08, 0.22), Vector2(0.50, 0.05), Vector2(0.91, 0.18), Vector2(0.32, 0.48), Vector2(0.64, 0.42)],
+	"res://assets/forge_scene.png": [Vector2(0.52, 0.24), Vector2(0.08, 0.16), Vector2(0.91, 0.18)],
+	"res://assets/library_room_scene.png": [Vector2(0.16, 0.18), Vector2(0.82, 0.20), Vector2(0.50, 0.08)],
+	"res://assets/sanctum_room_scene.png": [Vector2(0.24, 0.20), Vector2(0.76, 0.20), Vector2(0.50, 0.08)],
+}
 ## Altura de um adulto em primeiro plano. As camadas de trás escalam em cima dela
 ## para casar com a perspectiva da arte.
 const STAGE_FIGURE_HEIGHT := 250.0
@@ -636,9 +647,8 @@ const STAGE_FRONT_DEPTH := 0.82
 ## Janela de uma visita: ele tem de chegar ao balcão antes do próximo tique, mas
 ## sem correr parado.
 const STAGE_ARRIVE_SECONDS := 2.8
-## Para quanto o passo pode ser apertado quando a trilha é longa: o corpo acelera
-## junto com a caminhada, então ninguém desliza pelo chão.
-const STAGE_MAX_PACE := 1.9
+## A chegada acompanha o intervalo do relógio do mundo para terminar antes da
+## próxima visita; o ciclo de sprites e o passo aceleram juntos.
 ## Velocidade de caminhada em pixels por segundo na escala 1 e duração de cada
 ## passo. Amarra os dois: o pé que se move e o corpo que avança concordam.
 const STAGE_WALK_SPEED := 215.0
@@ -884,6 +894,10 @@ func _start_ambient_animations() -> void:
 		stage_breath.tween_property(stage_seller_body, "scale", Vector2.ONE, 1.9).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func _process(delta: float) -> void:
+	_timed_ui_refresh_accumulator += delta * world_speed()
+	if _timed_ui_refresh_accumulator >= 0.25:
+		_timed_ui_refresh_accumulator = 0.0
+		_refresh_timed_ui()
 	if not is_instance_valid(stage_layer) or not stage_layer.visible or stage_layer.size.x <= 0:
 		return
 	# Containers reposicionam o salão sem emitir sinal: o chão é conferido a cada
@@ -897,6 +911,45 @@ func _process(delta: float) -> void:
 		_stage_walker_timer = randf_range(2.5, 6.5)
 		_spawn_stage_walker()
 	stage_layer.queue_redraw()
+
+func _world_seconds_since_tick() -> float:
+	if not is_instance_valid(world_timer) or world_timer.is_stopped():
+		return 0.0
+	return clampf((world_timer.wait_time - world_timer.time_left) * world_speed(), 0.0, 3.0)
+
+func _refresh_timed_ui() -> void:
+	var elapsed := _world_seconds_since_tick()
+	if is_instance_valid(forge_status_label):
+		if craft_jobs.is_empty():
+			forge_status_label.text = "Forja: livre"
+		else:
+			var queue_text: Array[String] = []
+			for job in craft_jobs:
+				var queued_item: Dictionary = products[int(job.get("index", 0))]
+				var remaining := maxf(0.0, float(job.get("remaining", 0.0)) - elapsed)
+				queue_text.append("%s %.1fs" % [queued_item["name"], remaining])
+			forge_status_label.text = "Forja: " + " | ".join(queue_text)
+	if is_instance_valid(ritual_label):
+		ritual_label.text = Sanctum.summary(active_buffs, elapsed)
+	for i in range(mini(ritual_labels.size(), Sanctum.DATA.size())):
+		var ritual: Dictionary = Sanctum.DATA[i]
+		var ritual_id := str(ritual["id"])
+		if Sanctum.is_active(active_buffs, ritual_id):
+			ritual_labels[i].text = "✦ Em curso: %s" % Sanctum.remaining_label(active_buffs, ritual_id, elapsed)
+	for i in range(mini(expedition_labels.size(), Expedition.size())):
+		var destination: Dictionary = Expedition.DATA[i]
+		var trip := _expedition_on_route(str(destination["id"]))
+		if not trip.is_empty():
+			expedition_labels[i].text = "🧭 Na estrada • faltam %s" % Expedition.days_label(maxf(0.0, float(trip.get("remaining", 0.0)) - elapsed))
+	if is_instance_valid(expedition_active_label) and not expeditions.is_empty():
+		var routes: Array[String] = []
+		for trip in expeditions:
+			var destination := Expedition.find(str(trip.get("id", "")))
+			var total := maxf(1.0, float(trip.get("total", 1.0)))
+			var remaining := maxf(0.0, float(trip.get("remaining", 0.0)) - elapsed)
+			var progress := clampf(1.0 - remaining / total, 0.0, 1.0)
+			routes.append("%s [%s] %d%%" % [str(destination.get("name", "?")), _bar(progress), int(round(progress * 100.0))])
+		expedition_active_label.text = "Vagas: %d/%d — %s" % [expeditions.size(), _expedition_slots(), "  |  ".join(routes)]
 
 ## Transeunte anônimo atravessa o salão em uma das camadas de profundidade. O
 ## elenco são as artes de corpo inteiro dos fregueses, menores e mais frias quanto
@@ -1108,6 +1161,9 @@ func _host_enters_room() -> void:
 func _stage_customer_arrives(portrait_index: int) -> void:
 	if not is_instance_valid(stage_customer) or stage_layer.size.x <= 0:
 		return
+	if _customer_walk_tween != null and _customer_walk_tween.is_valid():
+		_customer_walk_tween.kill()
+	_customer_walk_tween = null
 	var body := absi(portrait_index) % STAGE_CROWD_BODIES.size()
 	_dress_stage_poses(stage_customer, body, _lane_height(2))
 	# O corpo do freguês do turno é dele. Se um transeunte já o vestia, o
@@ -1138,13 +1194,18 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 	# A chegada tem de caber no tique. Quando a trilha é longa, o corpo é quem
 	# aperta o passo: a batida do pé encurta na mesma proporção da caminhada, e
 	# ninguém desliza pelo chão nem corre com as pernas paradas.
-	var pace := clampf(_path_time(stage_customer, path) / STAGE_ARRIVE_SECONDS, 1.0, STAGE_MAX_PACE)
+	var arrival_window := STAGE_ARRIVE_SECONDS
+	if is_instance_valid(world_timer) and not world_timer.is_stopped():
+		arrival_window = minf(arrival_window, world_timer.wait_time * 0.9)
+	var path_time := _path_time(stage_customer, path)
+	var pace := maxf(1.0, path_time / maxf(0.25, arrival_window))
 	# Quanto falta para ele parar, guardado no corpo: uma cena que queira o
 	# freguês plantado no balcão precisa esperar exatamente esse tempo.
-	stage_customer.set_meta("arrive_left", _path_time(stage_customer, path) / pace)
+	stage_customer.set_meta("arrive_left", path_time / pace)
 	var walk := create_tween()
 	_walk_path(walk, stage_customer, path, pace)
 	walk.tween_callback(_stage_customer_stops)
+	_customer_walk_tween = walk
 	var reveal := create_tween()
 	reveal.tween_property(stage_customer, "modulate:a", float(front["alpha"]), 0.5)
 	var step_time := STAGE_STEP_SECONDS / pace
@@ -1243,6 +1304,7 @@ func _stroll_leg(trip: Tween, node: Control, to_depth: float, to_x: float, pace 
 ## O cliente encosta no balcão: para de andar, apruma o corpo e só então a chefe
 ## se debruça para atendê-lo.
 func _stage_customer_stops() -> void:
+	_customer_walk_tween = null
 	if _customer_bob != null and _customer_bob.is_valid():
 		_customer_bob.kill()
 	_customer_bob = null
@@ -1265,6 +1327,9 @@ func _stage_customer_stops() -> void:
 func _stage_customer_leaves() -> void:
 	if not is_instance_valid(stage_customer) or not stage_customer.visible:
 		return
+	if _customer_walk_tween != null and _customer_walk_tween.is_valid():
+		_customer_walk_tween.kill()
+	_customer_walk_tween = null
 	if _customer_bob != null and _customer_bob.is_valid():
 		_customer_bob.kill()
 	_customer_bob = null
@@ -1855,6 +1920,9 @@ func _draw_stage_shadows(layer: Control) -> void:
 	for entry in _stage_walkers:
 		if is_instance_valid(entry["node"]):
 			figures.append(entry["node"])
+	for entry in _stage_waiters:
+		if is_instance_valid(entry["node"]):
+			figures.append(entry["node"])
 	if is_instance_valid(stage_customer) and stage_customer.visible:
 		figures.append(stage_customer)
 	for figure in figures:
@@ -1862,8 +1930,19 @@ func _draw_stage_shadows(layer: Control) -> void:
 		var origin: Vector2 = parent.position if parent is Control else Vector2.ZERO
 		var foot := origin + Vector2(figure.position.x + figure.size.x * 0.5, figure.position.y + figure.size.y * (figure.scale.y + 1.0) * 0.5 - 2.0)
 		var radius := figure.size.x * figure.scale.x * 0.40
-		layer.draw_set_transform(foot, 0.0, Vector2(radius, maxf(5.0, radius * 0.17)))
-		layer.draw_circle(Vector2.ZERO, 1.0, Color(0.04, 0.01, 0.05, 0.4))
+		var closest_light := Vector2(layer.size.x * 0.5, layer.size.y * 0.1)
+		var closest_distance := INF
+		for light: Vector2 in STAGE_ROOM_LIGHTS.get(_stage_room, []):
+			var light_position := Vector2(light.x * layer.size.x, light.y * layer.size.y)
+			var distance := foot.distance_to(light_position)
+			if distance < closest_distance:
+				closest_distance = distance
+				closest_light = light_position
+		var away_from_light := foot - closest_light
+		var shadow_offset := away_from_light.normalized() * clampf(9.0 - closest_distance * 0.012, 1.5, 8.0)
+		var shadow_alpha := clampf(0.38 - closest_distance / maxf(1.0, layer.size.x) * 0.12, 0.20, 0.38)
+		layer.draw_set_transform(foot + shadow_offset, away_from_light.angle(), Vector2(radius, maxf(5.0, radius * 0.17)))
+		layer.draw_circle(Vector2.ZERO, 1.0, Color(0.04, 0.01, 0.05, shadow_alpha))
 		layer.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
@@ -2939,6 +3018,38 @@ func _build_ui() -> void:
 	adult_toggle_button.custom_minimum_size.y = 40
 	adult_toggle_button.pressed.connect(_toggle_adult_content)
 	right.add_child(adult_toggle_button)
+
+	var save_buttons := HBoxContainer.new()
+	save_buttons.add_theme_constant_override("separation", 8)
+	right.add_child(save_buttons)
+	var export_button := Button.new()
+	export_button.text = "Exportar save"
+	export_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	export_button.pressed.connect(_show_save_dialog.bind(true))
+	save_buttons.add_child(export_button)
+	var import_button := Button.new()
+	import_button.text = "Importar save"
+	import_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	import_button.pressed.connect(_show_save_dialog.bind(false))
+	save_buttons.add_child(import_button)
+
+	var reset_button := Button.new()
+	reset_button.text = "Resetar todo o progresso…"
+	reset_button.custom_minimum_size.y = 40
+	reset_button.pressed.connect(_confirm_full_reset)
+	right.add_child(reset_button)
+	hard_reset_dialog = ConfirmationDialog.new()
+	hard_reset_dialog.title = "Apagar todo o progresso?"
+	hard_reset_dialog.dialog_text = "O save local será removido. Esta ação não pode ser desfeita; exporte uma cópia antes se quiser guardá-la."
+	hard_reset_dialog.ok_button_text = "Apagar e recomeçar"
+	hard_reset_dialog.confirmed.connect(_reset_all_progress)
+	add_child(hard_reset_dialog)
+	save_file_dialog = FileDialog.new()
+	save_file_dialog.title = "Save da Succubus Shop"
+	save_file_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	save_file_dialog.filters = PackedStringArray(["*.cfg ; Save Succubus Shop"])
+	save_file_dialog.file_selected.connect(_on_save_file_selected)
+	add_child(save_file_dialog)
 
 	recover_theft_button = Button.new()
 	recover_theft_button.custom_minimum_size.y = 42
@@ -4749,14 +4860,7 @@ func _refresh_ui() -> void:
 	if is_instance_valid(speed_button):
 		speed_button.text = "Acelerar relógio ▶"
 	if is_instance_valid(forge_status_label):
-		if craft_jobs.is_empty():
-			forge_status_label.text = "Forja: livre"
-		else:
-			var queue_text: Array[String] = []
-			for job in craft_jobs:
-				var queued_item: Dictionary = products[int(job.get("index", 0))]
-				queue_text.append("%s %.1fs" % [queued_item["name"], maxf(0.0, float(job.get("remaining", 0.0)))])
-			forge_status_label.text = "Forja: " + " | ".join(queue_text)
+		_refresh_timed_ui()
 	if is_instance_valid(library_upgrade_button):
 		var library_cost := 90 + library_upgrade_level * 120
 		library_upgrade_button.text = "Biblioteca Nv.%d • Upgrade %d ouro" % [library_upgrade_level, library_cost] if library_upgrade_level < 5 else "Biblioteca Nv.5 • Máximo"
@@ -4769,7 +4873,7 @@ func _refresh_ui() -> void:
 		sector_action_button.text = "Consultar grimório vivo" if current_sector == "library" else "Harmonizar relíquia" if current_sector == "sanctum" else "Interagir com o cenário"
 		sector_action_button.disabled = current_sector != "library" and current_sector != "sanctum"
 	if is_instance_valid(ritual_label):
-		ritual_label.text = Sanctum.summary(active_buffs)
+		ritual_label.text = Sanctum.summary(active_buffs, _world_seconds_since_tick())
 	event_label.text = last_event
 	if is_instance_valid(regulars_label):
 		var regular_lines: Array[String] = ["FREGUESES RECORRENTES"]
@@ -5098,7 +5202,7 @@ func _refresh_ui() -> void:
 		var running := Sanctum.is_active(active_buffs, ritual_id)
 		if r < ritual_labels.size():
 			if running:
-				ritual_labels[r].text = "✦ Em curso: %s" % Sanctum.remaining_label(active_buffs, ritual_id)
+				ritual_labels[r].text = "✦ Em curso: %s" % Sanctum.remaining_label(active_buffs, ritual_id, _world_seconds_since_tick())
 			elif Sanctum.is_buff(ritual):
 				ritual_labels[r].text = "Em espera • duração escala com o santuário (Nv.%d)" % sanctum_upgrade_level
 			else:
@@ -5115,7 +5219,7 @@ func _refresh_ui() -> void:
 		var on_the_road := _expedition_on_route(destination_id)
 		if e < expedition_labels.size():
 			if on_the_road:
-				expedition_labels[e].text = "🧭 Na estrada • faltam %s" % Expedition.days_label(maxf(0.0, float(on_the_road.get("remaining", 0.0))))
+				expedition_labels[e].text = "🧭 Na estrada • faltam %s" % Expedition.days_label(maxf(0.0, float(on_the_road.get("remaining", 0.0)) - _world_seconds_since_tick()))
 			elif not open_route:
 				expedition_labels[e].text = "🔒 %s" % Expedition.locked_hint(destination)
 			else:
@@ -5132,7 +5236,7 @@ func _refresh_ui() -> void:
 			for trip in expeditions:
 				var trip_destination := Expedition.find(str(trip.get("id", "")))
 				var total := maxf(1.0, float(trip.get("total", 1.0)))
-				var progress := clampf(1.0 - float(trip.get("remaining", 0.0)) / total, 0.0, 1.0)
+				var progress := clampf(1.0 - maxf(0.0, float(trip.get("remaining", 0.0)) - _world_seconds_since_tick()) / total, 0.0, 1.0)
 				routes.append("%s [%s] %d%%" % [str(trip_destination.get("name", "?")), _bar(progress), int(round(progress * 100.0))])
 			expedition_active_label.text = "Vagas: %d/%d — %s" % [expeditions.size(), _expedition_slots(), "  |  ".join(routes)]
 	if is_instance_valid(expedition_log_label):
@@ -5325,6 +5429,7 @@ func _save_game() -> void:
 	config.set_value("game", "faction_customers", faction_customers)
 	config.set_value("game", "spec_choice", spec_choice)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
+	config.set_value("game", "adult_content_confirmed", adult_content_confirmed)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
 	config.set_value("game", "ad_level", ad_level)
 	config.set_value("game", "imp_hired", imp_hired)
@@ -5525,7 +5630,8 @@ func _load_game() -> void:
 			if int(perk.get("max", 0)) > 0:
 				prestige_perks[str(perk_id)] = clampi(int(saved_perks[perk_id]), 0, int(perk["max"]))
 	prestige_goals_paid = int(config.get_value("game", "prestige_goals_paid", prestige_goals_paid))
-	adult_content_enabled = bool(config.get_value("game", "adult_content_enabled", adult_content_enabled))
+	adult_content_confirmed = bool(config.get_value("game", "adult_content_confirmed", false))
+	adult_content_enabled = adult_content_confirmed and bool(config.get_value("game", "adult_content_enabled", false))
 	demonic_form_active = adult_content_enabled and fury >= 4
 	private_moments_unlocked = int(config.get_value("game", "private_moments_unlocked", private_moments_unlocked))
 	ad_level = int(config.get_value("game", "ad_level", ad_level))
@@ -7704,6 +7810,67 @@ func _show_private_moment() -> void:
 
 func _toggle_adult_content() -> void:
 	adult_content_enabled = not adult_content_enabled
+	adult_content_confirmed = true
+	if not adult_content_enabled:
+		demonic_form_active = false
+		_set_seller_mood("neutral")
+	_set_sector(current_sector)
 	last_event = "Cenas sensuais ativadas. As recompensas especiais estão disponíveis." if adult_content_enabled else "Cenas sensuais desativadas. A progressão e a economia continuam normalmente."
 	_save_game()
 	_refresh_ui()
+
+func _show_save_dialog(exporting: bool) -> void:
+	save_file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE if exporting else FileDialog.FILE_MODE_OPEN_FILE
+	save_file_dialog.current_dir = OS.get_user_data_dir()
+	save_file_dialog.current_file = "succubus_shop_save.cfg" if exporting else ""
+	save_file_dialog.popup_centered(Vector2i(760, 520))
+
+func _on_save_file_selected(path: String) -> void:
+	var config := ConfigFile.new()
+	if save_file_dialog.file_mode == FileDialog.FILE_MODE_SAVE_FILE:
+		var load_error := config.load(SAVE_PATH)
+		if load_error != OK:
+			_show_save_feedback("Não foi possível abrir o save atual para exportar (erro %d)." % load_error)
+			return
+		var save_error := config.save(path)
+		if save_error != OK:
+			_show_save_feedback("Não foi possível exportar o save (erro %d)." % save_error)
+			return
+		_show_save_feedback("Save exportado com sucesso.")
+		return
+
+	var load_error := config.load(path)
+	if load_error != OK:
+		_show_save_feedback("Não foi possível importar esse arquivo de save (erro %d)." % load_error)
+		return
+	var saved_gold: Variant = config.get_value("game", "gold", null)
+	if not config.has_section("game") or not config.has_section_key("game", "gold") or not (saved_gold is int or saved_gold is float):
+		_show_save_feedback("Arquivo inválido: não encontrei um saldo de ouro válido.")
+		return
+	var current_path := ProjectSettings.globalize_path(SAVE_PATH)
+	if FileAccess.file_exists(SAVE_PATH):
+		var backup_error := DirAccess.copy_absolute(current_path, current_path + ".backup")
+		if backup_error != OK:
+			_show_save_feedback("Não foi possível criar uma cópia de segurança antes da importação (erro %d)." % backup_error)
+			return
+	var save_error := config.save(SAVE_PATH)
+	if save_error != OK:
+		_show_save_feedback("Não foi possível gravar o save importado (erro %d)." % save_error)
+		return
+	get_tree().reload_current_scene()
+
+func _show_save_feedback(message: String) -> void:
+	last_event = message
+	_show_feedback(message, Color(1.0, 0.82, 0.48))
+	_refresh_ui()
+
+func _confirm_full_reset() -> void:
+	hard_reset_dialog.popup_centered()
+
+func _reset_all_progress() -> void:
+	if FileAccess.file_exists(SAVE_PATH):
+		var remove_error := DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+		if remove_error != OK:
+			_show_save_feedback("Não foi possível apagar o save local (erro %d)." % remove_error)
+			return
+	get_tree().reload_current_scene()

@@ -4,6 +4,18 @@
 
 O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvimento com orçamento zero.
 
+## Captura do jogo
+
+![Succubus Shop — build atual na recepção, no primeiro dia](screenshots/current-build.png)
+
+Esta captura mostra uma partida limpa no estado atual do protótipo; a interface e o balanceamento ainda estão em evolução.
+
+### Visão conceitual da meta final
+
+![Conceito da meta final: loja, expedições, defesa e prestígio](screenshots/final-vision.svg)
+
+Isto é uma ilustração de visão — não uma captura de funcionalidades já jogáveis. O objetivo é ligar gestão da loja, equipes de aventura, defesa e prestígio numa progressão longa.
+
 ## Estado do projeto
 
 **Protótipo jogável em desenvolvimento.** Já há fabricação e venda de produtos, cadeia de produção com ingredientes e qualidade, economia reativa, clientes automáticos, expedições, santuário de relíquias, cartas colecionáveis que evoluem e pagam bônus de balcão, campanha em sete capítulos com sete desfechos (seis por facção mais a ruína), **os três pedidos escritos de cada uma das cinco facções, que pagam privilégio permanente e atravessam a reencarnação**, custo diário da casa e dívida com teto, filiais fora do salão que pagam por virada e engrossam a conta, **quatro vagas de funcionários com taxa, salário na conta diária e entrega dentro das fórmulas que a loja já tinha**, reencarnação do império com aura, dotes permanentes e placar por temporada, conquistas, placar de pontuação, integração opcional com a Steam e progressão por nível, pontos de talento **com dois ofícios concorrentes por trilha — assinar um raspa o outro até a próxima vida**, contratos de loja e reputação por facção. Ainda não é um lançamento final; interface, balanceamento e conteúdo precisam de mais testes.
@@ -14,6 +26,13 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 2. Baixe ou clone este repositório.
 3. Importe a pasta do projeto no Godot e abra `project.godot`.
 4. Execute a cena principal com **F6/F5** ou o botão de executar projeto.
+
+## Requisitos mínimos estimados
+
+- **Sistema:** Windows 10 ou posterior, 64 bits. O projeto ainda não foi validado em outras plataformas.
+- **Gráficos:** GPU compatível com OpenGL 3.3; o projeto usa o renderizador GL Compatibility e janela de referência 1280 × 720.
+- **Processador e memória:** estimativa inicial de CPU dual-core e 4 GB de RAM; ainda sem benchmark em hardware de entrada.
+- **Desenvolvimento:** Godot 4.7.2 para abrir e executar o projeto pelo editor. Uma distribuição exportada ainda não foi publicada.
 
 ## Recursos atuais
 
@@ -72,7 +91,10 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 - **Sessenta e seis conquistas** com recompensas em ouro, reputação, pose especial da protagonista e pacote de cartas.
 - **Salvamento local** de progresso, nível, XP, talentos, **o ofício assinado em cada trilha nesta vida**, contratos, encomenda de longo prazo em aberto (e o dia em que ela volta a ser oferecida), afeição e fúria do dia, item roubado e se ele ainda pode ser recuperado, estoque, qualidade, mercado, expedições e o diário da estrada, fabricações em curso na forja, catalisador ligado e relógio do mundo, receitas já conhecidas, nível de propaganda, diabrete contratado, coleção de cartas, capítulo da campanha, lembranças de origem já lidas, vidas de prestígio já trocadas, aura no cofre, níveis de dote e metas da escada já pagas, peças Lendárias fabricadas e entregues e encomendas exclusivas fechadas, finais de facção já vistos, dívida aberta da casa, o fundo do poço já tocado na vida, quantas vidas fecharam em ruína e quais temporadas o placar marca como perdidas, filiais abertas nesta vida e o balanço da última virada, **quem está no quadro de funcionários desta vida e quantos furtos a ronda já barrou**, recorde de cada temporada e ponteiro de reputação da vida atual, **o caderno de pedidos das facções (quantos pedidos cada uma já viu entregues) e quantos clientes dela passaram pelo balcão nesta vida**, recorde de pontuação, melhorias, reputação por facção, visitas, pedidos concluídos, progresso e capítulo pessoal, degrau da escada de confiança e ato de ficha de cada freguês, momentos privados já vistos, fila da despedida do epílogo e opções.
 - **Compatibilidade de estoque por nome de produto** para que saves antigos preservem os itens que continuam no catálogo.
-- **Opção de desativar o conteúdo sensual**, sem bloquear a progressão normal.
+- **Conteúdo sensual desligado por padrão**: só aparece depois de ativar a opção; saves antigos também pedem essa confirmação novamente. Desligar remove imediatamente as cenas e a forma demoníaca visual, sem bloquear a progressão normal.
+- **Relógios visíveis e caminhada sem reinício**: a chegada completa uma única rota antes da próxima visita, enquanto apenas os quadros de caminhada fazem loop. Forja, rituais e expedições mostram o tempo restante atualizado continuamente conforme a velocidade do mundo.
+- **Controle do progresso**: importe e exporte saves em arquivos `.cfg`, com cópia de segurança automática antes da importação. O reset total pede confirmação; a reencarnação já funciona como soft reset, preservando álbum, vínculos, conquistas e melhorias permanentes.
+- **Sombras com luz de cena**: sombras de contato acompanham também a fila de clientes e se deslocam suavemente para longe das velas e focos de luz de cada sala.
 
 ## Direção de longo prazo
 
@@ -81,6 +103,10 @@ A visão é construir uma experiência de longa duração, com sistemas que se a
 1. **Expansão comercial** — automação, mais salas e investimentos além das filiais abertas e do quadro de funcionários já pago.
 2. **Arte, áudio e animação originais** — retratos, expressões, efeitos e música com recursos gratuitos ou licenças verificadas.
 3. **Publicação na Steam** — catálogo real de conquistas, itens de card e placar da comunidade no lugar do registro local.
+
+### Meta de experiência
+
+A meta é que cada temporada ofereça decisões comerciais e narrativas diferentes: composição de aventureiros por missão, defesa rara da loja, risco de vandalismo e furto, limpeza que afeta a reputação e servidores com papéis econômicos próprios. Prestígio, eventos de campanha e melhorias visuais graduais devem sustentar muitas temporadas sem transformar falhas em regressão pesada. Esses sistemas ainda precisam ser implementados e testados; não fazem parte da captura acima.
 
 A prioridade é implementar sistemas em etapas pequenas, testáveis e compatíveis com os saves anteriores.
 

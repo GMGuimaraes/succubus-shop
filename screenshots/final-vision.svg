@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title description">
+  <title id="title">Visão conceitual da meta final de Succubus Shop</title>
+  <desc id="description">Ilustração conceitual da progressão futura da loja para um império de fantasia, com gestão, expedições, defesa e prestígio.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#160d27"/>
+      <stop offset="1" stop-color="#351242"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fd77cf" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#a94cff" stop-opacity=".04"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#background)"/>
+  <circle cx="640" cy="248" r="330" fill="url(#glow)"/>
+  <path d="M72 604V242l144-124 144 124v362M920 604V242l144-124 144 124v362" fill="none" stroke="#8e5ca5" stroke-width="5" opacity=".5"/>
+  <path d="M94 604V262l122-104 122 104v342M942 604V262l122-104 122 104v342" fill="none" stroke="#d185bd" stroke-width="2" opacity=".55"/>
+  <path d="M0 604h1280v116H0z" fill="#100b1d"/>
+  <path d="M0 604h1280" stroke="#e27ac6" stroke-width="4" opacity=".8"/>
+  <text x="640" y="90" fill="#ffd4f0" font-family="Georgia,serif" font-size="22" letter-spacing="7" text-anchor="middle">VISÃO DE LONGO PRAZO</text>
+  <text x="640" y="158" fill="#fff0fb" font-family="Georgia,serif" font-size="54" font-weight="bold" text-anchor="middle">DA LOJA AO IMPÉRIO</text>
+  <text x="640" y="198" fill="#d8c1e8" font-family="Arial,sans-serif" font-size="20" text-anchor="middle">Uma temporada construída por decisões — e pela equipe que você escolhe.</text>
+  <g font-family="Arial,sans-serif" text-anchor="middle">
+    <g transform="translate(70 292)">
+      <rect width="260" height="224" rx="22" fill="#24152f" stroke="#b56bd3" stroke-width="2"/>
+      <path d="M44 98h172v66H44zM62 78h136v20H62zM72 62h116" fill="none" stroke="#f3a3dc" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M82 126h32m18 0h32m18 0h20" stroke="#d9a3ff" stroke-width="8" stroke-linecap="round"/>
+      <text x="130" y="190" fill="#fff0fb" font-size="21" font-weight="bold">GESTÃO DA LOJA</text>
+      <text x="130" y="215" fill="#cbb8d6" font-size="14">Equipe, estoque e reputação</text>
+    </g>
+    <g transform="translate(370 292)">
+      <rect width="260" height="224" rx="22" fill="#24152f" stroke="#7a9ce8" stroke-width="2"/>
+      <path d="M55 127l75-69 75 69M72 121v40h116v-40M130 94v26m-20-13h40" fill="none" stroke="#9ec9ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="130" cy="130" r="14" fill="#ffd28a"/>
+      <text x="130" y="190" fill="#fff0fb" font-size="21" font-weight="bold">EXPEDIÇÕES</text>
+      <text x="130" y="215" fill="#cbb8d6" font-size="14">Heróis, papéis e relíquias</text>
+    </g>
+    <g transform="translate(670 292)">
+      <rect width="260" height="224" rx="22" fill="#24152f" stroke="#e58f64" stroke-width="2"/>
+      <path d="M130 58l65 25v50c0 39-29 61-65 76-36-15-65-37-65-76V83z" fill="none" stroke="#ffc17d" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M130 87l9 24 25 1-20 15 7 24-21-14-21 14 7-24-20-15 25-1z" fill="#ffc17d"/>
+      <text x="130" y="190" fill="#fff0fb" font-size="21" font-weight="bold">DEFESA DA LOJA</text>
+      <text x="130" y="215" fill="#cbb8d6" font-size="14">Campanhas e ameaças raras</text>
+    </g>
+    <g transform="translate(970 292)">
+      <rect width="240" height="224" rx="22" fill="#24152f" stroke="#dfc06e" stroke-width="2"/>
+      <path d="M120 62l19 39 43 6-31 30 7 43-38-20-38 20 7-43-31-30 43-6z" fill="none" stroke="#ffe28c" stroke-width="6" stroke-linejoin="round"/>
+      <text x="120" y="190" fill="#fff0fb" font-size="21" font-weight="bold">PRESTÍGIO</text>
+      <text x="120" y="215" fill="#cbb8d6" font-size="14">Novas vidas e desbloqueios</text>
+    </g>
+  </g>
+  <text x="640" y="659" fill="#e7c6e5" font-family="Arial,sans-serif" font-size="16" text-anchor="middle">CONCEITO — SISTEMAS EM DESENVOLVIMENTO, NÃO REPRESENTAÇÃO DO BUILD ATUAL</text>
+</svg>
