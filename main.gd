@@ -335,6 +335,7 @@ var expedition_log_label: Label
 var catalyst_button: Button
 var catalyst_label: Label
 var card_summary_label: Label
+var card_bonus_label: Label
 var pack_button: Button
 var card_gallery_labels: Array = []
 var board_label: Label
@@ -1927,12 +1928,17 @@ func _build_ui() -> void:
 		ingredient_sell_buttons.append(sell)
 
 	reception_box.add_child(_make_section_title("MÁQUINA DE CARTAS", Color(1.0, 0.86, 0.45)))
-	reception_box.add_child(_make_section_hint("Pacote lacrado no balcão. Repetição volta em ouro, coleção completa volta em reputação."))
+	reception_box.add_child(_make_section_hint("Pacote lacrado no balcão. Coleção completa vira reputação, e carta repetida não sobra: três cópias deixam a arte holográfica, seis a fazem prismática — e o álbum inteiro paga bônus de balcão."))
 	card_summary_label = Label.new()
 	card_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	card_summary_label.add_theme_font_size_override("font_size", 14)
 	card_summary_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.62))
 	reception_box.add_child(card_summary_label)
+	card_bonus_label = Label.new()
+	card_bonus_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	card_bonus_label.add_theme_font_size_override("font_size", 13)
+	card_bonus_label.add_theme_color_override("font_color", Color(0.86, 0.78, 0.96))
+	reception_box.add_child(card_bonus_label)
 	pack_button = Button.new()
 	pack_button.custom_minimum_size = Vector2(240, 44)
 	pack_button.add_theme_font_size_override("font_size", 15)
@@ -2119,7 +2125,7 @@ func _build_ui() -> void:
 	library_box.add_child(endings_label)
 
 	library_box.add_child(_make_section_title("ARQUIVO DE CARDS", Color(1.0, 0.86, 0.45)))
-	library_box.add_child(_make_section_hint("Toda arte que a loja já viu. Conquista entrega pacote brinde; o resto se compra no balcão."))
+	library_box.add_child(_make_section_hint("Toda arte que a loja já viu. Conquista entrega pacote brinde; o resto se compra no balcão. Moldura prata é holo, moldura dourada é prismática."))
 	var gallery := GridContainer.new()
 	gallery.columns = 4
 	gallery.add_theme_constant_override("h_separation", 8)
@@ -2782,12 +2788,17 @@ func _expedition_slots() -> int:
 	return 2 if logistics_rank >= 2 else 1
 
 func _expedition_luck() -> int:
-	return alchemy_rank + logistics_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck()
+	return alchemy_rank + logistics_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck() + _card_luck()
+
+## Sorte que o álbum paga: a coleção da chefa entra na forja, na estrada e no
+## próprio pacote — e cresce com cada carta evoluída.
+func _card_luck() -> int:
+	return Cards.luck_bonus(card_counts)
 
 ## Sorte da bigorna sem catalisador na mão: a mesma que rola a peça, menos o pó da
 ## raridade do momento. Serve para o painel prometer uma chance honesta.
 func _forge_luck() -> int:
-	return alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + _prestige_luck()
+	return alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + _prestige_luck() + _card_luck()
 
 ## Mestria da forja: os degraus que a casa já subiu nas duas trilhas que mexem na
 ## bigorna, mais a memória das vidas anteriores. É ela que destrava o Lendário —
@@ -3493,6 +3504,9 @@ func _on_customer_tick() -> void:
 			var faction_tier := Factions.tier_for(int(faction_standing.get(faction_id, 0)))
 			faction_bonus = int(round(base_label * Factions.price_bonus(faction_tier)))
 			sale_price += faction_bonus
+		# O mural da loja também pesa na etiqueta. É bônus de balcão, não de conversa:
+		# a máquina de cartas mostra a porcentagem, o cliente não precisa ler rodapé.
+		sale_price += int(round(base_label * Cards.price_bonus(card_counts)))
 		var fulfilled_personal_request := profile.has("personal_request") and bool(profile["personal_request"]) and preferred_index == chosen_index
 		var headline_locked := false
 		if fulfilled_personal_request:
@@ -4294,8 +4308,10 @@ func _refresh_ui() -> void:
 		catalyst_button.disabled = _catalyst_available().is_empty() and not catalyst_enabled
 	if is_instance_valid(card_summary_label):
 		card_summary_label.text = Cards.summary(card_counts)
+	if is_instance_valid(card_bonus_label):
+		card_bonus_label.text = "BÔNUS DO ÁLBUM\n" + "\n".join(Cards.bonus_lines(card_counts))
 	if is_instance_valid(pack_button):
-		var pack_cost := Cards.pack_price(packs_opened)
+		var pack_cost := Cards.pack_price(packs_opened, card_counts)
 		pack_button.text = "🂠 Abrir pacote (%d ouro)" % pack_cost
 		pack_button.disabled = gold < pack_cost
 	for c in range(Cards.DATA.size()):
@@ -4303,8 +4319,17 @@ func _refresh_ui() -> void:
 		var copies := int(card_counts.get(str(card["id"]), 0))
 		if c < card_gallery_labels.size():
 			var slot: Label = card_gallery_labels[c]
-			slot.text = "%s\n%s • x%d" % [str(card["name"]), str(Cards.rarity_of(card)["name"]), copies] if copies > 0 else "?\n%s" % str(Cards.rarity_of(card)["name"])
+			var evolved := Cards.evolution(copies)
+			slot.text = "%s\n%s • x%d%s" % [
+				str(card["name"]), str(Cards.rarity_of(card)["name"]), copies,
+				(" ✦ %s" % Cards.evolution_name(copies)) if evolved > 0 else "",
+			] if copies > 0 else "?\n%s" % str(Cards.rarity_of(card)["name"])
 			slot.add_theme_color_override("font_color", Cards.color_of(card) if copies > 0 else Color(0.42, 0.4, 0.48))
+			# A moldura acompanha o degrau: holo clareia em prata, prismática queima em ouro.
+			var panel_style := ((slot.get_parent() as PanelContainer).get_theme_stylebox("panel") as StyleBoxFlat)
+			if panel_style != null:
+				panel_style.border_color = Cards.color_of(card) if evolved == 0 else (Color(0.85, 0.95, 1.0, 0.95) if evolved == 1 else Color(1.0, 0.78, 0.35, 0.95))
+				panel_style.set_border_width_all(1 if evolved == 0 else 2 + evolved)
 	if is_instance_valid(board_label):
 		board_label.text = "Sua pontuação: %d • recorde %d\n%s\n%s" % [
 			business_score(), best_score, _season_text(), _board_text(),
@@ -5084,6 +5109,9 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "ending_faction", "name": "Final com dono (uma facção fechou a loja)", "condition": _has_faction_ending(), "gold": 180, "rep": 8, "pose": "relic"},
 		{"id": "endings_three", "name": "Três despedidas (três finais diferentes)", "condition": endings_seen.size() >= 3, "gold": 300, "rep": 12},
 		{"id": "endings_all", "name": "Todos os finais deste balcão", "condition": endings_seen.size() >= Endings.size(), "gold": 600, "rep": 20, "pose": "vitoria"},
+		{"id": "card_holo", "name": "Brilho de coleção (primeira carta holográfica)", "condition": Cards.evolved_count(card_counts, 1) >= 1, "gold": 90, "rep": 4},
+		{"id": "card_prism", "name": "Prisma no mural (uma carta em seis cópias)", "condition": Cards.evolved_count(card_counts, 2) >= 1, "gold": 240, "rep": 10, "pose": "vitoria"},
+		{"id": "card_album_working", "name": "Álbum trabalhando (os três conjuntos pagando bônus)", "condition": Cards.luck_bonus(card_counts) >= 1 and Cards.price_bonus(card_counts) >= 0.04 and Cards.pack_discount(card_counts) >= 2, "gold": 150, "rep": 6},
 		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"}
 	]
 
@@ -5112,24 +5140,33 @@ func _achievement_ids() -> Array[String]:
 
 ## Abre um pacote de cartas. Brinde de conquista chega de graça; no balcão tem preço.
 func _grant_pack(free: bool) -> void:
-	var price := Cards.pack_price(packs_opened)
+	var price := Cards.pack_price(packs_opened, card_counts)
 	if not free:
 		if gold < price:
 			last_event = "O pacote custa %d ouro. A loja não aprova fiado nem para nostalgia." % price
 			_refresh_ui()
 			return
 		gold -= price
-	var opened: Dictionary = Cards.open_pack(card_counts, alchemy_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck())
+	var opened: Dictionary = Cards.open_pack(card_counts, alchemy_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck() + _card_luck())
 	packs_opened += 1
 	var card: Dictionary = opened["card"]
 	var card_id := str(card["id"])
+	var copies := int(card_counts.get(card_id, 0))
 	last_pack_card = card_id
 	var text := ""
 	if bool(opened["duplicate"]):
-		var refund := Cards.refund_of(card)
-		gold += refund
-		text = "Repetida: %s. A casa devolve %d ouro pelo par." % [card["name"], refund]
-		audio.play("coin")
+		# A cópia que fecha um degrau não devolve ouro: ela sobe a carta de nível,
+		# e é o degrau que pesa no bônus do conjunto.
+		if Cards.evolution(copies) > Cards.evolution(copies - 1):
+			text = "%s virou %s na %dª cópia. O mural inteiro sente o peso." % [
+				card["name"], Cards.evolution_name(copies), copies
+			]
+			audio.play("levelup")
+		else:
+			var refund := Cards.refund_of(card)
+			gold += refund
+			text = "Repetida: %s. A casa devolve %d ouro pelo par." % [card["name"], refund]
+			audio.play("coin")
 	else:
 		text = "Carta nova: %s (%s)." % [card["name"], str(Cards.rarity_of(card)["name"])]
 		if steam != null:
@@ -5138,10 +5175,13 @@ func _grant_pack(free: bool) -> void:
 	for finished in Cards.newly_completed(card_counts, completed_sets):
 		completed_sets.append(str(finished))
 		reputation += 4
-		text += " Coleção %s completa: +4 de reputação." % str(Cards.SET_NAMES[str(finished)])
+		text += " Coleção %s completa: +4 de reputação e o bônus do set dobra de peso." % str(Cards.SET_NAMES[str(finished)])
 	_show_feedback("🂠 Pacote aberto.", Color(1.0, 0.86, 0.45))
 	last_event = text
 	_play_card_flip(card_id)
+	# O pacote é o único lugar onde o álbum cresce: é aqui, e não no próximo
+	# freguês, que a conquista de evolução tem de bater.
+	_check_achievements()
 	_refresh_ui()
 	_save_game()
 

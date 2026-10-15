@@ -3,6 +3,11 @@ extends RefCounted
 ## coleção. O jogo guarda só `card_counts` em main.gd: { id_da_carta: quantidade }.
 ## Pacote novo sai no balcão; conquista entrega carta garantida. Repetição vira
 ## ouro de volta, e fechar uma coleção dá bônus de reputação.
+##
+## Cópia não é prêmio de consolação: três cópias da mesma carta viram ela
+## holográfica e seis viram prismática. A evolução é derivada da contagem que já
+## existe no save, e é ela que empurra o bônus de conjunto — o álbum passa a
+## valer etiqueta melhor, sorte na forja e desconto no pacote.
 
 const RARITIES: Array = [
 	{"id": "comum", "name": "Comum", "color": "#9fb0c4", "weight": 40, "refund": 10},
@@ -32,6 +37,24 @@ const DATA: Array = [
 
 const SET_NAMES := {"fregueses": "Fregueses", "chefa": "A Chefa", "casa": "A Casa"}
 
+## Degraus de evolução, medidos em cópias da mesma carta. O nome aparece no mural
+## e o peso é o que entra na conta do conjunto.
+const EVOLUTIONS: Array = [
+	{"copies": 3, "name": "holo", "weight": 1},
+	{"copies": 6, "name": "prismática", "weight": 2}
+]
+
+## O set fechado dobra o peso; enquanto ele não fecha, cada carta ainda conta.
+const SET_COMPLETE_MULT := 2
+## Quanto cada ponto de peso vale no jogo.
+const PRICE_PER_POWER := 0.004
+const LUCK_PER_POWER := 6
+## Cada ponto de peso da casa pintada derruba 1 ouro do pacote. É o bastante para o
+## álbum Prismático completo encostar no piso — e é por isso que o piso existe.
+const DISCOUNT_PER_POWER := 1
+## Desconto nenhum derruba o pacote a este piso: carta grátis não existe nem em sonho.
+const PACK_FLOOR := 20
+
 static func size() -> int:
 	return DATA.size()
 
@@ -60,8 +83,8 @@ static func owned_count(counts: Dictionary) -> int:
 			total += 1
 	return total
 
-static func pack_price(opened: int) -> int:
-	return 40 + mini(opened, 10) * 3
+static func pack_price(opened: int, counts: Dictionary) -> int:
+	return maxi(PACK_FLOOR, 40 + mini(opened, 10) * 3 - pack_discount(counts))
 
 ## Abre um pacote. Sorte empurra a raridade e, com bastante sorte, fura a
 ## repetição: enquanto houver carta nova, a nova vence o empate.
@@ -114,3 +137,62 @@ static func set_lines(counts: Dictionary) -> Array[String]:
 	for info in sets(counts):
 		lines.append("%s %d/%d" % [str(info["name"]), int(info["have"]), int(info["total"])])
 	return lines
+
+## 0 = normal, 1 = holográfica, 2 = prismática. Derivado da cópia, sem estado novo.
+static func evolution(copies: int) -> int:
+	var level := 0
+	for i in range(EVOLUTIONS.size()):
+		if copies >= int(EVOLUTIONS[i]["copies"]):
+			level = i + 1
+	return level
+
+static func evolution_name(copies: int) -> String:
+	var level := evolution(copies)
+	return "" if level == 0 else str(EVOLUTIONS[level - 1]["name"])
+
+## Peso da carta no conjunto: existir vale 1 e o degrau soma o resto.
+static func power_of(copies: int) -> int:
+	if copies <= 0:
+		return 0
+	var level := evolution(copies)
+	return 1 if level == 0 else 1 + int(EVOLUTIONS[level - 1]["weight"])
+
+static func set_power(counts: Dictionary, set_id: String) -> int:
+	var power := 0
+	for card in DATA:
+		if str(card["set"]) != set_id:
+			continue
+		power += power_of(int(counts.get(str(card["id"]), 0)))
+	if power <= 0:
+		return 0
+	for info in sets(counts):
+		if str(info["id"]) == set_id and bool(info["complete"]):
+			return power * SET_COMPLETE_MULT
+	return power
+
+## Etiqueta: a freguesia do álbum paga mais caro em toda venda.
+static func price_bonus(counts: Dictionary) -> float:
+	return float(set_power(counts, "fregueses")) * PRICE_PER_POWER
+
+## Sorte: a chefa desenhada ajuda na forja, na estrada e no próprio pacote.
+static func luck_bonus(counts: Dictionary) -> int:
+	return set_power(counts, "chefa") / LUCK_PER_POWER
+
+## Desconto: a casa pintada barateia o próximo pacote.
+static func pack_discount(counts: Dictionary) -> int:
+	return set_power(counts, "casa") / DISCOUNT_PER_POWER
+
+static func bonus_lines(counts: Dictionary) -> Array[String]:
+	return [
+		"Fregueses %d → etiqueta +%.1f%%" % [set_power(counts, "fregueses"), price_bonus(counts) * 100.0],
+		"A Chefa %d → sorte +%d na forja, na estrada e no pacote" % [set_power(counts, "chefa"), luck_bonus(counts)],
+		"A Casa %d → −%d de ouro no pacote" % [set_power(counts, "casa"), pack_discount(counts)],
+	]
+
+## Quantas cartas já chegaram ao degrau indicado (1 holo, 2 prismática).
+static func evolved_count(counts: Dictionary, level: int) -> int:
+	var total := 0
+	for id in counts.keys():
+		if evolution(int(counts[id])) >= level:
+			total += 1
+	return total
