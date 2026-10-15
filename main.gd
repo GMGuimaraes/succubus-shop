@@ -3467,8 +3467,8 @@ func _sector_scene(sector: String) -> Dictionary:
 		room = "res://assets/forge_scene.png"
 		close = "res://assets/forge_close_scene.png"
 	elif sector == "library":
-		room = "res://assets/library_room_scene.png"
-		close = "res://assets/library_close_scene.png"
+		room = "res://assets/library_close_scene.png"
+		close = "res://assets/library_room_scene.png"
 	elif sector == "sanctum":
 		room = "res://assets/sanctum_room_scene.png"
 		close = "res://assets/sanctum_close_scene.png"
