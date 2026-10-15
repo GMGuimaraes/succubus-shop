@@ -15,6 +15,7 @@ const Prestige = preload("res://prestige.gd")
 const Endings = preload("res://endings.gd")
 const Branches = preload("res://branches.gd")
 const FactionArcs = preload("res://faction_arcs.gd")
+const TalentSpecs = preload("res://talent_specs.gd")
 const SteamBridge = preload("res://steam_bridge.gd")
 
 ## Caixa e despensa com que a loja abre a primeira vida — e cada vida seguinte.
@@ -119,6 +120,11 @@ var charm_rank: int = 0
 var logistics_rank: int = 0
 ## Quinta trilha: a chefe administrando a própria casa, e não só o balcão.
 var house_rank: int = 0
+## Ofício assinado em cada trilha (trilha → id da especialização). Um por trilha,
+## escolhido a partir do nível 4, e é ele que destrava o quinto degrau. A escolha é
+## da vida: reencarnar ou reabrir depois da ruína devolve a liberdade de montar a
+## build concorrente.
+var spec_choice: Dictionary = {}
 ## Receitas pagas na biblioteca, independentemente do nível da personagem.
 var known_recipes: Array[String] = []
 var world_speed_options: Array[float] = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
@@ -372,6 +378,10 @@ var arc_summary_label: Label
 var arc_labels: Array = []
 var arc_desc_labels: Array = []
 var arc_buttons: Array = []
+var spec_summary_label: Label
+var spec_labels: Array = []
+var spec_state_labels: Array = []
+var spec_buttons: Array = []
 var pack_button: Button
 var card_gallery_labels: Array = []
 var board_label: Label
@@ -1775,6 +1785,58 @@ func _build_ui() -> void:
 	library_upgrade_button.pressed.connect(_buy_sector_upgrade.bind("library"))
 	library_box.add_child(library_upgrade_button)
 
+	library_box.add_child(_make_section_title("ESPECIALIZAÇÕES", Color(1.0, 0.80, 0.58)))
+	library_box.add_child(_make_section_hint("Até o degrau 4 a trilha é só subida. No degrau 4 ela escolhe que tipo de loja a loja vai ser: são dois ofícios por trilha e a casa assina um só, porque os dois se puxam para lados opostos da mesma conta. O outro fica raspado até a próxima vida, e sem assinatura o quinto degrau não abre."))
+	spec_summary_label = Label.new()
+	spec_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	spec_summary_label.add_theme_font_size_override("font_size", 14)
+	spec_summary_label.add_theme_color_override("font_color", Color(0.98, 0.90, 0.76))
+	library_box.add_child(spec_summary_label)
+	for trail_id in TalentSpecs.trail_ids():
+		var trail_kind := str(trail_id)
+		var spec_card := _make_sector_card(Color(0.055, 0.045, 0.095, 0.94), Color(0.58, 0.34, 0.68, 0.95))
+		library_box.add_child(spec_card)
+		var spec_info := VBoxContainer.new()
+		spec_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		spec_info.add_theme_constant_override("separation", 6)
+		spec_card.add_child(spec_info)
+		var spec_label := Label.new()
+		spec_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		spec_label.add_theme_font_size_override("font_size", 15)
+		spec_label.add_theme_color_override("font_color", Color(0.92, 0.80, 1.0))
+		spec_info.add_child(spec_label)
+		spec_labels.append(spec_label)
+		var spec_options := HBoxContainer.new()
+		spec_options.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		spec_options.add_theme_constant_override("separation", 10)
+		spec_info.add_child(spec_options)
+		var trail_buttons: Array = []
+		for option in TalentSpecs.pair(trail_kind):
+			var option_box := VBoxContainer.new()
+			option_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			option_box.add_theme_constant_override("separation", 4)
+			spec_options.add_child(option_box)
+			var option_button := Button.new()
+			option_button.custom_minimum_size = Vector2(0, 40)
+			option_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			option_button.add_theme_font_size_override("font_size", 14)
+			option_button.pressed.connect(_choose_spec.bind(trail_kind, str(option["id"])))
+			option_box.add_child(option_button)
+			trail_buttons.append(option_button)
+			var option_desc := Label.new()
+			option_desc.text = str(option["desc"])
+			option_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			option_desc.add_theme_font_size_override("font_size", 11)
+			option_desc.add_theme_color_override("font_color", Color(0.68, 0.72, 0.84))
+			option_box.add_child(option_desc)
+		spec_buttons.append(trail_buttons)
+		var spec_state := Label.new()
+		spec_state.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		spec_state.add_theme_font_size_override("font_size", 12)
+		spec_state.add_theme_color_override("font_color", Color(0.74, 0.76, 0.88))
+		spec_info.add_child(spec_state)
+		spec_state_labels.append(spec_state)
+
 	sanctum_upgrade_button = Button.new()
 	sanctum_upgrade_button.custom_minimum_size = Vector2(220, 36)
 	sanctum_upgrade_button.pressed.connect(_buy_sector_upgrade.bind("sanctum"))
@@ -2905,13 +2967,16 @@ func _consume_ingredients(item: Dictionary) -> void:
 		ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) - int(recipe[ingredient_id])
 
 ## Quanto pesa hoje o custo de fabricação: a trilha de Alquimia derruba 5% por
-## nível, e o selo das Guildas derruba mais 10% em cima do que sobrou. A conta é
-## uma só para a forja, para a margem estimada e para o painel não prometerem
-## números diferentes.
+## nível, o selo das Guildas derruba mais 10% em cima do que sobrou, e a Linha de
+## montagem derruba 12% — o ofício que a Destilaria fina não pode ter junto. A
+## conta é uma só para a forja, para a margem estimada e para o painel não
+## prometerem números diferentes.
 func _craft_cost_factor() -> float:
 	var factor := 1.0 - 0.05 * float(alchemy_rank)
 	if _faction_arc_closed("guildas"):
 		factor *= 0.9
+	if _has_spec("alchemy", "linha"):
+		factor *= 0.88
 	return maxf(0.3, factor)
 
 ## A carta que a corte deixou na parede: a etiqueta inteira sobe 6%, porque agora a
@@ -2930,6 +2995,15 @@ func _road_pact_luck() -> int:
 func _expedition_slots() -> int:
 	return 2 if logistics_rank >= 2 else 1
 
+## Quantos segundos de relógio a estrada leva. A rota dá a distância, a Logística
+## encurta, e a Estrada curta — o ofício que a Compra em volume tranca — corta mais
+## 15% com piso de dez segundos de mundo, para nenhuma viagem virar teleportar.
+func _expedition_duration(destination: Dictionary) -> float:
+	var days := Expedition.duration_for(destination, logistics_rank)
+	if _has_spec("logistics", "estrada"):
+		days = maxf(10.0, days * 0.85)
+	return days
+
 func _expedition_luck() -> int:
 	return alchemy_rank + logistics_rank + Sanctum.luck_bonus(active_buffs) + _prestige_luck() + _card_luck() + _road_pact_luck()
 
@@ -2941,7 +3015,7 @@ func _card_luck() -> int:
 ## Sorte da bigorna sem catalisador na mão: a mesma que rola a peça, menos o pó da
 ## raridade do momento. Serve para o painel prometer uma chance honesta.
 func _forge_luck() -> int:
-	return alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + _prestige_luck() + _card_luck() + _road_pact_luck()
+	return alchemy_rank + Sanctum.luck_bonus(active_buffs) + int(round(float(library_upgrade_level) * 0.5)) + _prestige_luck() + _card_luck() + _road_pact_luck() + (1 if _has_spec("alchemy", "destilaria") else 0)
 
 ## Mestria da forja: os degraus que a casa já subiu nas duas trilhas que mexem na
 ## bigorna, mais a memória das vidas anteriores. É ela que destrava o Lendário —
@@ -2991,7 +3065,7 @@ func _start_expedition(id: String) -> void:
 		_refresh_ui()
 		return
 	gold -= cost
-	var duration := Expedition.duration_for(destination, logistics_rank)
+	var duration := _expedition_duration(destination)
 	expeditions.append({"id": id, "remaining": duration, "total": duration})
 	last_event = "%s partiu com %d ouro de passagem e volta em %s." % [destination["name"], cost, Expedition.days_label(duration)]
 	audio.play("click")
@@ -3201,6 +3275,9 @@ func _ingredient_price(ingredient_id: String) -> int:
 	# O caderno do Sabet aberto: fornecedor fiel cobra menos por confiar no volume.
 	if _faction_arc_closed("mercadores"):
 		base *= 0.88
+	# Compra em volume é o ofício da Logística que a Estrada curta não pode ter.
+	if _has_spec("logistics", "volume"):
+		base *= 0.9
 	return maxi(1, int(round(base)))
 
 func _buy_ingredient(ingredient_id: String) -> void:
@@ -3523,7 +3600,7 @@ func _on_customer_tick() -> void:
 		_set_customer_status("CLIENTE: foi embora")
 		_set_seller_mood("surprised")
 		last_event = "%s entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. %s Reabasteça a loja para não perder vendas." % [visitor["short"], grumble]
-		_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank)
+		_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank + (15 if _has_spec("charm", "boca") else 0))
 	else:
 		var profiles: Array[Dictionary] = [
 			{"name": "Speedrunner", "favorite": "caixa_misteriosa", "line": "“Compra feita. Onde fica o botão de pular diálogo?”", "faction": "aventureiros", "portrait": 0, "budget": 75, "patience": 1},
@@ -3637,7 +3714,7 @@ func _on_customer_tick() -> void:
 			# Saiu torto da forja e o cliente viu: ninguém esconde a careta.
 			_show_stage_emotion(stage_customer, "nojo")
 		var base_label := _piece_price(item, piece_tier)
-		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor() * _recommendation_price_factor()
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor() * _recommendation_price_factor() * (1.08 if _has_spec("trade", "cartel") else 1.0)
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
 			preference_bonus = maxi(2, int(round(base_label * 0.25)))
@@ -3655,7 +3732,8 @@ func _on_customer_tick() -> void:
 		elif product_heat <= -0.15:
 			last_event += "\n%s está encalhado: o mercado pagou %.0f%% menos." % [item["name"], absf(product_heat) * 100.0]
 		# Vender cria fila, e fila é sinal de demanda: a peça volta mais cara amanhã.
-		Economy.bump(economy_state, "product", str(item["id"]), 0.22)
+		# O Varejo humilde vende a mesma peça sem empurrar o mercado duas vezes.
+		Economy.bump(economy_state, "product", str(item["id"]), 0.11 if _has_spec("trade", "varejo") else 0.22)
 		var faction_id := str(profile.get("faction", ""))
 		var faction_bonus := 0
 		if not faction_id.is_empty():
@@ -3741,7 +3819,7 @@ func _on_customer_tick() -> void:
 		_add_xp(12)
 		_progress_contracts("customers", 1)
 		_progress_contracts("gold", sale_price)
-		_add_affection(1 + charm_rank + sanctum_upgrade_level)
+		_add_affection(1 + charm_rank + sanctum_upgrade_level + (1 if _has_spec("charm", "coracao") else 0))
 		_set_customer_status("CLIENTE: %s" % profile["name"])
 		_set_seller_mood("happy")
 		_react_to_visit("delighted" if preferred_index == chosen_index else "content", seduction_used)
@@ -4439,12 +4517,13 @@ func _refresh_ui() -> void:
 		else:
 			var expected := Branches.expected_profit(branches, _branch_care())
 			var extra := Branches.total_upkeep(branches)
-			var zelo_beco := 3 if _faction_arc_closed("submundo") else 0
 			var de_onde: Array[String] = []
-			if _branch_care() - zelo_beco > 0:
-				de_onde.append("%d da casa" % (_branch_care() - zelo_beco))
-			if zelo_beco > 0:
-				de_onde.append("%d do beco" % zelo_beco)
+			if house_rank >= 2:
+				de_onde.append("%d da casa" % (house_rank - 1))
+			if _has_spec("house", "porteiro"):
+				de_onde.append("2 do porteiro")
+			if _faction_arc_closed("submundo"):
+				de_onde.append("3 do beco")
 			branch_summary_label.text = "CASAS ABERTAS: %d de %d • lucro esperado %+d por virada • custo extra %d • saldo médio %+d.%s" % [
 				branches.size(), Branches.size(), expected, extra, expected - extra,
 				" Cuidado com as filiais: -%d%% de dia ruim (%s)." % [
@@ -4502,6 +4581,57 @@ func _refresh_ui() -> void:
 			arc_button.disabled = closed_arc or why != ""
 			arc_button.text = "Fechado ✓" if closed_arc else (
 				"Entregar pedido" if why == "" else "Trancado: %s" % why)
+	if is_instance_valid(spec_summary_label):
+		var assinados := spec_choice.size()
+		spec_summary_label.text = "OFÍCIOS ASSINADOS: %d de %d.%s" % [
+			assinados, TalentSpecs.count(), " " + _spec_names_text() if assinados > 0 else ""]
+	var trails := TalentSpecs.trail_ids()
+	for i in range(trails.size()):
+		var trail_kind := str(trails[i])
+		var trail_rank := int(get(trail_kind + "_rank"))
+		var signed := str(spec_choice.get(trail_kind, ""))
+		var options: Array = TalentSpecs.pair(trail_kind)
+		var signed_name := str(TalentSpecs.find(signed).get("name", signed)) if signed != "" else ""
+		var rival_name := ""
+		for arc_option in options:
+			if signed != "" and str(arc_option["id"]) != signed:
+				rival_name = str(arc_option["name"])
+		if i < spec_labels.size():
+			var trail_title := str(TalentSpecs.TRAILS.get(trail_kind, trail_kind))
+			var trail_suffix := ""
+			if signed != "":
+				trail_suffix = " • ofício: %s" % signed_name
+			elif trail_rank >= TalentSpecs.CHOICE_RANK:
+				trail_suffix = " • falta escolher ofício"
+			(spec_labels[i] as Label).text = "%s — degrau %d/5%s" % [trail_title, trail_rank, trail_suffix]
+		if i < spec_state_labels.size():
+			var state_text := ""
+			if signed != "":
+				state_text = "A casa assinou %s. %s fica trancada até a próxima vida — raspar a tinta não dá." % [signed_name, rival_name]
+			elif trail_rank >= TalentSpecs.CHOICE_RANK:
+				state_text = "A trilha está no ombro do último degrau: assine um dos dois para o quinto ponto de talento abrir. O que ficar de fora dorme raspado até a vida seguinte."
+			else:
+				state_text = "Trancado: o ofício aparece no degrau %d da trilha (a casa está no %d)." % [TalentSpecs.CHOICE_RANK, trail_rank]
+			var state_label := spec_state_labels[i] as Label
+			state_label.text = state_text
+			state_label.add_theme_color_override("font_color", Color(0.72, 0.98, 0.80) if signed != "" else Color(1.0, 0.84, 0.55) if trail_rank >= TalentSpecs.CHOICE_RANK else Color(0.66, 0.66, 0.78))
+		if i < spec_buttons.size():
+			var row_buttons: Array = spec_buttons[i]
+			for j in range(options.size()):
+				if j >= row_buttons.size():
+					break
+				var spec_data: Dictionary = options[j]
+				var option_button := row_buttons[j] as Button
+				var option_id := str(spec_data["id"])
+				if signed == option_id:
+					option_button.text = "✓ %s" % str(spec_data["name"])
+					option_button.disabled = true
+				elif signed != "":
+					option_button.text = "✕ %s" % str(spec_data["name"])
+					option_button.disabled = true
+				else:
+					option_button.text = str(spec_data["name"])
+					option_button.disabled = trail_rank < TalentSpecs.CHOICE_RANK
 	for r in range(Sanctum.DATA.size()):
 		var ritual: Dictionary = Sanctum.DATA[r]
 		var ritual_id := str(ritual["id"])
@@ -4530,7 +4660,7 @@ func _refresh_ui() -> void:
 			elif not open_route:
 				expedition_labels[e].text = "🔒 %s" % Expedition.locked_hint(destination)
 			else:
-				expedition_labels[e].text = "%s • risco %d%% • %s" % [Expedition.days_label(Expedition.duration_for(destination, logistics_rank)), int(destination["danger"]), Expedition.preview(destination)]
+				expedition_labels[e].text = "%s • risco %d%% • %s" % [Expedition.days_label(_expedition_duration(destination)), int(destination["danger"]), Expedition.preview(destination)]
 			expedition_labels[e].add_theme_color_override("font_color", Color(1.0, 0.86, 0.45) if on_the_road != {} else Color(0.74, 0.82, 0.78))
 		if e < expedition_buttons.size():
 			expedition_buttons[e].text = "Voltando…" if on_the_road != {} else "Mandar (%d)" % trip_cost
@@ -4730,6 +4860,7 @@ func _save_game() -> void:
 	config.set_value("game", "faction_standing", faction_standing)
 	config.set_value("game", "faction_arc_step", faction_arc_step)
 	config.set_value("game", "faction_customers", faction_customers)
+	config.set_value("game", "spec_choice", spec_choice)
 	config.set_value("game", "adult_content_enabled", adult_content_enabled)
 	config.set_value("game", "private_moments_unlocked", private_moments_unlocked)
 	config.set_value("game", "ad_level", ad_level)
@@ -4839,6 +4970,16 @@ func _load_game() -> void:
 	if saved_customers is Dictionary:
 		for customer_id in saved_customers.keys():
 			faction_customers[str(customer_id)] = maxi(0, int(saved_customers[customer_id]))
+	# Ofício é da vida, mas a vida pode ser cortada no meio e retomada: o que volta
+	# do save tem de ser assinatura válida. Trilha que não existe e ofício que não é
+	# daquela trilha são raspados na leitura, senão a build ficaria com dois lados.
+	var saved_specs = config.get_value("game", "spec_choice", {})
+	if saved_specs is Dictionary:
+		for saved_kind in saved_specs.keys():
+			var spec_kind := str(saved_kind)
+			var spec_id := str(saved_specs[saved_kind])
+			if TalentSpecs.has(spec_kind, spec_id):
+				spec_choice[spec_kind] = spec_id
 	var saved_romance = config.get_value("game", "romance_stage", {})
 	if saved_romance is Dictionary:
 		for saved_id in saved_romance.keys():
@@ -5133,6 +5274,12 @@ func _buy_talent(kind: String) -> void:
 		last_event = "Você ainda não tem pontos de talento. Suba de nível para ganhar mais."
 		_refresh_ui()
 		return
+	# O quinto degrau não é mais um ponto: é a conta de uma escolha. Sem ofício
+	# assinado a trilha para no nível 4, e é o painel que diz quais são os dois.
+	if int(get(kind + "_rank")) >= TalentSpecs.CHOICE_RANK and str(spec_choice.get(kind, "")) == "":
+		last_event = "A trilha está no ombro do último degrau, mas falta escolher ofício: %s. Assine um dos dois na seção \"Especializações\" e a casa volta a subir." % TalentSpecs.names(kind)
+		_refresh_ui()
+		return
 	match kind:
 		"alchemy":
 			if alchemy_rank >= 5:
@@ -5170,6 +5317,47 @@ func _buy_talent(kind: String) -> void:
 	_refresh_ui()
 	var new_rank := int(get(kind + "_rank"))
 	_play_talent_reaction(kind, new_rank)
+
+## A pergunta que as fórmulas da loja fazem: esta trilha assinou este ofício?
+func _has_spec(kind: String, spec_id: String) -> bool:
+	return str(spec_choice.get(kind, "")) == spec_id
+
+func _spec_names_text() -> String:
+	var names: Array[String] = []
+	for kind in TalentSpecs.trail_ids():
+		var signed := str(spec_choice.get(str(kind), ""))
+		if signed != "":
+			names.append(str(TalentSpecs.find(signed).get("name", signed)))
+	if names.is_empty():
+		return ""
+	return "Ofícios desta vida: %s." % ", ".join(names)
+
+## Assinar ofício é de graça e não custa ponto — o preço é o outro lado da moeda,
+## que fica trancado até a vida seguinte. Por isso a recusa também explica o que
+## ainda falta, em vez de só apagar o botão.
+func _choose_spec(kind: String, spec_id: String) -> void:
+	if not TalentSpecs.has(kind, spec_id):
+		return
+	var chosen := str(spec_choice.get(kind, ""))
+	if chosen != "":
+		last_event = "A casa já assinou %s nesta vida. Raspar a tinta não dá: a outra fica para a próxima." % str(TalentSpecs.find(chosen).get("name", chosen))
+		_refresh_ui()
+		return
+	if int(get(kind + "_rank")) < TalentSpecs.CHOICE_RANK:
+		last_event = "%s ainda não tem ombro para carregar ofício: chegue ao nível %d da trilha." % [
+			str(TalentSpecs.TRAILS.get(kind, kind)), TalentSpecs.CHOICE_RANK]
+		_refresh_ui()
+		return
+	var spec := TalentSpecs.find(spec_id)
+	spec_choice[kind] = spec_id
+	last_event = "ESPECIALIZAÇÃO — %s: %s" % [str(spec["name"]), str(spec["line"])]
+	audio.play("talent")
+	_show_feedback("✦ %s" % str(spec["name"]), Color(0.72, 1.0, 0.82))
+	if not demonic_form_active:
+		_set_seller_mood("happy")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
 
 func _xp_required() -> int:
 	return 40 + player_level * 25
@@ -5423,6 +5611,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "house_talent_max", "name": "A casa no cabresto (Administração da Casa no nível máximo)", "condition": house_rank >= 5, "gold": 260, "rep": 9, "pose": "book"},
 		{"id": "faction_arc_first", "name": "Primeira assinatura no caderno (um pedido de facção entregue)", "condition": _faction_asks_delivered() >= 1, "gold": 100, "rep": 3},
 		{"id": "faction_arc_all", "name": "As cinco fachadas assinadas (todas as facções com arco fechado)", "condition": _faction_arcs_closed() >= Factions.DATA.size(), "gold": 700, "rep": 22, "pose": "vitoria"},
+		{"id": "spec_all", "name": "Cinco ofícios na parede (todas as trilhas com especialização assinada)", "condition": spec_choice.size() >= TalentSpecs.count(), "gold": 420, "rep": 16, "pose": "vitoria"},
+		{"id": "spec_destilaria_legend", "name": "A destilaria pagou a peça (sorte de ofício e um Lendário vendido no balcão)", "condition": _has_spec("alchemy", "destilaria") and legendary_sold >= 1, "gold": 360, "rep": 13, "pose": "relic"},
 		{"id": "card_holo", "name": "Brilho de coleção (primeira carta holográfica)", "condition": Cards.evolved_count(card_counts, 1) >= 1, "gold": 90, "rep": 4},
 		{"id": "card_prism", "name": "Prisma no mural (uma carta em seis cópias)", "condition": Cards.evolved_count(card_counts, 2) >= 1, "gold": 240, "rep": 10, "pose": "vitoria"},
 		{"id": "card_album_working", "name": "Álbum trabalhando (os três conjuntos pagando bônus)", "condition": Cards.luck_bonus(card_counts) >= 1 and Cards.price_bonus(card_counts) >= 0.04 and Cards.pack_discount(card_counts) >= 2, "gold": 150, "rep": 6},
@@ -5613,14 +5803,14 @@ func _debt_limit() -> int:
 ## cada ponto derruba um ponto percentual da chance de dia ruim. A porta sem placa
 ## do beco vale mais três pontos na mesma conta: proteção de rua também é zelo.
 func _branch_care() -> int:
-	return maxi(0, house_rank - 1) + (3 if _faction_arc_closed("submundo") else 0)
+	return maxi(0, house_rank - 1) + (3 if _faction_arc_closed("submundo") else 0) + (2 if _has_spec("house", "porteiro") else 0)
 
 func _daily_upkeep() -> int:
 	var bill := 12 + library_upgrade_level * 6 + sanctum_upgrade_level * 6 + ad_level * 5 \
 		+ (18 if imp_hired else 0) + Branches.total_upkeep(branches)
 	## Conta de casa bem administrada encolhe 8% por marcha, e a conta é o que
 	## segura o império: por isso a trilha mexe nela e não na receita.
-	return maxi(1, int(round(float(bill) * (1.0 - 0.08 * float(house_rank)))))
+	return maxi(1, int(round(float(bill) * (1.0 - 0.08 * float(house_rank)) * (0.9 if _has_spec("house", "livro") else 1.0))))
 
 ## A virada de dia cobra a conta. Pagar em dia usa o que sobrou de caixa para
 ## escavar a dívida; não pagar não perdoa — o faltante entra no vermelho da casa.
@@ -6355,6 +6545,9 @@ func _reset_run() -> void:
 	charm_rank = 0
 	logistics_rank = 0
 	house_rank = 0
+	# Ofício é da vida: a vida nova é justamente a chance de montar a build que
+	# ficou de fora, então a tinta velha some toda.
+	spec_choice.clear()
 	known_recipes.clear()
 	daily_quest_index = 0
 	daily_quest_progress = 0
