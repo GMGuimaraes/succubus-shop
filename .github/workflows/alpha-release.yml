@@ -33,14 +33,23 @@ jobs:
           $templateRoot = Join-Path $templatesDir "templates"
           if (-not (Test-Path $templateRoot)) { throw "Export templates archive has an unexpected layout." }
           Copy-Item (Join-Path $templateRoot "*") $installDir -Recurse -Force
+          $windowsTemplate = Join-Path $installDir "windows_release_x86_64.exe"
+          if (-not (Test-Path $windowsTemplate)) {
+            Get-ChildItem $installDir -Name | Write-Host
+            throw "Windows x86_64 release template was not installed."
+          }
           "GODOT=$($godot.FullName)" | Out-File $env:GITHUB_ENV -Append
       - name: Export Windows build
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force ".export\windows" | Out-Null
-          & $env:GODOT --headless --path . --export-release "Windows Desktop" ".export\windows\Succubus Shop.exe"
+          $exportLog = Join-Path $env:RUNNER_TEMP "godot-export.log"
+          & $env:GODOT --headless --verbose --log-file $exportLog --path . --export-release "Windows Desktop" ".export\windows\Succubus Shop.exe"
           $executable = Get-Item ".export\windows\Succubus Shop.exe" -ErrorAction SilentlyContinue
-          if ($null -eq $executable -or $executable.Length -lt 1048576) { throw "Godot did not produce a valid Windows executable." }
+          if ($null -eq $executable -or $executable.Length -lt 1048576) {
+            if (Test-Path $exportLog) { Get-Content $exportLog -Tail 100 }
+            throw "Godot did not produce a valid Windows executable."
+          }
       - name: Package alpha
         shell: pwsh
         run: |
