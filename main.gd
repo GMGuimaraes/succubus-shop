@@ -1233,10 +1233,17 @@ func _host_enters_room() -> void:
 func _stage_customer_arrives(portrait_index: int) -> void:
 	if not is_instance_valid(stage_customer) or stage_layer.size.x <= 0:
 		return
+	var body := absi(portrait_index) % STAGE_CROWD_BODIES.size()
+	if (
+		stage_customer.visible
+		and int(stage_customer.get_meta("crowd", -1)) == body
+		and _customer_walk_tween != null
+		and _customer_walk_tween.is_valid()
+	):
+		return
 	if _customer_walk_tween != null and _customer_walk_tween.is_valid():
 		_customer_walk_tween.kill()
 	_customer_walk_tween = null
-	var body := absi(portrait_index) % STAGE_CROWD_BODIES.size()
 	_dress_stage_poses(stage_customer, body, _lane_height(2))
 	# O corpo do freguês do turno é dele. Se um transeunte já o vestia, o
 	# transeunte se apaga: dois do mesmo rosto na tela pareciam um sprite só
@@ -1257,6 +1264,7 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 	stage_customer.modulate = Color(1.0, 0.95, 0.98, 0.0)
 	stage_customer.rotation_degrees = 0.0
 	stage_customer.pivot_offset = stage_customer.size / 2.0
+	stage_customer.set_meta("crowd", body)
 	stage_customer.set_meta("walk_frames", _stage_crowd_frames(body).size())
 	stage_customer.visible = true
 	var path := _room_path()
@@ -1293,10 +1301,11 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 ## frente. Sala sem chegada escrita entra pela porta antiga.
 func _room_path() -> Array[Vector2]:
 	var path: Array[Vector2] = []
-	# Use apenas o primeiro ponto de chegada para evitar múltiplos trechos
-	var arrive_list := STAGE_ROOM_ARRIVE.get(_stage_room, [])
-	if arrive_list.size() > 0:
-		path.append(arrive_list[0])
+	# Os pontos são marcos de um único caminho contínuo, não reinícios da animação.
+	var arrive_list: Array = STAGE_ROOM_ARRIVE.get(_stage_room, [])
+	if not arrive_list.is_empty():
+		for point: Vector2 in arrive_list:
+			path.append(point)
 	else:
 		var door := STAGE_ROOM_DOOR.get(_stage_room, [])
 		if door.size() > 0:
@@ -1332,13 +1341,12 @@ func _place_stage_figure(node: Control, depth: float, center_x: float) -> void:
 	var figure_scale: float = lane["scale"]
 	node.set_meta("stage_depth", depth)
 	node.z_index = _stage_z_for_depth(depth)
-	# apply scale and compute scaled size for stable placement
 	node.scale = Vector2(figure_scale, figure_scale)
-	var scaled_size := Vector2(node.size.x * figure_scale, node.size.y * figure_scale)
-	# Garantir pivô central para consistência entre tipos de figura
+	# O pivô central mantém o centro do corpo fixo enquanto a perspectiva escala.
 	node.pivot_offset = node.size / 2.0
-	# posicionar de modo que os pés toquem o floor_y após a escala
-	node.position = Vector2(center_x - scaled_size.x * 0.5, float(lane["floor_y"]) - (scaled_size.y * 0.5))
+	var half_body := node.size * 0.5
+	var half_drawn := half_body * figure_scale
+	node.position = Vector2(center_x - half_body.x, float(lane["floor_y"]) - half_body.y - half_drawn.y)
 
 func _stage_z_for_depth(depth: float) -> int:
 	return roundi(inverse_lerp(0.0, STAGE_FOURTH_WALL_DEPTH, clampf(depth, 0.0, STAGE_FOURTH_WALL_DEPTH)) * 400.0)
@@ -1369,14 +1377,29 @@ func _path_time(node: Control, path: Array[Vector2]) -> float:
 
 ## Acrescenta a uma caminhada o percurso pela lista de pontos do chão.
 func _walk_path(trip: Tween, node: Control, path: Array[Vector2], pace := 1.0) -> void:
+	var from_depth := float(node.get_meta("stage_depth", STAGE_FRONT_DEPTH))
+	var from_x := node.position.x + node.size.x * 0.5
 	for point in path:
-		_stroll_leg(trip, node, point.y, point.x, pace)
+		_stroll_leg_between(trip, node, from_depth, from_x, point.y, point.x, pace)
+		from_depth = point.y
+		from_x = point.x
 
 ## Um trecho da caminhada, com a meia-volta antes do primeiro passo. Trechos sem
 ## comprimento não entram na fila: tween de duração zero só emite aviso.
 func _stroll_leg(trip: Tween, node: Control, to_depth: float, to_x: float, pace := 1.0) -> void:
 	var from_depth := float(node.get_meta("stage_depth", to_depth))
 	var from_x := node.position.x + node.size.x * 0.5
+	_stroll_leg_between(trip, node, from_depth, from_x, to_depth, to_x, pace)
+
+func _stroll_leg_between(
+	trip: Tween,
+	node: Control,
+	from_depth: float,
+	from_x: float,
+	to_depth: float,
+	to_x: float,
+	pace: float
+) -> void:
 	var time := _stage_walk_time(from_depth, from_x, to_depth, to_x) / pace
 	if time < 0.05:
 		return
