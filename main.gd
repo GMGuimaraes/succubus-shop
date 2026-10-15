@@ -568,7 +568,6 @@ const STAGE_ROOM_PROPS := {
 const STAGE_ROOM_PROP_DEPTHS := {
 	"res://assets/library_room_scene.png": [0.32, 0.40, 0.40],
 	"res://assets/sanctum_room_scene.png": [0.56, 0.56, 0.39, 0.39],
-	"res://assets/forge_scene.png": [0.12, 0.60, 0.52],
 }
 ## Quantos contornos de móvel o shader aguenta ao mesmo tempo.
 const STAGE_PROP_SLOTS := 8
@@ -577,6 +576,12 @@ const STAGE_PROP_SLOTS := 8
 ## a cabeça de fora, então o transeunte patrulha o piso visível e volta.
 const STAGE_ROOM_WALK := {
 	"res://assets/shop_scene.png": Vector2(0.13, 0.42),
+}
+## Profundidade de circulação dos transeuntes por sala. Na biblioteca, a faixa
+## atravessa a profundidade do livro aberto: visitantes ao fundo ficam ocultos,
+## enquanto os que caminham perto da câmera são desenhados à frente dele.
+const STAGE_ROOM_WALK_DEPTHS := {
+	"res://assets/library_room_scene.png": Vector2(0.05, 0.68),
 }
 ## O caminho da porta até o balcão, em (fração da largura, profundidade do chão),
 ## sem contar o próprio balcão. É a trilha que decide o que o visitante passa por
@@ -1047,7 +1052,9 @@ func _spawn_stage_walker() -> void:
 	var crowd := _free_crowd_index()
 	if crowd < 0:
 		return
-	var depth := randf_range(0.05, 0.30)
+	var depth_range: Vector2 = STAGE_ROOM_WALK_DEPTHS.get(
+		_room_layout_key(), Vector2(0.05, 0.30))
+	var depth := randf_range(depth_range.x, depth_range.y)
 	var lane := _lane_at(depth)
 	var walker := _make_stage_poses(crowd, STAGE_FIGURE_HEIGHT)
 	var figure_scale: float = lane["scale"]
