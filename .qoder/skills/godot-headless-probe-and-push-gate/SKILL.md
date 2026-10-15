@@ -114,6 +114,22 @@ o PNG de volta com a ferramenta Read. Um probe sem saida legivel nao prova nada.
 - **Checar o caminho antes de exercitar.** Quase toda funcao de jogo termina em
   `_save_game()` e `audio.gd` persiste `audio_settings.cfg`. Preferir logica pura com
   `--check-only` quando a pergunta e de compilacao.
+- **`:=` nao infere `await` de funcao sem tipo.** `var loja := await _loja(...)` da Parse
+  Error ("variable doesn't have a set type"). Usar `var loja = await ...` quando o helper
+  retorna Variant.
+- **Traducao se mede pela chave, nao pelo rotulo.** No Godot 4.7 nao existem
+  `Label.get_displayed_text()` nem `Button.get_translated_text()` (sao de 3.x); o `.text`
+  continua carregando o literal original porque quem traduz e o motor na hora de desenhar.
+  Medir com `TranslationServer.translate(chave)` ou `node.tr(chave)`.
+  `TranslationServer.get_loaded_translations()` tambem nao existe: e `get_translations()`.
+- **`set_locale()` de locale sem tabela cai no melhor ajuste.** Com so uma traducao
+  registrada, pedir um idioma ausente devolve aquela unica tabela (medido: locale `de`
+  acordou em ingles). O idioma original precisa de tabela identidade (chave -> chave), senao
+  voltar ao portugues continua lendo ingles.
+- **Modal auto-aberto em `_ready()` cega a sonda.** Uma janela que para o `world_timer` e
+  so fecha por clique tranca qualquer probe headless (e screenshots ficam escurecidos pela
+  camada dim). Guardar o auto-open com `DisplayServer.get_name() != "headless"` e chamar
+  `_open_menu()` explicitamente na sonda.
 
 ## Passo 5 - `--check-only` na sonda e em tudo que foi tocado
 
