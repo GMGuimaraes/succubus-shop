@@ -569,7 +569,7 @@ const STAGE_PROP_SLOTS := 8
 ## recepção o balcão cobre o resto do salão: quem passasse por ali ficaria só com
 ## a cabeça de fora, então o transeunte patrulha o piso visível e volta.
 const STAGE_ROOM_WALK := {
-	"res://assets/shop_scene.png": Vector2(0.13, 0.42),
+	"res://assets/shop_scene.png": Vector2(0.20, 0.42),
 }
 ## O caminho da porta até o balcão, em (fração da largura, profundidade do chão),
 ## sem contar o próprio balcão. É a trilha que decide o que o visitante passa por
@@ -597,11 +597,20 @@ const STAGE_ROOM_ARRIVE := {
 ## Onde a fila espera, do primeiro (mais perto do balcão) ao último degrau, na
 ## lateral do tapete: quem espera não tapa a chefe nem atravessa o salão, e o corpo
 ## que sobe para ser atendido sai exatamente deste lugar.
+##
+## Nenhum x desta lista pode cair sob o contorno de um móvel que a tela desenha na
+## frente de tudo: a fila é o lugar onde o freguês passa meio minuto parado, e corpo
+## engolido pelo balcão pintado é cliente invisível. A MEDIÇÃO manda aqui, não o
+## gosto — ver `tools/probes/caminhos.gd`, que roda a Auditoria de oclusão e imprime
+## a fração do corpo escondida em cada ponto de chão do jogo. O balcão esquerdo da
+## loja acaba em x=0,187, o da forja em x=0,165; na biblioteca a estante direita fica
+## a 0,40 de profundidade, então a fila passa toda pela esquerda dela. A porta é a
+## única exceção: ela engole de propósito, porque é assim que o corpo sai da sala.
 const STAGE_ROOM_QUEUE := {
-	"res://assets/shop_scene.png": [Vector2(0.27, 0.70), Vector2(0.22, 0.60), Vector2(0.17, 0.50), Vector2(0.13, 0.40), Vector2(0.09, 0.30), Vector2(0.05, 0.22)],
-	"res://assets/forge_scene.png": [Vector2(0.22, 0.70), Vector2(0.18, 0.60), Vector2(0.14, 0.50), Vector2(0.10, 0.40), Vector2(0.07, 0.30), Vector2(0.04, 0.22)],
-	"res://assets/library_room_scene.png": [Vector2(0.66, 0.70), Vector2(0.72, 0.60), Vector2(0.78, 0.50), Vector2(0.84, 0.40), Vector2(0.89, 0.30), Vector2(0.94, 0.22)],
-	"res://assets/sanctum_room_scene.png": [Vector2(0.28, 0.70), Vector2(0.23, 0.60), Vector2(0.18, 0.50), Vector2(0.13, 0.40), Vector2(0.09, 0.30), Vector2(0.05, 0.22)],
+	"res://assets/shop_scene.png": [Vector2(0.27, 0.70), Vector2(0.24, 0.60), Vector2(0.225, 0.50), Vector2(0.21, 0.40), Vector2(0.20, 0.30), Vector2(0.19, 0.22)],
+	"res://assets/forge_scene.png": [Vector2(0.235, 0.70), Vector2(0.215, 0.60), Vector2(0.20, 0.50), Vector2(0.19, 0.40), Vector2(0.182, 0.30), Vector2(0.175, 0.22)],
+	"res://assets/library_room_scene.png": [Vector2(0.62, 0.70), Vector2(0.65, 0.60), Vector2(0.68, 0.50), Vector2(0.71, 0.40), Vector2(0.73, 0.30), Vector2(0.75, 0.22)],
+	"res://assets/sanctum_room_scene.png": [Vector2(0.28, 0.70), Vector2(0.245, 0.60), Vector2(0.22, 0.50), Vector2(0.20, 0.40), Vector2(0.182, 0.30), Vector2(0.168, 0.22)],
 }
 ## Quanto o chão desce por ponto de profundidade na quarta parede, em fração da
 ## altura da tela. Sem isso o corpo entraria flutuando na borda em vez de subir do
