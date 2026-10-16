@@ -1103,12 +1103,56 @@ const MEME_TRUST_LINES := [
 "Ela anota o bordão do cliente: “É sobre isso. E sobre você voltar amanhã com o bolso cheio.”",
 "A chefe aponta para o ladrão: “Ctrl+C não copia ficha de fidelidade. Essa é proprietária.”"
 ]
+## A escada de momentos só da casa, em doze degraus. A fala sobe a lista em vez de
+## reciclar: cada momento liberado mostra o próximo degrau do tom, e o topo é o
+## quarto andar — a casa corta antes de mostrar qualquer coisa. Nada aqui muda
+## economia, porta ou placar: é só a voz.
+const SENSUAL_MOMENTS: Array[String] = [
+	"A súcubo inclina a cabeça, dá uma piscadela e puxa você para mais perto: “Esse é nosso segredinho, combinado?”",
+	"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais de mim quando nossa parceria ficar ainda mais lucrativa.”",
+	"A chefe faz uma pose provocante e ri baixinho: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”",
+	"Ela vira a placa de FECHADO antes da hora e não explica para quem: “Senta atrás do balcão. Hoje eu quero ver como você atende.”",
+	"A chefe sopra a vela que fica do seu lado e a luz cai pela metade: “Aqui dentro ninguém cobra gorjeta de quem fica até o fim.”",
+	"Ela pendura o avental no gancho e cruça os braços, de camiseta de trabalho: “Fica tranquilo. Hoje eu não quero freguês, quero companhia.”",
+	"A chefe derrama dois copos e empurra um na sua direção: “Ninguém bebe aqui sem me contar um fracasso. Começa pelo seu.”",
+	"Ela deixa a porta dos fundos entreaberta de propósito: “Se quiser ver onde a casa guarda o que não está à venda, é só pedir.”",
+	"A chefe tira a chave do bolso, deixa passar entre os dedos dela e devolve: “O porão tem mais uma porta. Ainda não decidimos se você é gente de abrir.”",
+	"Ela se encosta na moldura da tela pintada e mostra o piso riscado: “Essa casa já foi um casebre com uma vela só. Você é o terceiro que eu deixo chegar aqui.”",
+	"A chefe apaga todas as luzes menos uma e ri no escuro: “Não se aproxima tanto. Eu gosto de deixar o cliente escolhendo onde parar.”",
+	"Ela puxa a cadeira, senta de frente para você, e a loja fica em silêncio: “Fica até a última vela. Depois do apagão a casa não conta nada — nem para mim.”"
+]
 ## Os momentos só da loja na versão sem cena: a chefe baixa a voz do mesmo jeito,
-## só que o que ela entrega é a confiança da casa, não o flerte.
-const TRUST_MOMENTS := [
-"A chefe inclina a cabeça, puxa a cadeira para perto e abaixa a voz: “Isso aqui não sai da loja, combinado?”",
-"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais da casa quando nossa parceria ficar ainda mais lucrativa.”",
-"A chefe bate o punho no balcão e ri baixo: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”"
+## só que o que ela entrega é a confiança da casa, não o flerte. Espelho degrau a
+## degrau da escada de cima — mesma porta, mesmo contador, só a voz trocando.
+const TRUST_MOMENTS: Array[String] = [
+	"A chefe inclina a cabeça, puxa a cadeira para perto e abaixa a voz: “Isso aqui não sai da loja, combinado?”",
+	"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais da casa quando nossa parceria ficar ainda mais lucrativa.”",
+	"A chefe bate o punho no balcão e ri baixo: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”",
+	"Ela vira a placa de FECHADO antes da hora e não explica para quem: “Senta atrás do balcão. Hoje eu quero ver como você atende.”",
+	"A chefe acende a segunda vela da sala e aponta o banquinho do balcão: “Quem fica até o fim do dia ganha nome no caderno. O seu acabou de entrar.”",
+	"Ela pendura o avental no gancho e senta no degrau da porta, de camiseta de trabalho: “Fica tranquilo. Hoje eu não quero freguês, quero uma conversa honesta.”",
+	"A chefe derrama dois copos e empurra um na sua direção: “Ninguém bebe aqui sem me contar um fracasso. Começa pelo seu.”",
+	"Ela deixa a porta dos fundos aberta e chama você para ver: “É aqui que a casa guarda o que não está à venda: o estoque e a própria palavra.”",
+	"A chefe mostra a chave do porão e devolve o bolso: “Lá embaixo tem mais uma porta. Ela abre para quem já provou que volta.”",
+	"Ela se encosta na moldura da tela pintada e mostra o piso riscado: “Essa casa já foi um casebre com uma vela só. Você é o terceiro que eu deixo chegar aqui.”",
+	"A chefe apaga todas as luzes menos uma e ri no escuro: “Fica aí. Eu gosto de deixar o cliente medindo sozinho até onde a confiança vai.”",
+	"Ela puxa a cadeira, senta de frente para você, e a loja fica em silêncio: “Fica até a última vela. Depois do apagão a casa não conta nada — nem para mim.”"
+]
+## As falas do marco de afeição (a cada 10 pontos do medidor), na mesma lógica da
+## escada de momentos: o degrau sobe com o medidor em vez de reciclar.
+const SENSUAL_AFFECTION_MILESTONES: Array[String] = [
+	"A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”",
+	"Ela ajeita a mecha de cabelo e não se afasta do balcão: “Olha o tanto que você já subiu aqui dentro. E olha o que ainda falta.”",
+	"Ela se inclina até a voz virar sussurro: “Poucos clientes chegaram onde você está. Nenhum ficou quando eu pedi para ficar.”",
+	"A chefe mede o salão vazio, apaga a última vela da vitrine e ri baixo no escuro: “Cheio demais, querido. Agora você já não cabe no lado de cá do balcão.”"
+]
+## Espelho sem cena do bloco de cima: a chefe continua descendo a voz no mesmo
+## degrau do medidor, só que o que ela entrega é a conta da casa, não o flerte.
+const TRUST_AFFECTION_MILESTONES: Array[String] = [
+	"A chefe anota a linha nova do caderno e vira a página para você ver: “Você está conquistando a confiança da casa… e isso rende consequência boa.”",
+	"Ela apoia as duas mãos no balcão e olha a fila inteira: “Olha o tanto que você já subiu aqui dentro. E olha o que ainda falta.”",
+	"Ela baixa a voz para ninguém mais na sala ouvir: “Poucos clientes chegaram onde você está. Nenhum ficou quando eu pedi para ficar.”",
+	"A chefe mede o salão vazio, apaga a última vela da vitrine e ri baixo no escuro: “Confiança cheia. Agora você já não cabe no lado de cá do balcão.”"
 ]
 ## A escada de confiança de um freguês: cada degrau cobra visitas de balcão e
 ## ouro na hora, e paga de volta para sempre na conta dele. O degrau três é o
@@ -4564,18 +4608,22 @@ func _apply_sector_visibility() -> void:
 	if is_instance_valid(scene_action_box):
 		scene_action_box.visible = current_sector == "library" or current_sector == "sanctum"
 
-func _play_sensual_reception_moment() -> void:
+## A cena da recepção. `intensidade` (0 a 1) é o degrau da escada de momentos: quanto
+## mais alto, mais ela se aproxima, mais quente fica o retrato e mais tempo ela segura
+## antes de voltar para o balcão. Não muda economia nem porta — é só a respiração.
+func _play_sensual_reception_moment(intensidade: float = 0.0) -> void:
 	if not adult_content_enabled or not is_instance_valid(seller_portrait):
 		return
+	var peso := clampf(intensidade, 0.0, 1.0)
 	_seller_lean_in()
 	_show_stage_emotion(stage_seller_body, "ousadia")
 	if sensual_tween != null and sensual_tween.is_valid():
 		sensual_tween.kill()
 	seller_portrait.pivot_offset = seller_portrait.size / 2.0
 	sensual_tween = create_tween()
-	sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.07, 1.07), 0.32).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	sensual_tween.tween_property(seller_portrait, "modulate", Color(1.0, 0.82, 0.95, 1.0), 0.32)
-	sensual_tween.tween_interval(1.6)
+	sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE * lerpf(1.07, 1.14, peso), 0.32).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	sensual_tween.tween_property(seller_portrait, "modulate", Color(1.0, lerpf(0.82, 0.72, peso), lerpf(0.95, 0.90, peso), 1.0), 0.32)
+	sensual_tween.tween_interval(lerpf(1.6, 2.4, peso))
 	sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.42).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.42)
 
@@ -5941,9 +5989,14 @@ func _on_customer_tick() -> void:
 		_react_to_visit("delighted" if preferred_index == chosen_index else "content", seduction_used)
 		_set_negotiation_dialogue(profile, item, seduction_used, preferred_index == chosen_index)
 
-	if adult_content_enabled and affection >= 10 and affection % 10 == 0:
-		last_event = "A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”"
-		_play_sensual_reception_moment()
+	if affection >= 10 and affection % 10 == 0:
+		var marco := _affection_milestone_index()
+		var topo_m: float = float(maxi(SENSUAL_AFFECTION_MILESTONES.size() - 1, 1))
+		if adult_content_enabled:
+			last_event = str(SENSUAL_AFFECTION_MILESTONES[marco])
+			_play_sensual_reception_moment(float(marco) / topo_m)
+		else:
+			last_event = str(TRUST_AFFECTION_MILESTONES[marco])
 	elif affection > 0 and affection % 5 == 0:
 		last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor, querido.”" if adult_content_enabled else "A chefe assina o caderno: “Olha só, estamos nos entendendo melhor.”"
 
@@ -6030,7 +6083,7 @@ func _trigger_random_event() -> void:
 		if is_instance_valid(customer_emotion_label):
 			customer_emotion_label.text = "💘 distraído"
 		_set_customer_status("CLIENTE: distraído pelo charme")
-		_play_sensual_reception_moment()
+		_play_sensual_reception_moment(float(_private_moment_index()) / float(maxi(SENSUAL_MOMENTS.size() - 1, 1)))
 	else:
 		_show_stage_emotion(stage_seller_body, "pensativo")
 	audio.play("rare")
@@ -10656,7 +10709,7 @@ func _advance_romance_step() -> void:
 	gold -= cost
 	romance_pending = ""
 	romance_stage[regular_id] = step + 1
-	_play_sensual_reception_moment()
+	_play_sensual_reception_moment(float(step) / float(maxi(ROMANCE_STEPS.size() - 1, 1)))
 	var wait := _summon_romance_partner(regular_id, int(invited["portrait"]))
 	var pose := str(requirement["pose"])
 	if not adult_content_enabled:
@@ -10689,6 +10742,17 @@ func _advance_romance_step() -> void:
 	_save_game()
 	_refresh_ui()
 
+## O degrau da escada de momentos, sem reciclar: o primeiro momento puxa a primeira
+## fala e o último degrau fica parado no topo para sempre. Os dois modos usam o mesmo
+## índice, porque o espelho é da voz, não da porta.
+func _private_moment_index() -> int:
+	return clampi(private_moments_unlocked - 1, 0, SENSUAL_MOMENTS.size() - 1)
+
+## O degrau do medidor de afeição: um quarto da escada a cada 10 pontos, com topo em
+## 40. Serve aos dois modos, porque a fala é a mesma subida nos dois lados.
+func _affection_milestone_index() -> int:
+	return clampi(int(float(affection) / 10.0) - 1, 0, SENSUAL_AFFECTION_MILESTONES.size() - 1)
+
 func _show_private_moment() -> void:
 	if affection < 5:
 		last_event = "“Paciência, querido. Primeiro conquiste minha confiança.”" if adult_content_enabled else "“Paciência. Primeiro conquiste minha confiança: o caderno da casa registra quem volta.”"
@@ -10696,17 +10760,14 @@ func _show_private_moment() -> void:
 		_refresh_ui()
 		return
 	private_moments_unlocked += 1
+	var degrau := _private_moment_index()
 	if adult_content_enabled:
-		var moments: Array[String] = [
-				"A súcubo inclina a cabeça, dá uma piscadela e puxa você para mais perto: “Esse é nosso segredinho, combinado?”",
-				"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais de mim quando nossa parceria ficar ainda mais lucrativa.”",
-				"A chefe faz uma pose provocante e ri baixinho: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”"
-			]
-		last_event = moments[(private_moments_unlocked - 1) % moments.size()]
-		_play_sensual_reception_moment()
+		last_event = str(SENSUAL_MOMENTS[degrau])
+		var topo: float = float(maxi(SENSUAL_MOMENTS.size() - 1, 1))
+		_play_sensual_reception_moment(float(degrau) / topo)
 	else:
-		last_event = str(TRUST_MOMENTS[(private_moments_unlocked - 1) % TRUST_MOMENTS.size()])
-	_show_feedback("♥ Momento só da casa.", Color(1.0, 0.62, 0.88))
+		last_event = str(TRUST_MOMENTS[degrau])
+	_show_feedback("♥ Momento %d/%d só da casa." % [degrau + 1, SENSUAL_MOMENTS.size()], Color(1.0, 0.62, 0.88))
 	_save_game()
 	_refresh_ui()
 

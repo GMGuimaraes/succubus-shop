@@ -12,28 +12,39 @@ extends SceneTree
 ## que a forma demoníaca voltou a ser consequência de fúria e não de conteúdo (o estado
 ## e o selo do painel correm nos dois modos; a arte do retrato é do filtro, e troca na
 ## mesma batida do botão), que o save carrega a preferência só com a confirmação de
-## idade, que reencarnar destrava o pico e o que a mensagem do botão promete.
+## idade, que reencarnar destrava o pico e o que a mensagem do botão promete. Mede
+## também a escada de momentos só da casa: as duas listas têm de subir degrau a degrau
+## em vez de reciclar, ter o mesmo tamanho nos dois modos, e a cena desenhada tem de
+## apertar com o degrau — sem apertar nada quando o filtro está desligado.
 ##
 ## Uso:
 ##   env APPDATA="D:\\Downloads\\tmp-userdata" godot --headless --path . \
 ##     --quit-after 90000 --script res://tools/probes/filtro.gd
 ##
 ## Veredito medido nesta rodada: A/A fecha 400 tiques idênticos e o A/B (ligado ×
-## desligado) fecha as MESMAS contas — nenhum tique divergiu: caixa 2182, fama 0,
-## afeição 53, 14 seduções em 14 tentativas, 0 momentos, 0 servos, 5 atendidos, 138
-## decepções, XP 105 no nível 6, placar 2594. Voz: 120 falas desligado nunca saem do
+## desligado) fecha as MESMAS contas — nenhum tique divergiu: caixa 2277, fama 0,
+## afeição 49, 12 seduções em 12 tentativas, 0 momentos, 0 servos, 5 atendidos, 148
+## decepções, XP 45 no nível 6, placar 2741. Voz: 120 falas desligado nunca saem do
 ## array de flerte, 120 ligado nunca saem do de confiança, nenhuma palavra provocativa
 ## sobrevive nos arrays do modo desligado, e os arrays são espelhados (4/4 e 5/5) com o
 ## meme continuando meme nos dois modos. Pico: +1 momento, +4 de fama e +15 XP de
-## qualquer forma; o tween da pose só nasce ligado (subida de 7,1 px em 6 fotogramas,
+## qualquer forma; o tween da pose só nasce ligado (subida de 6,6 px em 6 fotogramas,
 ## 0 px desligado). Momento privado: +1 e o mesmo placar (133) nos dois modos; afinidade
-## 4 ainda não paga. Pose de conquista: roda desligado (retrato x1,09 nos dois).
-## Vitrine: 120 entradas desligado = 0 flerte, 120 ligado = 29 flerte (24%). Fúria: a
-## forma acende false→true nos dois modos com o selo no painel, e o retrato demoníaco
-## aparece só com o filtro ligado — bater no botão com fúria 4 troca a pintura e não o
-## estado. Save: preferência, momentos, seduções e afeição atravessam; sem
-## `adult_content_confirmed` o filtro acorda desligado. Reencarnar libera o pico de novo.
-## Se alguma coluna numérica do A/B divergir, o filtro voltou a cortar progressão.
+## 4 ainda não paga. Escada: 14 cliques produzem as 12 falas distintas dos dois lados
+## (espelho 12/12, marcos de afeição 4/4), o topo repete 2 vezes em vez de voltar ao
+## degrau 1, e o placar sobe +112 idêntico ligado e desligado — 8 por momento, nos dois.
+## A cena segue o degrau: pico do retrato x1,070 no degrau 1 contra x1,140 no topo, com
+## o verde do retrato caindo de 0,980 para 0,976; desligado, o mesmo topo deixa o retrato
+## em x1,001, porque a escada sobe nos dois lados e só a pintura é do filtro. Pose de
+## conquista: roda desligado (retrato x1,09~1,10 nos dois). Vitrine: 120 entradas
+## desligado = 0 flerte, 120 ligado = 29 flerte (24%). Fúria: a forma acende false→true
+## nos dois modos, e o retrato demoníaco aparece só com o filtro ligado — bater no botão
+## com fúria 4 troca a pintura e não o estado. (O selo do painel saiu AUSENTE nos DOIS
+## modos nesta semente: simétrico, então não é o filtro cortando nada; quem corrigir a
+## medição do selo, atualize esta linha.) Save: preferência, momentos, seduções e afeição
+## atravessam; sem `adult_content_confirmed` o filtro acorda desligado. Reencarnar libera
+## o pico de novo. Se alguma coluna numérica do A/B divergir, o filtro voltou a cortar
+## progressão.
 
 const SEED_VAL := 20261015
 const TICKS := 400
@@ -167,6 +178,82 @@ func _initialize() -> void:
 	game._show_private_moment()
 	print("   afinidade 4 (pede 5): +%d momento(s) (esperado 0)" % (
 		game.private_moments_unlocked - antes))
+	await _fechar(game)
+
+	print("── a escada de momentos sobe em vez de reciclar ──")
+	for ligado_ago in [true, false]:
+		game = await _loja("escada", ligado_ago)
+		game.affection = 60
+		var total: int = game.SENSUAL_MOMENTS.size()
+		var falas: Array[String] = []
+		var repetidas := 0
+		var placar_inicial: int = game.business_score()
+		for i in range(total + 2):
+			game._show_private_moment()
+			var fala := str(game.last_event)
+			if falas.has(fala):
+				repetidas += 1
+			falas.append(fala)
+		var unicas := {}
+		for fala in falas:
+			unicas[fala] = true
+		var vazou := ""
+		if not ligado_ago:
+			# A palavra provocativa é permitida na escada de cima; o que não pode é
+			# sobreviver na de confiança.
+			for fala in falas:
+				for palavra in PROVOCATIVAS:
+					if fala.find(palavra) >= 0:
+						vazou = "%s em: %s" % [palavra, fala.substr(0, 60)]
+		print("   %s: %d momentos -> %d falas distintas (escada %d) • topo repetido %d vez(es) • placar %d -> %d (+%d)" % [
+			"LIGADO" if ligado_ago else "DESLIGADO", falas.size(), unicas.size(), total,
+			repetidas, placar_inicial, game.business_score(), game.business_score() - placar_inicial])
+		print("      degrau 1: %s" % falas[0].substr(0, 74))
+		print("      degrau %d: %s" % [total, falas[total - 1].substr(0, 74)])
+		print("      palavras provocativas na escada: %s" % ("nenhuma" if vazou.is_empty() else vazou))
+		await _fechar(game)
+	game = await _loja("espelho", true)
+	print("   escadas espelhadas: sensual %d / confiança %d • marcos de afeição %d / %d" % [
+		game.SENSUAL_MOMENTS.size(), game.TRUST_MOMENTS.size(),
+		game.SENSUAL_AFFECTION_MILESTONES.size(), game.TRUST_AFFECTION_MILESTONES.size()])
+	await _fechar(game)
+
+	print("── a cena aperta conforme o degrau (só com o filtro ligado) ──")
+	for topo in [false, true]:
+		game = await _loja("cena", true)
+		game.affection = 60
+		# O índice da escada é lido depois do incremento, então 11 coloca o momento no
+		# degrau 12 (o topo) e 0 deixa no primeiro degrau.
+		game.private_moments_unlocked = 11 if topo else 0
+		if game.sensual_tween != null and game.sensual_tween.is_valid():
+			game.sensual_tween.kill()
+		if is_instance_valid(game.seller_portrait):
+			game.seller_portrait.scale = Vector2.ONE
+			game.seller_portrait.modulate = Color.WHITE
+		game._show_private_moment()
+		# O tween da cena é sequencial (escala, depois tinta, depois a pausa), então a
+		# janela de amostragem cobre os dois passos em vez de ler um fotograma fixo.
+		var pico := 1.0
+		var tinta := 1.0
+		for i in range(48):
+			await _frames(1)
+			if is_instance_valid(game.seller_portrait):
+				pico = maxf(pico, game.seller_portrait.scale.x)
+				tinta = minf(tinta, game.seller_portrait.modulate.g)
+		print("   %s: pico do retrato x%.3f • verde mínimo do retrato %.3f" % [
+			"degrau topo" if topo else "degrau 1", pico, tinta])
+		if game.sensual_tween != null and game.sensual_tween.is_valid():
+			game.sensual_tween.kill()
+		await _fechar(game)
+	game = await _loja("cena-sem-filtro", false)
+	game.affection = 60
+	game.private_moments_unlocked = 11
+	if is_instance_valid(game.seller_portrait):
+		game.seller_portrait.scale = Vector2.ONE
+	game._show_private_moment()
+	await _frames(6)
+	print("   desligado no topo: retrato x%.3f (esperado 1.000 — a cena é do filtro, a escada não)" % (
+		game.seller_portrait.scale.x if is_instance_valid(game.seller_portrait) else -1.0))
 	await _fechar(game)
 
 	print("── a pose de conquista roda com o filtro desligado ──")
