@@ -18,8 +18,8 @@ extends SceneTree
 ##   env APPDATA="D:\\Downloads\\tmp-userdata" godot --headless --path . \
 ##     --quit-after 90000 --script res://tools/probes/idioma.gd
 ##
-## Veredito medido nesta rodada: catálogo de 80 chaves, com en 80/80 e es 80/80 e **zero
-## órfãs** entre as duas; a mesma frase sai "Ouro: %d / TALENTOS / ⚒ Forja" em pt,
+## Veredito medido nesta rodada: catálogo de 142 chaves, com en 142/142 e es 142/142 e
+## **zero órfãs** entre as duas; a mesma frase sai "Ouro: %d / TALENTOS / ⚒ Forja" em pt,
 ## "Gold: %d / TALENTS / ⚒ Forge" em en e "Oro: %d / TAENTOS / ⚒ Forja" em es. Registrar
 ## duas vezes deixa 3 tabelas no motor (sem duplicata). A armadilha do melhor-ajuste é
 ## real e medida: locale sem tabela ("de") acorda **em inglês** — por isso o português tem
@@ -41,7 +41,13 @@ extends SceneTree
 ## Arquivo quebrado (settings "francês", save "klingon") acorda em pt com o painel de pé.
 ## Duzentos tiques sob a mesma semente, uma loja em pt e outra em en, fecharam **idênticas**
 ## (caixa 755 • fama 0 • 5 atendidos • 174 decepções • dia 11 • estoque 0 • placar 1024):
-## tradução não é engrenagem.
+## tradução não é engrenagem. A faixa da casa é o caso difícil e foi medida na loja de
+## verdade, não no catálogo: `A CASA ESTÁ: casa em obras (placar 45) — …` vira
+## `THE HOUSE IS: house under repair (score 45) — the hall under repair: …` em en e
+## `LA CASA ES: casa en obras (puntos 45) — el salón en obras: …` em es, nas duas pontas da
+## escada (0 e 4), e o aviso "A casa virou …" acompanha. Nome e presente vêm de lista, a
+## frase nasce montada, então é o `tr()` do chamador que salva — traduzir o catálogo sem
+## tocar em `main.gd` deixaria o painel em português dentro de uma loja em inglês.
 
 const SEED_VAL := 20261015
 const TICKS := 200
@@ -69,6 +75,36 @@ func _initialize() -> void:
 	Locales.register()
 	var depois := TranslationServer.get_translations().size()
 	print("   registrar duas vezes: %d -> %d tabela(s) no motor (esperado idem)" % [antes, depois])
+
+	# O painel de faixa é o caso difícil: nome e presente vêm de listas e a frase é
+	# montada na hora, então só o `tr()` do chamador salva. Lido na loja de verdade,
+	# não traduzido à mão na sonda — copiar o molde aqui seria provar outra coisa.
+	print("── a faixa da casa fala as três línguas ──")
+	var casa = (load("res://main.tscn") as PackedScene).instantiate()
+	get_root().add_child(casa)
+	await _frames(4)
+	casa.world_timer.stop()
+	casa._reset_run()
+	for banda in [0, 4]:
+		casa.gold = int(casa.PROGRESS_BAND_SCORES[banda])
+		var bocas: Array[String] = []
+		for id in ids:
+			TranslationServer.set_locale(id)
+			casa._refresh_ui()
+			bocas.append("%s: %s" % [id, casa._progress_line()])
+		print("   faixa %d -> %s" % [banda, "  ||  ".join(bocas)])
+		var aviso: Array[String] = []
+		for id in ids:
+			TranslationServer.set_locale(id)
+			# `TranslationServer.translate` em vez de `tr` da SceneTree: o `tr` prende o
+			# contexto ao nome da classe, e aqui o que se quer medir é a chave solta.
+			aviso.append("%s: %s" % [id, TranslationServer.translate("A casa virou %s: %s") % [
+				TranslationServer.translate(casa.PROGRESS_BAND_NAMES[banda]),
+				TranslationServer.translate(casa.PROGRESS_BAND_GIFTS[banda])]])
+		print("      aviso -> %s" % "  ||  ".join(aviso))
+	TranslationServer.set_locale(Locales.DEFAULT)
+	casa.queue_free()
+	await _frames(2)
 
 	print("── voltar ao português volta de verdade ──")
 	TranslationServer.set_locale("en")

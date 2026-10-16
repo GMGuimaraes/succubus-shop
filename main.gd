@@ -10069,7 +10069,8 @@ func _apply_progress_decor() -> void:
 	# A faixa sobe sozinha, mas quem avisa é a chefe: ninguém pode descobrir o
 	# salão novo por acidente no meio de uma venda.
 	if band > antes and not quiet:
-		last_event = "A casa virou %s: %s" % [PROGRESS_BAND_NAMES[band], PROGRESS_BAND_GIFTS[band]]
+		last_event = tr("A casa virou %s: %s") % [
+			tr(PROGRESS_BAND_NAMES[band]), tr(PROGRESS_BAND_GIFTS[band])]
 		_show_stage_emotion(stage_seller_body, "felicidade")
 
 ## A obra em si, desenhada na camada entre o fundo pintado e o elenco: poeira no ar,
@@ -10305,10 +10306,13 @@ func _progress_line() -> String:
 	var band := _progress_band_now()
 	var next_score: int = PROGRESS_BAND_SCORES[band + 1] if band + 1 < PROGRESS_BAND_SCORES.size() else 0
 	var missing: int = next_score - business_score()
-	return "A CASA ESTÁ: %s (placar %d) — %s%s" % [
-		PROGRESS_BAND_NAMES[band], business_score(), PROGRESS_BAND_GIFTS[band],
-		"" if missing <= 0 else " Próxima faixa em %d de placar." % missing
-	]
+	# Nome e presente de faixa são conteúdo montado na hora, então passam pelo `tr()`
+	# do chamador: a frase final nunca existiria na tabela para o motor achar sozinha.
+	var linha := tr("A CASA ESTÁ: %s (placar %d) — %s") % [
+		tr(PROGRESS_BAND_NAMES[band]), business_score(), tr(PROGRESS_BAND_GIFTS[band])]
+	if missing > 0:
+		linha += tr(" Próxima faixa em %d de placar.") % missing
+	return linha
 
 ## Entregar à guilda é o meio-termo que existe só porque a cela existe: a casa
 ## ganha a rua como aliada e abre mão do sangue que aquele prisioneiro daria.

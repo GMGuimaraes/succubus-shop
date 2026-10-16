@@ -84,6 +84,21 @@ const MESSAGES: Dictionary = {
 		"Loja Promissora": "Promising Shop",
 		"Nome Quente": "Hot Name",
 		"Lenda do Submundo": "Underworld Legend",
+		# As faixas da casa são o mesmo caso dos títulos de fama: nome e presente
+		# chegam montados ao painel, então a chave é a peça inteira.
+		"casa em obras": "house under repair",
+		"balcão arrumado": "tidied counter",
+		"casa respeitada": "respectable house",
+		"endereço no bairro": "an address in the neighborhood",
+		"império da rua": "the street's empire",
+		"o salão em obras: poeira no ar, massa crua na parede, lona no piso e uma lâmpada no fio": "the hall under repair: dust in the air, raw plaster on the wall, drop cloth on the floor and a bulb on a wire",
+		"piso encerado e tapete realçado na faixa de passeio": "waxed floor and the rug picked out along the walk band",
+		"+ cordão de velas acesas nas paredes do salão": "+ a string of lit candles along the hall walls",
+		"+ caixilho dourado na moldura da tela": "+ a gilded frame on the painting",
+		"+ lustre aceso no teto e poeira dourada no ar": "+ a lit chandelier overhead and golden dust in the air",
+		"A CASA ESTÁ: %s (placar %d) — %s": "THE HOUSE IS: %s (score %d) — %s",
+		" Próxima faixa em %d de placar.": " Next band needs %d more score.",
+		"A casa virou %s: %s": "The house became %s: %s",
 		# ── botões de legenda fixa ──
 		"Acelerar relógio ▶": "Speed up clock ▶",
 		"Exportar save": "Export save",
@@ -221,6 +236,21 @@ const MESSAGES: Dictionary = {
 		"Loja Promissora": "Tienda Prometedora",
 		"Nome Quente": "Nombre Candente",
 		"Lenda do Submundo": "Leyenda del Inframundo",
+		# Las franjas de la casa son el mismo caso que los títulos de fama: nombre y
+		# detalle llegan montados al panel, así que la clave es la frase entera.
+		"casa em obras": "casa en obras",
+		"balcão arrumado": "mostrador arreglado",
+		"casa respeitada": "casa respetable",
+		"endereço no bairro": "una dirección en el barrio",
+		"império da rua": "imperio de la calle",
+		"o salão em obras: poeira no ar, massa crua na parede, lona no piso e uma lâmpada no fio": "el salón en obras: polvo en el aire, yeso crudo en la pared, lona en el suelo y una bombilla en el cable",
+		"piso encerado e tapete realçado na faixa de passeio": "suelo encerado y alfombra resaltada en la franja de paso",
+		"+ cordão de velas acesas nas paredes do salão": "+ cordón de velas encendidas en las paredes del salón",
+		"+ caixilho dourado na moldura da tela": "+ marco dorado en la moldura del cuadro",
+		"+ lustre aceso no teto e poeira dourada no ar": "+ lámpara de techo encendida y polvo dorado en el aire",
+		"A CASA ESTÁ: %s (placar %d) — %s": "LA CASA ES: %s (puntos %d) — %s",
+		" Próxima faixa em %d de placar.": " Próximo tramo en %d puntos.",
+		"A casa virou %s: %s": "La casa se volvió %s: %s",
 		# ── botones de rótulo fijo ──
 		"Acelerar relógio ▶": "Acelerar reloj ▶",
 		"Exportar save": "Exportar partida",
