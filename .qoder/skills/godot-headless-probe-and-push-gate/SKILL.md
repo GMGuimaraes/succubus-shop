@@ -99,6 +99,65 @@ func _frames(n: int) -> void:
 		await process_frame
 ```
 
+### Sonda de causa: o numero se moveu e nao sei por que
+
+Quando a pergunta nao e "a funcionalidade funciona?" e sim "por que o ouro pulou?", a
+sonda nao deve assertar nada: capture o estado da loja, rode UM `_on_customer_tick()` e
+imprima so o que divergiu. A atribuicao vem do mural, nao do delta.
+
+```gd
+const CHAVES := ["gold", "reputation", "daily_gold_earned", "customers_served",
+	"credit_book", "regular_bonds", "regular_arc_seen", "faction_standing",
+	"player_level", "player_xp", "unlocked_achievements", "shop_day"]
+
+func _estado(g) -> Dictionary:
+	var e := {}
+	for k in CHAVES:
+		e[k] = str(g.get(k))
+	return e
+
+func _divergiu(antes: Dictionary, depois: Dictionary) -> void:
+	for k in CHAVES:
+		if antes[k] != depois[k]:
+			print("   %s: %s -> %s" % [k, antes[k], depois[k]])
+
+# na corrida, por tique:
+var antes := _estado(g)
+g._on_customer_tick()
+var depois := _estado(g)
+_divergiu(antes, depois)
+for linha in String(g.last_event).split("\n"):
+	print("   mural: ", linha)
+```
+
+Regras desta sonda:
+- **`:=` nao infere de Dictionary nem de chamada sem tipo.** Medido em
+  `tools/probes/causa.gd`: `var texto := depois[k]` da Parse Error ("Cannot infer the
+  type ... because the value doesn't have a set type"), e `var g := await _loja(...)`
+  tambem. Escreva o tipo na mao: `var texto := str(depois[k])`, `var g = await _loja(...)`.
+- **O chao da loja e re-declarado, nao importado.** `const Bancada := preload(...)` e
+  `Bancada._loja("causa")` da Parse Error ("Cannot call non-static function on the class").
+  Toda sonda viva (`salao.gd`, `bancada.gd`, `fiado.gd`) carrega o proprio corpo de
+  `_loja()`: instanciar, `await _frames(3)`, `_fixar_locale()`, parar o `world_timer`,
+  `seed()`, `_reset_run()`. Copie o corpo, nao chame por classe.
+- **Sele as conquistas e o nivel antes de medir** (o `_blindar()` ja existe em
+  `tools/probes/bancada.gd`: `_selar()` + `player_level = 60`). Sem a rolha, o selo paga
+  ouro no meio do tique e a diferenca que voce atribui ao fiado era premio de conquista.
+  Medida real deste repo: um unico tique deu +260 de caixa e o culpado era a ficha de
+  arco, nao o livro de fiado.
+- **Um tique nao e uma causa.** A mesma virada cobre conta da casa, fiado vencido e selo.
+  Medido: um tique de loja nova nao moveu chave nenhuma e o mural era um roubo —
+  "pegou Pato Amaldiçoado e correu", zero ouro. Se o delta sair vazio, a resposta esta no
+  mural, nao na ausencia de diferenca.
+- **Por que cada chave da lista:** `daily_gold_earned` registra faturamento mesmo com o
+  ouro parado no livro; `credit_book` e Dictionary, dai o `str()` no snapshot (sem ele a
+  comparacao sai por referencia); `regular_bonds` e `regular_arc_seen` explicam a etiqueta
+  que andou sozinha; `unlocked_achievements` e a prova de que a rolha vazou.
+- Nao existe `badges` nem um `level`/`xp` de loja no `main.gd`: os nomes reais sao
+  `unlocked_achievements`, `player_level` e `player_xp`. A banda e derivada
+  (`_progress_band_now()` sobre `business_score()`), entao nao entra no snapshot.
+- Saida no formato do repo (`caixa 5000 -> 5059`), que e o que torna o diff lavel no log.
+
 Fotograma de cena: `get_root().get_texture().get_image().save_png(OUT + "nome.png")` e ler
 o PNG de volta com a ferramenta Read. Um probe sem saida legivel nao prova nada.
 
