@@ -116,6 +116,9 @@ const MESSAGES: Dictionary = {
 		"Entrar na loja": "Enter the shop",
 		"progresso salvo": "progress saved",
 		"idioma original": "original language",
+		# ── cronômetro da forja no botão do produto ──
+		"⏳ Na fila": "⏳ In queue",
+		"Forjando %.1fs": "Forging %.1fs",
 		# ── o menu em camadas: ☰ e ESC abrem a mesma janela ──
 		"Menu (ESC)": "Menu (ESC)",
 		"OPÇÕES": "OPTIONS",
@@ -250,6 +253,9 @@ const MESSAGES: Dictionary = {
 		"Entrar na loja": "Entrar en la tienda",
 		"progresso salvo": "progreso guardado",
 		"idioma original": "idioma original",
+		# ── cronómetro de la forja en el botón del producto ──
+		"⏳ Na fila": "⏳ En cola",
+		"Forjando %.1fs": "Forjando %.1fs",
 		# ── el menú en capas: ☰ y ESC abren la misma ventana ──
 		"Menu (ESC)": "Menú (ESC)",
 		"OPÇÕES": "OPCIONES",

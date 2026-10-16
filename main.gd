@@ -1701,6 +1701,28 @@ func _load_person_settings() -> void:
 	if VSYNC_MODES.has(int(config.get_value("display", "vsync_mode", vsync_mode))):
 		vsync_mode = int(config.get_value("display", "vsync_mode", vsync_mode))
 
+## O rótulo do botão de um produto que está na bancada. É aqui que quem joga olha para
+## saber quanto falta, então o número tem de cair no ritmo do relógio do mundo e não no
+## ritmo dos eventos: `_refresh_timed_ui()` reescreve só estes botões a cada quarto de
+## segundo de mundo, enquanto `_refresh_ui()` continua desenhando o resto quando algo muda.
+func _forge_button_label(index: int) -> String:
+	var job := _craft_job_of(index)
+	if job.is_empty():
+		return "⏳ Na fila"
+	var remaining := maxf(0.0, float(job.get("remaining", 0.0)) - _world_seconds_since_tick())
+	var total := maxf(1.0, float(job.get("total", remaining)))
+	var progress := clampf(1.0 - remaining / total, 0.0, 1.0)
+	return "⏳ %s • %s" % [tr("Forjando %.1fs") % remaining, _bar(progress)]
+
+
+## O trabalho em bancada de um produto, se ele estiver lá.
+func _craft_job_of(index: int) -> Dictionary:
+	for job in craft_jobs:
+		if int(job.get("index", -1)) == index:
+			return job
+	return {}
+
+
 func _refresh_timed_ui() -> void:
 	var elapsed := _world_seconds_since_tick()
 	if is_instance_valid(forge_status_label):
@@ -1713,6 +1735,13 @@ func _refresh_timed_ui() -> void:
 				var remaining := maxf(0.0, float(job.get("remaining", 0.0)) - elapsed)
 				queue_text.append("%s %.1fs" % [queued_item["name"], remaining])
 			forge_status_label.text = "Forja: " + " | ".join(queue_text)
+	# O botão do produto é onde a pessoa olha; a faixa do topo é só o resumo da fila.
+	for i in range(mini(craft_buttons.size(), products.size())):
+		if not is_instance_valid(craft_buttons[i]):
+			continue
+		if _craft_job_of(i).is_empty():
+			continue
+		craft_buttons[i].text = _forge_button_label(i)
 	if is_instance_valid(ritual_label):
 		ritual_label.text = Sanctum.summary(active_buffs, elapsed)
 	for i in range(mini(ritual_labels.size(), Sanctum.DATA.size())):
@@ -4588,7 +4617,7 @@ func _craft_product(index: int) -> void:
 	duration /= Sanctum.scale(active_buffs, "craft")
 	var catalyst := _take_catalyst()
 	var job_luck := int(catalyst.get("catalyst_luck", 0))
-	craft_jobs.append({"index": index, "remaining": maxf(3.0, duration), "luck": job_luck})
+	craft_jobs.append({"index": index, "remaining": maxf(3.0, duration), "total": maxf(3.0, duration), "luck": job_luck})
 	last_event = "Forja iniciada: %s levará %.1fs de tempo de mundo." % [item["name"], maxf(3.0, duration)]
 	if not catalyst.is_empty():
 		last_event += " %s virou pó dentro da forma: a peça sai com mais sorte." % str(catalyst["name"])
@@ -6523,7 +6552,7 @@ func _refresh_ui() -> void:
 		for job in craft_jobs:
 			if int(job.get("index", -1)) == i:
 				already_queued = true
-		craft_buttons[i].text = "Na fila" if already_queued else "Fabricar (%d)" % craft_cost if unlocked and missing_ingredients.is_empty() else "Faltam ingredientes" if unlocked else "Receita bloqueada"
+		craft_buttons[i].text = _forge_button_label(i) if already_queued else "Fabricar (%d)" % craft_cost if unlocked and missing_ingredients.is_empty() else "Faltam ingredientes" if unlocked else "Receita bloqueada"
 		craft_buttons[i].disabled = already_queued or craft_jobs.size() >= 3 or not unlocked or gold < craft_cost or not missing_ingredients.is_empty()
 		var counter_stock := int(item["stock"])
 		var counter_payout := maxi(1, int(round(float(shelf) * 0.7)))
@@ -7586,9 +7615,11 @@ func _load_game() -> void:
 			var job_index := int(saved_job.get("index", -1))
 			if job_index < 0 or job_index >= products.size():
 				continue
+			var saved_remaining := maxf(0.5, float(saved_job.get("remaining", 0.5)))
 			craft_jobs.append({
 				"index": job_index,
-				"remaining": maxf(0.5, float(saved_job.get("remaining", 0.5))),
+				"remaining": saved_remaining,
+				"total": maxf(saved_remaining, float(saved_job.get("total", 0.0))),
 				"luck": float(saved_job.get("luck", 0.0)),
 			})
 	var saved_achievements = config.get_value("game", "unlocked_achievements", [])
