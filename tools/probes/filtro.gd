@@ -46,6 +46,7 @@ extends SceneTree
 ## o pico de novo. Se alguma coluna numérica do A/B divergir, o filtro voltou a cortar
 ## progressão.
 
+const Locales = preload("res://locales.gd")
 const SEED_VAL := 20261015
 const TICKS := 400
 const FLIRTY := "res://assets/reception_scene_flirty.png"
@@ -371,12 +372,23 @@ func _initialize() -> void:
 ## Loja recém-instalada, com o save descartável apagado antes de nascer: é o que faz
 ## as três medidas A/A e A/B partirem do mesmo zero. Devolve a cena pronta, com o
 ## relógio do mundo parado, a semente cravada e a vida resetada.
+## O painel é lido em português de propósito: a preferência de idioma mora em
+## `user://locale_settings.cfg`, atravessa o `_reset_run()` e uma rodada anterior de
+## teste pode acordá-la em inglês — aí o selo "FORMA DEMONÍACA" vira outra palavra e a
+## sonda lê ausência onde só havia tradução.
+func _fixar_locale(g) -> void:
+	g.locale = Locales.DEFAULT
+	g.locale_confirmed = true
+	TranslationServer.set_locale(Locales.DEFAULT)
+
+
 func _loja(rotulo: String, ligado: bool):
 	_apagar_save()
 	var g = (load("res://main.tscn") as PackedScene).instantiate()
 	g.name = rotulo
 	get_root().add_child(g)
 	await _frames(3)
+	_fixar_locale(g)
 	g.world_timer.stop()
 	seed(SEED_VAL)
 	g._reset_run()
@@ -401,6 +413,7 @@ func _reload(rotulo: String):
 	g.name = rotulo
 	get_root().add_child(g)
 	await _frames(3)
+	_fixar_locale(g)
 	g.world_timer.stop()
 	return g
 
