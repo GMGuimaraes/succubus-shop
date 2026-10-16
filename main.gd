@@ -186,6 +186,13 @@ var vip_rank: int = 0
 var vip_served: int = 0
 var vip_refusals: int = 0
 var vip_tips_gold: int = 0
+## O que a rua conta da casa nesta vida. `complaints` é o livro aberto (sobe quando a casa
+## erra, desce uma linha por virada e some quando a voz é comprada); `complaints_written` e
+## `complaints_hushed` são a história do livro, para o painel saber quantas linhas já entraram
+## e quantas saíram pagas. Livro em branco é loja normal: nenhum número se move.
+var complaints: int = 0
+var complaints_written: int = 0
+var complaints_hushed: int = 0
 ## Conserva da casa: cada visita pisa barro, a vassoura custa ouro, e a etiqueta
 ## despenca no salão imundo. Os números são a única novidade; todos caem em
 ## fórmulas que o jogo já usava (paciência de fila, multiplicador de preço, conta
@@ -306,6 +313,30 @@ const VIP_TIERS := [
 ## Uma capa fina tem tempo próprio: ela não disputa o último degrau da fila correndo, e
 ## por isso espera um tique a mais que o perfil sorteado.
 const VIP_PATIENCE_BONUS := 1
+## O livro de reclamações da rua: a casa pode estar no topo da fama e ainda assim estar
+## malquista, porque queixa não é desconhecimento — é serviço ruim que a rua conta uma à
+## outra. Com o livro em branco nenhum número do balcão se move: etiqueta, paciência e
+## porta só cobram a partir da sexta linha, e nada aqui consome sorteio.
+const COMPLAINT_LINE := 6
+const COMPLAINT_SCANDAL := 12
+const COMPLAINT_CAP := 24
+## Etiqueta que a rua cobra por linha acima da sexta, com teto: quem ouve falar mal da
+## loja pechincha, e pechincha até um piso.
+const COMPLAINT_LABEL_STEP := 0.02
+const COMPLAINT_LABEL_MAX := 0.20
+## A fila e a porta sentem o livro em degraus, não em linhas: boca pequena atrasa um tique,
+## escândalo atrasa dois e tira um corpo da calçada.
+const COMPLAINT_PATIENCE_LOSS := [0, 1, 2]
+const COMPLAINT_CROWD_LOSS := [0, 0, 1]
+## Pagar a voz da rua apaga três linhas de uma vez e custa mais quanto mais o livro lê.
+const COMPLAINT_HUSH_ERASE := 3
+const COMPLAINT_HUSH_BASE := 40
+const COMPLAINT_HUSH_PER_LINE := 12
+## As três fontes: peça torto na mão de alguém, capa fina devolvida no lugar e nota riscada
+## no livro de fiado. São as três vezes em que a casa erra e a rua percebe.
+const COMPLAINT_FROM_TORTO := 1
+const COMPLAINT_FROM_VIP_REFUSAL := 2
+const COMPLAINT_FROM_WRITE_OFF := 1
 ## Os nomes que a casa enxerga quando a ronda segura um braço no ar. Ninguém aqui é
 ## freguês de casa: vândalo sorteado é gente de fora do elenco, e por isso vai para
 ## a cela sem levar vínculo junto.
@@ -811,6 +842,8 @@ var lab_fire_button: Button
 var lab_hint_button: Button
 var vip_label: Label
 var vip_button: Button
+var complaint_label: Label
+var complaint_button: Button
 var card_gallery_labels: Array = []
 var board_label: Label
 var score_button: Button
@@ -2488,6 +2521,9 @@ func _arrivals_this_tick() -> int:
 	crowd += int(float(branches.size()) / 2.0)
 	crowd += int(_weather()["crowd"])
 	crowd -= _rival_crowd_loss()
+	# Escândalo no livro de reclamações e um corpo a menos batendo na porta por tique,
+	# mesmo na loja famosa: a rua que fala mal também segura gente em casa.
+	crowd -= _complaint_crowd_loss()
 	return clampi(crowd, 1, QUEUE_LIMIT)
 
 ## Quem está de placa acesa na praça hoje. A lista é lida do calendário da loja
@@ -2530,7 +2566,7 @@ func _visit_budget(profile: Dictionary) -> int:
 ## — debaixo de chuva ninguém olha no relógio, no calor todo mundo olha. Charme é
 ## literalmente tempo de espera, e contratar também é.
 func _queue_patience(profile: Dictionary) -> int:
-	return maxi(1, QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size() + servants.size() - _mess_patience_loss() + int(_weather()["patience"]))
+	return maxi(1, QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size() + servants.size() - _mess_patience_loss() - _complaint_patience_loss() + int(_weather()["patience"]))
 
 ## Manda para dentro quem o balcão não consegue atender agora. Cada um chega com o
 ## perfil sorteado na hora, então a fila é gente com retrato e orçamento, não um
@@ -3944,6 +3980,25 @@ func _build_ui() -> void:
 	vip_button.add_theme_font_size_override("font_size", 14)
 	vip_button.pressed.connect(_buy_vip_rank)
 	vip_hrow.add_child(vip_button)
+
+	reception_box.add_child(_make_section_title("O LIVRO DE RECLAMAÇÕES DA RUA", Color(1.0, 0.66, 0.52)))
+	reception_box.add_child(_make_section_hint("Fama alta não quer dizer bemquista: a rua conta as vezes em que a casa errou — a peça torto que saiu da forja, a capa fina devolvida na prateleira, a nota riscada no fiado. Sexta linha em diante a etiqueta encolhe e a fila emagrece; da décima segunda, um corpo a menos bate na porta a cada tique. Uma linha se apaga a cada virada, e a voz da rua tem preço."))
+	var complaint_card := _make_sector_card(Color(0.075, 0.04, 0.038, 0.94), Color(0.88, 0.52, 0.40, 0.95))
+	reception_box.add_child(complaint_card)
+	var complaint_hrow := HBoxContainer.new()
+	complaint_hrow.add_theme_constant_override("separation", 12)
+	complaint_card.add_child(complaint_hrow)
+	complaint_label = Label.new()
+	complaint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	complaint_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	complaint_label.add_theme_font_size_override("font_size", 13)
+	complaint_label.add_theme_color_override("font_color", Color(0.96, 0.80, 0.72))
+	complaint_hrow.add_child(complaint_label)
+	complaint_button = Button.new()
+	complaint_button.custom_minimum_size = Vector2(190, 44)
+	complaint_button.add_theme_font_size_override("font_size", 14)
+	complaint_button.pressed.connect(_hush_street)
+	complaint_hrow.add_child(complaint_button)
 
 	reception_box.add_child(_make_section_title("A PORTA DA CASA", Color(0.62, 0.86, 1.0)))
 	reception_box.add_child(_make_section_hint("Loja que dá lucro tem alvo na porta. Cada visita é resolvida com a mão que a casa já tem: a ronda da folha, os servos do salão, os batedores do cadastro, o santuário reformado e a Administração. O vigário passa na frente para cobrar — dízimo, suborno ou porta na cara dele, e as três respostas têm preço."))
@@ -6442,16 +6497,41 @@ func _on_customer_tick() -> void:
 				spoil_line += " e %d saiu(ram) do fundo da estante pela porta." % int(spoil["lost"])
 			else:
 				spoil_line += "."
+		# A rua esquece uma linha por virada, antes de o fiado riscar as suas: a queixa
+		# escrita hoje é a que amanhã começa a doer. Memória curta, sem dado e sem conta.
+		var esquecida_na_virada := complaints
+		_complaints_forget()
+		esquecida_na_virada -= complaints
 		# O livro de fiado vira junto com a prateleira: atraso é dia morado, não sorteio,
 		# e a nota riscada dói na conta uma única vez por virada.
 		var credit_line := _age_credit_book()
 		var credit_report := (" " + credit_line) if credit_line != "" else ""
 		var credit_event := ("\n📖 " + credit_line) if credit_line != "" else ""
-		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line + spoil_line + credit_report
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s%s" % [
+		# Só quem tem livro aberto (ou acabou de apagar uma linha) lê a rua no balanço:
+		# com o caderno em branco a manhã continua com exatamente os números de sempre.
+		var complaint_line := ""
+		var complaint_event := ""
+		if complaints > 0 or esquecida_na_virada > 0:
+			var fala_da_rua := "murmúrio"
+			if _complaint_stage() == 1:
+				fala_da_rua = "boato"
+			elif _complaint_stage() == 2:
+				fala_da_rua = "escândalo"
+			var cobraca := ""
+			if _complaint_stage() > 0:
+				cobraca = " e cobra etiqueta %s, paciência −%d, porta −%d" % [
+					_label_word(), _complaint_patience_loss(), _complaint_crowd_loss()]
+			complaint_line = " 📙 A rua chama a casa de %s: %d linha(s) no livro%s%s." % [
+				fala_da_rua, complaints, cobraca,
+				", uma apagada pela virada" if esquecida_na_virada > 0 else ""]
+			complaint_event = "\n📙 A rua chama a casa de %s: %d linha(s) no livro%s%s." % [
+				fala_da_rua, complaints, cobraca,
+				", uma apagada pela virada" if esquecida_na_virada > 0 else ""]
+		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line + spoil_line + credit_report + complaint_line
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s%s%s" % [
 			shop_day, Economy.report(economy_state, products, Ingredients.DATA), _weather_line(), bill_line,
 			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line, rival_line,
-			credit_event]
+			credit_event, complaint_event]
 		# A manhã também afina a faixa: alarme novo, vigário na porta ou ruína velha
 		# mudam o tom da mesma gravação antes de a chefe abrir o balcão.
 		_apply_situation_music()
@@ -6631,12 +6711,15 @@ func _on_customer_tick() -> void:
 				disappointed_customers += 1
 				day_walkouts += 1
 				reputation = maxi(0, reputation - 1)
+				# A fofoca de capa fina devolvida é barulhenta: duas linhas no livro da rua,
+				# não uma. Quem sai sem comprar pelo segundo cartão conta para duas mesas.
+				var linhas_da_recusa := _add_complaint(COMPLAINT_FROM_VIP_REFUSAL)
 				_set_customer_status("CLIENTE: saiu sem comprar")
 				if is_instance_valid(customer_emotion_label):
 					customer_emotion_label.text = "🙄 desprezo"
-				last_event = "🎩 %s examina o topo da barra de %s, encontra %s e devolve no lugar: uma capa fina não compra degrau baixo. A casa perde a venda e a fofoca vai junto (−1 de fama)." % [
+				last_event = "🎩 %s examina o topo da barra de %s, encontra %s e devolve no lugar: uma capa fina não compra degrau baixo. A casa perde a venda e a fofoca vai junto (−1 de fama).\n📙 %s" % [
 					str(profile["name"]), str(products[chosen_index]["name"]),
-					str(Quality.tier(maxi(0, topo))["name"])]
+					str(Quality.tier(maxi(0, topo))["name"]), _complaint_tail(linhas_da_recusa)]
 				_show_stage_emotion(stage_customer, "nojo")
 				_play_customer_reaction("broke")
 				_check_achievements()
@@ -6665,11 +6748,14 @@ func _on_customer_tick() -> void:
 		var piece_tier := _take_piece(chosen_index, Quality.BEST if bool(profile.get("vip", false)) else Quality.WORST)
 		var quality_name := str(Quality.tier(piece_tier)["name"])
 		_register_sold_piece(piece_tier)
+		var linha_torta := 0
 		if piece_tier == 0:
-			# Saiu torto da forja e o cliente viu: ninguém esconde a careta.
+			# Saiu torto da forja e o cliente viu: ninguém esconde a careta — e a careta
+			# atravessa a praça. A casa paga a linha no livro da rua.
 			_show_stage_emotion(stage_customer, "nojo")
+			linha_torta = _add_complaint(COMPLAINT_FROM_TORTO)
 		var base_label := _piece_price(item, piece_tier)
-		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * _mess_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor() * _recommendation_price_factor() * (1.0 + SERVANT_PRICE_SHARE * servants.size()) * (1.08 if _has_spec("trade", "cartel") else 1.0)
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _complaint_label_factor() * _fury_price_multiplier() * _mess_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor() * _recommendation_price_factor() * (1.0 + SERVANT_PRICE_SHARE * servants.size()) * (1.08 if _has_spec("trade", "cartel") else 1.0)
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
 			preference_bonus = maxi(2, int(round(base_label * 0.25)))
@@ -6680,6 +6766,8 @@ func _on_customer_tick() -> void:
 			last_event = "%s comprou %s (%s). %s" % [
 				profile["name"], item["name"], quality_name, profile["line"]
 			]
+		if linha_torta > 0:
+			last_event += "\n📙 A peça torto foi entregue na mão dele, e ele saiu falando: %s" % _complaint_tail(linha_torta)
 		var sale_price: int = int(round(base_label * price_multiplier)) + preference_bonus
 		var product_heat := Economy.heat(economy_state, "product", str(item["id"]))
 		if product_heat >= 0.30:
@@ -7697,6 +7785,15 @@ func _refresh_ui() -> void:
 			vip_button.text = "🎩 Estender o cordão — degrau %d (%d)" % [
 				int(vip_next["rank"]), int(vip_next["cost"])]
 			vip_button.disabled = false
+	if is_instance_valid(complaint_label):
+		complaint_label.text = _complaint_summary()
+	if is_instance_valid(complaint_button):
+		if complaints <= 0:
+			complaint_button.text = "🗣 A rua está quieta"
+			complaint_button.disabled = true
+		else:
+			complaint_button.text = "🗣 Pagar a voz da rua (%d)" % _hush_cost()
+			complaint_button.disabled = gold < _hush_cost()
 	for i in range(Staff.DATA.size()):
 		var seat: Dictionary = Staff.DATA[i]
 		var seat_id := str(seat["id"])
@@ -8256,6 +8353,9 @@ func _save_game() -> void:
 	config.set_value("game", "vip_served", vip_served)
 	config.set_value("game", "vip_refusals", vip_refusals)
 	config.set_value("game", "vip_tips_gold", vip_tips_gold)
+	config.set_value("game", "complaints", complaints)
+	config.set_value("game", "complaints_written", complaints_written)
+	config.set_value("game", "complaints_hushed", complaints_hushed)
 	config.set_value("game", "queue_distractions", queue_distractions)
 	config.set_value("game", "products", products)
 	# O que a forja ainda não terminou é dinheiro do jogador em andamento: perder
@@ -8732,6 +8832,9 @@ func _load_game() -> void:
 	vip_served = maxi(0, int(config.get_value("game", "vip_served", vip_served)))
 	vip_refusals = maxi(0, int(config.get_value("game", "vip_refusals", vip_refusals)))
 	vip_tips_gold = maxi(0, int(config.get_value("game", "vip_tips_gold", vip_tips_gold)))
+	complaints = clampi(int(config.get_value("game", "complaints", complaints)), 0, COMPLAINT_CAP)
+	complaints_written = maxi(0, int(config.get_value("game", "complaints_written", complaints_written)))
+	complaints_hushed = clampi(maxi(0, int(config.get_value("game", "complaints_hushed", complaints_hushed))), 0, complaints_written)
 	queue_distractions = int(config.get_value("game", "queue_distractions", queue_distractions))
 	ticks = maxi(0, int(config.get_value("game", "ticks", ticks)))
 	catalyst_enabled = bool(config.get_value("game", "catalyst_enabled", catalyst_enabled))
@@ -9173,6 +9276,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "lab_full_bench", "name": "A bancada venceu o nível (%d receitas travadas arrancadas por ensaio)" % _lab_targets_total(), "condition": lab_discovered.size() >= _lab_targets_total(), "gold": 300, "rep": 12, "pose": "aplausos"},
 		{"id": "vip_first_robe", "name": "Capa fina no balcão (1 visita do salão servida com o topo da barra)", "condition": vip_served >= 1, "gold": 40, "rep": 2, "pose": "ousadia"},
 		{"id": "vip_full_salon", "name": "Salão de capas (10 visitas do salão servidas)", "condition": vip_served >= 10, "gold": 220, "rep": 8, "pose": "vitoria"},
+		{"id": "claims_first_line", "name": "A rua abriu o livro (primeira reclamação anotada)", "condition": complaints_written >= 1, "gold": 0, "rep": 0},
+		{"id": "claims_quiet_street", "name": "Boca calada (%d queixas apagadas pagando o cartório)" % (COMPLAINT_HUSH_ERASE * 3), "condition": complaints_hushed >= COMPLAINT_HUSH_ERASE * 3, "gold": 90, "rep": 3, "pose": "book"},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
 		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"},
 		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
@@ -9572,6 +9677,9 @@ func _age_credit_book() -> String:
 		credit_lost_gold += owed
 		reputation = maxi(0, reputation - 2)
 		regular_bonds[debtor_id] = maxi(0, int(regular_bonds.get(debtor_id, 0)) - 1)
+		# A nota riscada é a queixa mais barulhenta das três fontes: quem emprestou ouro e
+		# não recebeu conta para a praça inteira, e a casa perde o nome junto com o dinheiro.
+		_add_complaint(COMPLAINT_FROM_WRITE_OFF)
 		lines.append("a casa riscou a nota de %s: %d de ouro que não voltam" % [
 			str(note.get("name", "O devedor")), owed])
 		riscadas.append(debtor_id)
@@ -9580,8 +9688,8 @@ func _age_credit_book() -> String:
 	if lines.is_empty():
 		return ""
 	audio.play("sad")
-	return "FIADO: %s • %d nota(s) no livro, %d de ouro na rua." % [
-		"; ".join(lines), credit_book.size(), _credit_on_street()]
+	return "FIADO: %s • %d nota(s) no livro, %d de ouro na rua • %s" % [
+		"; ".join(lines), credit_book.size(), _credit_on_street(), _complaint_tail(complaints)]
 
 
 func _credit_on_street() -> int:
@@ -9645,6 +9753,16 @@ func _credit_summary() -> String:
 	if not notas.is_empty():
 		head += "\n" + "\n".join(notas)
 	return head
+
+
+## A linha de rodapé que toda fonte de queixa puxa: quantas linhas o livro tem agora e o que
+## elas já cobram. Chamada por texto, sem emoji: quem imprime escolhe o marcador.
+func _complaint_tail(depois: int) -> String:
+	if _complaint_stage() == 0:
+		return "O livro de reclamações da rua lê %d linha(s): faltam %d para a rua começar a cobrar, e cada virada de dia apaga uma." % [
+			depois, COMPLAINT_LINE - depois]
+	return "O livro de reclamações da rua lê %d linha(s) e cobra: etiqueta %s, paciência −%d, porta −%d por tique." % [
+		depois, _label_word(), _complaint_patience_loss(), _complaint_crowd_loss()]
 
 
 ## ── O SALÃO DAS CAPAS FINAS ──────────────────────────────────────────────────────
@@ -9739,6 +9857,111 @@ func _vip_summary() -> String:
 		vip_rank, _vip_chance(), float(_vip_row(vip_rank)["budget"]),
 		str(Quality.tier(_vip_standard())["name"]), float(_vip_row(vip_rank)["tip"]) * 100.0,
 		vip_served, vip_refusals, vip_tips_gold]
+
+
+## ── O LIVRO DE RECLAMAÇÕES DA RUA ────────────────────────────────────────────────
+## Queixa não é falta de fama: é a casa errando e a rua contando. As três linhas que o livro
+## aceita são as três vezes em que o erro aparece na mão de alguém — a peça torto que saiu da
+## forja, a capa fina devolvida na prateleira e a nota riscada no fiado. Até a sexta linha a
+## rua só murmura: etiqueta, paciência e porta devolvem exatamente os números de sempre, e
+## nada aqui consome sorteio. Da sexta a casa paga etiqueta e fila; da décima segunda, paga
+## também a batida na porta. Apagar custa ouro e nunca compra fama.
+
+## Anota `quanto` linhas e devolve o livro já atualizado. O teto é do livro, não da história:
+## `complaints_written` continua contando tudo que a rua já ouviu.
+func _add_complaint(quanto: int) -> int:
+	if quanto <= 0:
+		return complaints
+	complaints_written += quanto
+	complaints = mini(COMPLAINT_CAP, complaints + quanto)
+	return complaints
+
+
+## 0 = ainda não cobra nada, 1 = boato (etiqueta e fila), 2 = escândalo (etiqueta, fila e porta).
+func _complaint_stage() -> int:
+	if complaints >= COMPLAINT_SCANDAL:
+		return 2
+	if complaints >= COMPLAINT_LINE:
+		return 1
+	return 0
+
+
+## O desconto que a rua arranca da etiqueta. Abaixo da sexta linha é exatamente 1.0 — e
+## multiplicar por 1.0 não move um centavo de nenhuma conta já medida neste repo.
+func _complaint_label_factor() -> float:
+	if _complaint_stage() == 0:
+		return 1.0
+	return 1.0 - minf(COMPLAINT_LABEL_MAX, float(complaints - COMPLAINT_LINE + 1) * COMPLAINT_LABEL_STEP)
+
+
+func _complaint_patience_loss() -> int:
+	return COMPLAINT_PATIENCE_LOSS[_complaint_stage()]
+
+
+func _complaint_crowd_loss() -> int:
+	return COMPLAINT_CROWD_LOSS[_complaint_stage()]
+
+
+## A rua esquece uma linha por virada. Sem dado, sem conta, sem ouro: só a memória curta.
+func _complaints_forget() -> void:
+	if complaints > 0:
+		complaints -= 1
+
+
+func _hush_cost() -> int:
+	return COMPLAINT_HUSH_BASE + COMPLAINT_HUSH_PER_LINE * complaints
+
+
+func _hush_street() -> void:
+	if complaints <= 0:
+		last_event = "O livro está em branco: não há o que a rua cobrar de você nesta vida."
+		_show_feedback("📗 Ninguém fala mal da casa.", Color(0.72, 0.90, 0.74))
+		_refresh_ui()
+		return
+	var cost := _hush_cost()
+	if gold < cost:
+		last_event = "Calar a boca da rua com %d linha(s) no livro custa %d de ouro, e o caixa tem %d. A rua espera." % [
+			complaints, cost, gold]
+		_show_feedback("✕ Falta ouro para o cartório.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	gold -= cost
+	var antes := _complaint_stage()
+	var apagadas := mini(COMPLAINT_HUSH_ERASE, complaints)
+	complaints -= apagadas
+	complaints_hushed += apagadas
+	last_event = "🗣 A casa paga %d de ouro ao cartório da praça e risca %d linha(s): restam %d no livro, e a etiqueta volta a %s." % [
+		cost, apagadas, complaints, _label_word()]
+	if _complaint_stage() < antes:
+		_show_feedback("✦ A rua baixa o tom.", Color(0.86, 0.72, 0.58))
+	else:
+		_show_feedback("✦ O cartório risca a linha.", Color(0.86, 0.72, 0.58))
+	audio.play("coin")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+
+## Como a etiqueta está de pé agora, do jeito que o balcão a lê.
+func _label_word() -> String:
+	var corte := int(round((1.0 - _complaint_label_factor()) * 100.0))
+	if corte <= 0:
+		return "cheia"
+	return "%d%% abaixo" % corte
+
+
+func _complaint_summary() -> String:
+	var stage := _complaint_stage()
+	var base := "%d linha(s) já escritas, %d apagadas pagando." % [complaints_written, complaints_hushed]
+	if complaints <= 0:
+		return "📗 O livro está em branco: a rua não tem o que contar da sua casa. Peça torto na mão de alguém, capa fina devolvida e nota riscada no fiado são as três linhas que ele aceita — e cada virada de dia apaga o que estiver escrito."
+	if stage == 0:
+		return "📙 MURMÚRIO • %d linha(s) no livro: a rua ainda não cobra nada (%d para a sexta). Cada virada de dia esquece uma linha, e a voz da rua custa %d de ouro por %d apagada(s). %s" % [
+			complaints, COMPLAINT_LINE - complaints, _hush_cost(), COMPLAINT_HUSH_ERASE, base]
+	return "📕 %s • %d linha(s) no livro • etiqueta %s • paciência −%d • porta −%d por tique • cada virada esquece uma linha, e a voz da rua custa %d de ouro por %d apagada(s). %s" % [
+		"BOATO" if stage == 1 else "ESCÂNDALO", complaints, _label_word(),
+		_complaint_patience_loss(), _complaint_crowd_loss(), _hush_cost(),
+		COMPLAINT_HUSH_ERASE, base]
 
 
 func _collect_branches() -> String:
@@ -10863,6 +11086,11 @@ func _reset_run() -> void:
 	vip_served = 0
 	vip_refusals = 0
 	vip_tips_gold = 0
+	# O livro de reclamações é da vida, não da dinastia: a rua esquece quem fechou a loja
+	# anterior, e a vida nova começa com a boca limpa — cobrança inclusive.
+	complaints = 0
+	complaints_written = 0
+	complaints_hushed = 0
 	daily_quest_index = 0
 	daily_quest_progress = 0
 	daily_quest_claimed = false
