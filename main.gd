@@ -165,6 +165,18 @@ var credit_book: Dictionary = {}
 var credit_paid: int = 0
 var credit_written: int = 0
 var credit_lost_gold: int = 0
+## A bancada de ensaios desta vida. Um ensaio é um punhado de ingrediente na mesa e
+## uma pergunta: será que essa mistura casa com alguma receita que o nível ainda prende?
+## A resposta é tabela, não sorteio — o `randi()` da loja não é tocado aqui. `lab_trials`
+## guarda a assinatura canônica da mistura ("po_lunar:1+sal:1") -> o id que ela entregou,
+## ou "" para beco sem saída; `lab_mix` é o que está em brasa agora, `lab_hints` são as
+## fichas que o grimório já vendeu, e `lab_discovered` só conta o que a bancada entregou,
+## porque a escada do nível e a leitura da biblioteca também abrem receita.
+var lab_trials: Dictionary = {}
+var lab_mix: Dictionary = {}
+var lab_hints: Array[String] = []
+var lab_discovered: Array[String] = []
+var lab_flops: int = 0
 ## Conserva da casa: cada visita pisa barro, a vassoura custa ouro, e a etiqueta
 ## despenca no salão imundo. Os números são a única novidade; todos caem em
 ## fórmulas que o jogo já usava (paciência de fila, multiplicador de preço, conta
@@ -250,6 +262,27 @@ const CREDIT_INTEREST := 0.15
 ## Dias de atraso antes de a casa riscar a nota: o ouro vai embora, a reputação também
 ## um pouco, e o vínculo do devedor desce um degrau.
 const CREDIT_WRITEOFF_DAYS := 3
+## A bancada de ensaios. Os números são todos de mesa de trabalho, não de painel: o
+## ensaio queima os ingredientes que estão na brasa **e** cobra carvão por unidade, porque
+## avental e brasa não vêm de graça. O teto de unidades é o da receita mais gorda da
+## estante (2 + 1) arredondado para cima, para existir margem de erro sem a bancada virar
+## uma forja secreta.
+const LAB_FEE_PER_UNIT := 12
+const LAB_MAX_UNITS := 4
+## Duas espécies por ensaio: é o tamanho da pergunta. Três espécies seria outra
+## mecânica, e a pessoa tem uma loja para tocar.
+const LAB_MAX_KINDS := 2
+## Barro que um ensaio sem saída deixa no salão: a mistura falha, estoura, e a casa
+## pisca isso no chão até a criada passar.
+const LAB_FIZZLE_MESS := 3
+## Experiência do que não deu: beco errado também ensina, só que pouco.
+const LAB_FIZZLE_XP := 2
+## Experiência do acerto — mais que um degrau de leitura, menos que uma forja lendária.
+const LAB_DISCOVERY_XP := 12
+## Palpite do grimório: ouro pela ficha de ingredientes de uma receita travada, uma por
+## vez, na mesma ordem da escada de leitura. Segue o desconto da biblioteca (#biblioteca)
+## porque é a mesma estante falando, só que do lado da bancada.
+const LAB_HINT_COST := 60
 ## Os nomes que a casa enxerga quando a ronda segura um braço no ar. Ninguém aqui é
 ## freguês de casa: vândalo sorteado é gente de fora do elenco, e por isso vai para
 ## a cela sem levar vínculo junto.
@@ -748,6 +781,11 @@ var spec_buttons: Array = []
 var pack_button: Button
 var credit_button: Button
 var credit_label: Label
+var lab_label: Label
+var lab_add_buttons: Array = []
+var lab_clear_button: Button
+var lab_fire_button: Button
+var lab_hint_button: Button
 var card_gallery_labels: Array = []
 var board_label: Label
 var score_button: Button
@@ -3491,6 +3529,52 @@ func _build_ui() -> void:
 	cold_storage_button.pressed.connect(_buy_cold_storage)
 	forge_box.add_child(cold_storage_button)
 
+	forge_box.add_child(_make_section_title("A BANCADA DE ENSAIOS", Color(0.78, 0.96, 0.60)))
+	forge_box.add_child(_make_section_hint("Alquimia experimental: o atalho de ouro e ingrediente para a receita que o nível ainda prende. Ponha até %d unidades de no máximo %d espécies na mesa, acenda, e a bancada responde pela tabela — ou a mistura casa com uma receita travada, que aí passa a ser sua sem subir degrau e sem pagar a leitura, ou vira beco riscado no caderno. Beco riscado não se paga duas vezes, e o grimório vende a ficha de uma receita por vez." % [LAB_MAX_UNITS, LAB_MAX_KINDS]))
+	var lab_card := _make_sector_card(Color(0.05, 0.075, 0.048, 0.94), Color(0.56, 0.82, 0.46, 0.95))
+	forge_box.add_child(lab_card)
+	var lab_row := HBoxContainer.new()
+	lab_row.add_theme_constant_override("separation", 12)
+	lab_card.add_child(lab_row)
+	lab_label = Label.new()
+	lab_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lab_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lab_label.add_theme_font_size_override("font_size", 13)
+	lab_label.add_theme_color_override("font_color", Color(0.86, 0.96, 0.78))
+	lab_row.add_child(lab_label)
+	var lab_side := VBoxContainer.new()
+	lab_side.add_theme_constant_override("separation", 6)
+	lab_row.add_child(lab_side)
+	var lab_adds := HFlowContainer.new()
+	lab_adds.add_theme_constant_override("h_separation", 6)
+	lab_adds.add_theme_constant_override("v_separation", 6)
+	lab_side.add_child(lab_adds)
+	for ingredient in Ingredients.DATA:
+		var add := Button.new()
+		add.custom_minimum_size = Vector2(132, 34)
+		add.add_theme_font_size_override("font_size", 12)
+		add.pressed.connect(_lab_add.bind(str(ingredient["id"])))
+		lab_adds.add_child(add)
+		lab_add_buttons.append(add)
+	var lab_actions := HBoxContainer.new()
+	lab_actions.add_theme_constant_override("separation", 6)
+	lab_side.add_child(lab_actions)
+	lab_clear_button = Button.new()
+	lab_clear_button.custom_minimum_size = Vector2(132, 40)
+	lab_clear_button.add_theme_font_size_override("font_size", 13)
+	lab_clear_button.pressed.connect(_lab_clear)
+	lab_actions.add_child(lab_clear_button)
+	lab_fire_button = Button.new()
+	lab_fire_button.custom_minimum_size = Vector2(200, 40)
+	lab_fire_button.add_theme_font_size_override("font_size", 14)
+	lab_fire_button.pressed.connect(_lab_fire)
+	lab_actions.add_child(lab_fire_button)
+	lab_hint_button = Button.new()
+	lab_hint_button.custom_minimum_size = Vector2(200, 40)
+	lab_hint_button.add_theme_font_size_override("font_size", 13)
+	lab_hint_button.pressed.connect(_lab_buy_hint)
+	lab_actions.add_child(lab_hint_button)
+
 	for i in range(products.size()):
 		var card := PanelContainer.new()
 		var style := StyleBoxFlat.new()
@@ -5737,6 +5821,294 @@ func _learn_recipe(index: int) -> void:
 	_save_game()
 	_refresh_ui()
 
+## ── A BANCADA DE ENSAIOS ──────────────────────────────────────────────────────────
+## Alquimia experimental: o atalho de ouro e ingrediente para a receita que o nível
+## ainda prende. Nada aqui sorteia — a resposta é a tabela de receitas contra a mistura
+## da mesa —, então a bancada pode ser lida e escrita no meio de uma corrida sem mover
+## um `randi()` da loja.
+
+## Assinatura canônica: "id:unidades" em ordem de id, para que sal+pó e pó+sal sejam o
+## mesmo ensaio. A bancada não cobra duas contas pelo mesmo punhado.
+func _lab_signature(mix: Dictionary) -> String:
+	var ids: Array[String] = []
+	for ingredient_id in mix.keys():
+		if int(mix[ingredient_id]) > 0:
+			ids.append(str(ingredient_id))
+	ids.sort()
+	var parts: Array[String] = []
+	for ingredient_id in ids:
+		parts.append("%s:%d" % [ingredient_id, int(mix[ingredient_id])])
+	return "+".join(parts)
+
+## Assinatura assinada: aceita só id de ingrediente do mercado e quantidade inteira
+## positiva. É a tesoura do load: arquivo podre não entra na bancada.
+func _lab_signature_valid(signature: String) -> bool:
+	if signature.is_empty():
+		return false
+	for chunk in signature.split("+"):
+		var bits := str(chunk).split(":")
+		if bits.size() != 2:
+			return false
+		if Ingredients.find(str(bits[0])).is_empty():
+			return false
+		if int(bits[1]) <= 0:
+			return false
+	return true
+
+## Nome de bancada para a assinatura: "Sal Gamer Refinado×1 + Pó Lunar de Terça-feira×1".
+func _lab_readable(signature: String) -> String:
+	if signature.is_empty():
+		return "nada"
+	var parts: Array[String] = []
+	for chunk in signature.split("+"):
+		var bits := str(chunk).split(":")
+		if bits.size() != 2:
+			continue
+		parts.append("%s×%d" % [Ingredients.any_name(str(bits[0])), int(bits[1])])
+	return " + ".join(parts)
+
+func _lab_units(mix: Dictionary) -> int:
+	var units := 0
+	for ingredient_id in mix.keys():
+		units += maxi(0, int(mix[ingredient_id]))
+	return units
+
+## Carvão do ensaio: ouro por unidade na brasa, além do ingrediente que ele queima.
+func _lab_fee(units: int) -> int:
+	return maxi(0, units * LAB_FEE_PER_UNIT)
+
+## Receitas ainda presas ao nível: é só contra elas que a bancada testa. Uma receita já
+## sua não tem o que descobrir — misturar por misturar seria fabricar de atravessado.
+func _lab_locked_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for item in products:
+		if int(item.get("required_level", 1)) > 1 and not _is_product_unlocked(item):
+			ids.append(str(item["id"]))
+	return ids
+
+## O tamanho da escada, fixo: quantas receitas nasceram presas ao nível no catálogo. É o
+## denominador do selo da bancada, e não muda conforme a loja sobe degrau — senão o selo
+## seria "descubra as que ainda não caíram sozinhas", que é outra frase.
+func _lab_targets_total() -> int:
+	var total := 0
+	for item in products:
+		if int(item.get("required_level", 1)) > 1:
+			total += 1
+	return total
+
+## As receitas travadas cuja ficha de ingredientes é exatamente o que está na mesa. Pode
+## devolver mais de uma: sal + pó lunar é a ficha do Elixir de Memória de Peixe e do
+## Martelo de Faísca Dramática, e a bancada entrega as duas na mesma faísca.
+func _lab_matches(mix: Dictionary) -> Array[String]:
+	var signature := _lab_signature(mix)
+	var found: Array[String] = []
+	if signature.is_empty():
+		return found
+	for item in products:
+		if int(item.get("required_level", 1)) <= 1 or _is_product_unlocked(item):
+			continue
+		if _lab_signature(item.get("ingredients", {})) == signature:
+			found.append(str(item["id"]))
+	return found
+
+## O palpite que o grimório vende: a ficha da receita travada de nível mais baixo, uma por
+## vez. O alvo não é escolha da pessoa porque a escada é da casa: primeiro o que o nível
+## entregaria logo, que é também a ordem em que a leitura cobra.
+func _lab_hint_target() -> String:
+	var best_level := 999999
+	var best_id := ""
+	for item in products:
+		var required := int(item.get("required_level", 1))
+		var recipe_id := str(item["id"])
+		if required <= 1 or lab_hints.has(recipe_id) or _is_product_unlocked(item):
+			continue
+		if required < best_level:
+			best_level = required
+			best_id = recipe_id
+	return best_id
+
+func _lab_hint_cost() -> int:
+	return maxi(20, int(round(float(LAB_HINT_COST) * (1.0 - 0.10 * float(library_upgrade_level)))))
+
+## Unidades da mistura que o estoque não tem: a brasa é reservada no ato, mas o freguês
+## pode revender o frasco enquanto ele espera, e o ensaio não pode acender a crédito.
+func _lab_unbacked() -> Array[String]:
+	var missing: Array[String] = []
+	for ingredient_id in lab_mix.keys():
+		if int(ingredient_stock.get(ingredient_id, 0)) < int(lab_mix[ingredient_id]):
+			missing.append(Ingredients.any_name(str(ingredient_id)))
+	return missing
+
+func _lab_lacks(kind: String) -> String:
+	var units := _lab_units(lab_mix)
+	var held := int(ingredient_stock.get(kind, 0))
+	if Ingredients.find(kind).is_empty():
+		return "A bancada só aceita o que o mercado vende: raridade é catalisador da forja, não ingrediente de ensaio."
+	if units >= LAB_MAX_UNITS:
+		return "A bancada comporta %d unidades por ensaio. Mais que isso é forja disfarçada." % LAB_MAX_UNITS
+	if not lab_mix.has(kind) and lab_mix.size() >= LAB_MAX_KINDS:
+		return "São %d espécies por ensaio, e a mesa já tem duas: %s." % [
+			LAB_MAX_KINDS, _lab_readable(_lab_signature(lab_mix))]
+	if held <= int(lab_mix.get(kind, 0)):
+		return "Falta %s no estoque para pôr na brasa (tem %d, a bancada já separou %d)." % [
+			str(Ingredients.find(kind)["name"]), held, int(lab_mix.get(kind, 0))]
+	return ""
+
+## Põe uma unidade na mesa. Não queima nada ainda: separa.
+func _lab_add(kind: String) -> void:
+	var reason := _lab_lacks(kind)
+	if reason != "":
+		last_event = reason
+		_refresh_ui()
+		return
+	lab_mix[kind] = int(lab_mix.get(kind, 0)) + 1
+	audio.play("click")
+	_show_feedback("⚗ %s na brasa." % str(Ingredients.find(kind)["name"]), Color(0.82, 0.95, 0.68))
+	_refresh_ui()
+
+func _lab_clear() -> void:
+	if lab_mix.is_empty():
+		last_event = "A bancada já está limpa: nada em brasa, nada queimado."
+		_refresh_ui()
+		return
+	var back := _lab_readable(_lab_signature(lab_mix))
+	lab_mix.clear()
+	last_event = "A mesa foi raspada de volta para o pote: %s." % back
+	audio.play("click")
+	_refresh_ui()
+
+## Acender a bancada: queima o carvão e os ingredientes de uma vez e devolve a resposta da
+## tabela. Beco já riscado não cobra de novo — a casa não vende duas vezes a mesma porta
+## fechada.
+func _lab_fire() -> void:
+	var units := _lab_units(lab_mix)
+	var signature := _lab_signature(lab_mix)
+	if units < 2:
+		last_event = "Um ensaio pede ao menos duas unidades na brasa. Sozinho, isso é só estoque pegando fogo."
+		_refresh_ui()
+		return
+	if signature.is_empty() or not _lab_signature_valid(signature):
+		last_event = "A mesa tem mistura a mais e receita a menos: esvazia a bancada e recomeça."
+		_refresh_ui()
+		return
+	if lab_trials.has(signature):
+		last_event = "Esse ensaio já foi escrito no caderno: %s." % _lab_trial_line(signature)
+		_refresh_ui()
+		return
+	var fee := _lab_fee(units)
+	if gold < fee:
+		last_event = "O carvão custa %d de ouro, e a caixa tem %d. A bancada não acende fiado." % [fee, gold]
+		_refresh_ui()
+		return
+	var unbacked := _lab_unbacked()
+	if not unbacked.is_empty():
+		last_event = "A brasa pede %s que o estoque não tem mais. Esvazia a bancada e refaz a mistura." % ", ".join(unbacked)
+		_refresh_ui()
+		return
+	gold -= fee
+	for ingredient_id in lab_mix.keys():
+		ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) - int(lab_mix[ingredient_id])
+	var burned := _lab_readable(signature)
+	var matches := _lab_matches(lab_mix)
+	lab_mix.clear()
+	if matches.is_empty():
+		lab_flops += 1
+		lab_trials[signature] = ""
+		_add_mess(LAB_FIZZLE_MESS)
+		_add_xp(LAB_FIZZLE_XP)
+		last_event = "Ensaio sem saída: %s virou fuligem no salão (−%d de carvão, %d de barro no chão). A banca riscou o beco no caderno: esse punhado não casa com nada que esteja preso ao nível." % [
+			burned, fee, LAB_FIZZLE_MESS]
+		audio.play("sad")
+		_show_feedback("✖ Beco riscado no caderno.", Color(1.0, 0.62, 0.52))
+		_show_stage_emotion(stage_seller_body, "espanto")
+	else:
+		var names: Array[String] = []
+		for recipe_id in matches:
+			if not known_recipes.has(recipe_id):
+				known_recipes.append(recipe_id)
+			if not lab_discovered.has(recipe_id):
+				lab_discovered.append(recipe_id)
+			names.append(str(_product_by_id(recipe_id).get("name", recipe_id)))
+		lab_trials[signature] = ",".join(matches)
+		_add_xp(LAB_DISCOVERY_XP)
+		reputation += 1
+		last_event = "ACERTO NA BANCADA: %s casa com %s! %d de carvão pago, e a receita passa a ser sua sem subir um degrau de nível (+%d de experiência, +1 de fama)." % [
+			burned, ", ".join(names), fee, LAB_DISCOVERY_XP]
+		audio.play("rare")
+		_show_feedback("✦ Receita arrancada do nível!", Color(0.86, 1.0, 0.70))
+		_show_stage_emotion(stage_seller_body, "aplausao")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## O que o caderno responde sobre uma assinatura: "nada" ou o nome do que ela entregou.
+func _lab_trial_line(signature: String) -> String:
+	var outcome := str(lab_trials.get(signature, ""))
+	if outcome.is_empty():
+		return "%s: beco riscado" % _lab_readable(signature)
+	var names: Array[String] = []
+	for recipe_id in outcome.split(","):
+		names.append(str(_product_by_id(str(recipe_id)).get("name", str(recipe_id))))
+	return "%s: %s" % [_lab_readable(signature), ", ".join(names)]
+
+## Palpite comprado: a ficha de ingredientes de uma receita travada, revelada para sempre
+## no painel do grimório. É ouro por informação, não ouro por receita — a banca continua
+## cobrando o ensaio.
+func _lab_buy_hint() -> void:
+	var target := _lab_hint_target()
+	if target.is_empty():
+		last_event = "O grimório não tem mais o que sussurrar: toda receita travada já tem ficha na mão."
+		_refresh_ui()
+		return
+	var cost := _lab_hint_cost()
+	if gold < cost:
+		last_event = "O palpite custa %d de ouro e a caixa tem %d. A estante fecha a tampa." % [cost, gold]
+		_refresh_ui()
+		return
+	gold -= cost
+	lab_hints.append(target)
+	_add_xp(2)
+	last_event = "Palpite comprado: %s leva %s. A ficha fica no grimório — e a bancada continua cobrando o ensaio." % [
+		str(_product_by_id(target).get("name", target)),
+		_lab_readable(_lab_signature(_product_by_id(target).get("ingredients", {})))]
+	audio.play("buy")
+	_show_feedback("📖 Ficha revelada.", Color(0.70, 0.90, 1.0))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Resumo do painel: o que está em brasa, o que o caderno já sabe e quanto falta.
+func _lab_summary() -> String:
+	var units := _lab_units(lab_mix)
+	var head := "MESA: %d de %d unidades, %d de %d espécies (%s) • carvão: %d de ouro" % [
+		units, LAB_MAX_UNITS, lab_mix.size(), LAB_MAX_KINDS,
+		_lab_readable(_lab_signature(lab_mix)) if units > 0 else "nada", _lab_fee(units)]
+	head += "\nCADERNO: %d beco(s) riscado(s) • %d acerto(s) • %d de %d receitas travadas já caíram na bancada • %d ainda presas ao nível" % [
+		lab_flops, lab_discovered.size(), lab_discovered.size(), _lab_targets_total(),
+		_lab_locked_ids().size()]
+	var lines: Array[String] = []
+	for signature in lab_trials.keys():
+		lines.append(" • " + _lab_trial_line(str(signature)))
+	if not lines.is_empty():
+		head += "\n" + "\n".join(lines)
+	else:
+		head += "\n • o caderno está em branco: nenhum ensaio acendido nesta vida"
+	return head
+
+## Lista que volta do arquivo só com id de receita travada: id inventado, receita básica
+## de todo dia e duplicata não reentram na bancada. É a mesma tesoura do livro de fiado.
+func _lab_ids_from_file(saved_ids: Variant) -> Array[String]:
+	var kept: Array[String] = []
+	if not saved_ids is Array:
+		return kept
+	for saved_id in saved_ids:
+		var recipe_id := str(saved_id)
+		var item := _product_by_id(recipe_id)
+		if item.is_empty() or int(item.get("required_level", 1)) <= 1 or kept.has(recipe_id):
+			continue
+		kept.append(recipe_id)
+	return kept
+
 ## Produto em alta: o mais procurado no mercado reativo. Sem demanda clara de
 ## ninguém, cai no sorteio determinístico do dia para sempre existir um destaque.
 func _demand_index() -> int:
@@ -5852,6 +6224,12 @@ func _product_index(product_id: String) -> int:
 		if str(products[i].get("id", "")) == product_id:
 			return i
 	return -1
+
+## Ficha do produto pelo id, ou vazio para quem não está no catálogo. É a leitura que a
+## bancada usa para escrever nome de receita no mural sem indexar na mão.
+func _product_by_id(product_id: String) -> Dictionary:
+	var index := _product_index(product_id)
+	return products[index] if index >= 0 else {}
 
 ## Escolhe o freguês do próximo turno. O peso cai conforme o vínculo sobe, então
 ## quem ainda não foi visitado domina a fila: ampliar o elenco não dilui a
@@ -7027,6 +7405,30 @@ func _refresh_ui() -> void:
 		achievement_label.text = _get_achievement_summary()
 	if is_instance_valid(forge_mastery_label):
 		forge_mastery_label.text = _forge_mastery_text()
+	if is_instance_valid(lab_label) and not lab_add_buttons.is_empty():
+		lab_label.text = _lab_summary()
+		for i in range(Ingredients.DATA.size()):
+			var ingredient: Dictionary = Ingredients.DATA[i]
+			var kind := str(ingredient["id"])
+			lab_add_buttons[i].text = "⚗ %s (%d/%d)" % [
+				str(ingredient["name"]), int(lab_mix.get(kind, 0)), int(ingredient_stock.get(kind, 0))]
+			lab_add_buttons[i].disabled = _lab_lacks(kind) != ""
+		lab_clear_button.text = "Esvaziar a mesa"
+		lab_clear_button.disabled = lab_mix.is_empty()
+		var lab_units := _lab_units(lab_mix)
+		var lab_fee := _lab_fee(lab_units)
+		var lab_repeat := (
+			lab_units >= 2 and lab_trials.has(_lab_signature(lab_mix))
+		)
+		lab_fire_button.text = "🔥 Acender a bancada (%d)" % lab_fee
+		lab_fire_button.disabled = (
+			lab_units < 2 or gold < lab_fee or lab_repeat or not _lab_unbacked().is_empty()
+		)
+		lab_hint_button.text = (
+			"📖 Palpite do grimório (%d)" % _lab_hint_cost()
+			if not _lab_hint_target().is_empty() else "📖 Grimório sem fichas novas"
+		)
+		lab_hint_button.disabled = _lab_hint_target().is_empty() or gold < _lab_hint_cost()
 	for i in range(products.size()):
 		var item: Dictionary = products[i]
 		var unlocked := _is_product_unlocked(item)
@@ -7074,7 +7476,8 @@ func _refresh_ui() -> void:
 			recipe_buttons[i].text = "Dominada ✓"
 			recipe_buttons[i].disabled = true
 		else:
-			recipe_labels[i].text = "🔒 %s • exige nível %d" % [item["name"], required_level]
+			var ficha := " — ficha do palpite: %s" % _lab_readable(_lab_signature(item.get("ingredients", {}))) if lab_hints.has(recipe_id) else ""
+			recipe_labels[i].text = "🔒 %s • exige nível %d%s" % [item["name"], required_level, ficha]
 			recipe_buttons[i].text = "Aprender (%d)" % recipe_cost
 			recipe_buttons[i].disabled = gold < recipe_cost
 	if is_instance_valid(market_label):
@@ -7750,6 +8153,11 @@ func _save_game() -> void:
 	config.set_value("game", "library_upgrade_level", library_upgrade_level)
 	config.set_value("game", "sanctum_upgrade_level", sanctum_upgrade_level)
 	config.set_value("game", "known_recipes", known_recipes)
+	config.set_value("game", "lab_trials", lab_trials)
+	config.set_value("game", "lab_mix", lab_mix)
+	config.set_value("game", "lab_hints", lab_hints)
+	config.set_value("game", "lab_discovered", lab_discovered)
+	config.set_value("game", "lab_flops", lab_flops)
 	config.set_value("game", "queue_distractions", queue_distractions)
 	config.set_value("game", "products", products)
 	# O que a forja ainda não terminou é dinheiro do jogador em andamento: perder
@@ -8185,6 +8593,43 @@ func _load_game() -> void:
 			var recipe_key := str(saved_recipe)
 			if not recipe_key.is_empty() and not known_recipes.has(recipe_key):
 				known_recipes.append(recipe_key)
+	# A bancada lê o arquivo com tesoura: assinatura que não é de ingrediente do mercado
+	# não entra, id de receita inventado cai do resultado do ensaio, e a mesa em brasa
+	# volta limitada ao que a casa comporta e ao que o estoque ainda tem. Um save antigo,
+	# sem nenhuma destas chaves, acorda com a mesa raspada e o caderno em branco.
+	var saved_trials = config.get_value("game", "lab_trials", {})
+	lab_trials.clear()
+	if saved_trials is Dictionary:
+		for saved_key in saved_trials.keys():
+			var trial_key := str(saved_key)
+			if not _lab_signature_valid(trial_key):
+				continue
+			var trial_outcome := str(saved_trials[saved_key])
+			var kept_outcomes: Array[String] = []
+			if not trial_outcome.is_empty():
+				for saved_recipe_id in trial_outcome.split(","):
+					var outcome_id := str(saved_recipe_id)
+					if not _product_by_id(outcome_id).is_empty() and not kept_outcomes.has(outcome_id):
+						kept_outcomes.append(outcome_id)
+			lab_trials[trial_key] = ",".join(kept_outcomes)
+	var saved_mix = config.get_value("game", "lab_mix", {})
+	lab_mix.clear()
+	if saved_mix is Dictionary:
+		var mix_units := 0
+		# Percorre o catálogo, não as chaves do arquivo: a ordem do dicionário lido do
+		# disco não é garantida, e a mesa tem de montar a mesma mistura duas cargas seguidas.
+		for ingredient in Ingredients.DATA:
+			var mix_kind := str(ingredient["id"])
+			if not saved_mix.has(mix_kind):
+				continue
+			var planned := clampi(int(saved_mix[mix_kind]), 0, int(ingredient_stock.get(mix_kind, 0)))
+			if planned <= 0 or lab_mix.size() >= LAB_MAX_KINDS or mix_units + planned > LAB_MAX_UNITS:
+				continue
+			lab_mix[mix_kind] = planned
+			mix_units += planned
+	lab_hints = _lab_ids_from_file(config.get_value("game", "lab_hints", []))
+	lab_discovered = _lab_ids_from_file(config.get_value("game", "lab_discovered", []))
+	lab_flops = maxi(0, int(config.get_value("game", "lab_flops", lab_flops)))
 	queue_distractions = int(config.get_value("game", "queue_distractions", queue_distractions))
 	ticks = maxi(0, int(config.get_value("game", "ticks", ticks)))
 	catalyst_enabled = bool(config.get_value("game", "catalyst_enabled", catalyst_enabled))
@@ -8622,6 +9067,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "poco_atravessado", "name": "Poço Sem Fundo por %d dias de balcão" % HARDEST_LIFE_DAYS, "condition": int(difficulty_days.get("poco_sem_fundo", 0)) >= HARDEST_LIFE_DAYS, "gold": 90, "rep": 5},
 		{"id": "credit_paid_five", "name": "Quem deve, paga (5 notas quitadas no balcão)", "condition": credit_paid >= 5, "gold": 75, "rep": 4},
 		{"id": "credit_red_ink", "name": "Tinta vermelha no livro (3 notas riscadas)", "condition": credit_written >= 3, "gold": 50, "rep": 0},
+		{"id": "lab_first_spark", "name": "Primeira faísca na bancada (receita travada descoberta por ensaio)", "condition": lab_discovered.size() >= 1, "gold": 60, "rep": 3, "pose": "book"},
+		{"id": "lab_full_bench", "name": "A bancada venceu o nível (%d receitas travadas arrancadas por ensaio)" % _lab_targets_total(), "condition": lab_discovered.size() >= _lab_targets_total(), "gold": 300, "rep": 12, "pose": "aplausos"},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
 		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"},
 		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
@@ -10207,6 +10654,13 @@ func _reset_run() -> void:
 	# ficou de fora, então a tinta velha some toda.
 	spec_choice.clear()
 	known_recipes.clear()
+	# A bancada é da vida: o caderno de becos e a mesa em brasa são o que esta tentativa
+	# aprendeu, e a vida nova existe justamente para aprender outros.
+	lab_trials.clear()
+	lab_mix.clear()
+	lab_hints.clear()
+	lab_discovered.clear()
+	lab_flops = 0
 	daily_quest_index = 0
 	daily_quest_progress = 0
 	daily_quest_claimed = false
