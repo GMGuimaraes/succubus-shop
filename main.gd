@@ -218,19 +218,74 @@ var vicar_announced_day: int = 0
 ## consequência visível do que já é.
 const PROGRESS_BAND_SCORES: Array[int] = [0, 900, 2400, 5200, 9000]
 const PROGRESS_BAND_NAMES: Array[String] = [
-	"loja de beco", "balcão arrumado", "casa respeitada", "endereço no bairro", "império da rua",
+	"casa em obras", "balcão arrumado", "casa respeitada", "endereço no bairro", "império da rua",
+]
+## A luz de cada faixa, aplicada sobre o mesmo PNG. A escada começa ABAIXO da cor
+## original de propósito: o estado pintado da arte é o meio da escada (faixa 2, "casa
+## respeitada"), não o ponto de partida. Quem abre o jogo pela primeira vez vê um salão
+## cru e sem luz acesa; quem fecha a vida no império vê a mesma pintura mais quente do
+## que ela jamais foi. Um valor por faixa, sem fórmula, para a escada poder ter degrau
+## torto onde a sensação pedir.
+##
+## O degrau 0 é medido na tela, não no papel: a 0,58 o salão continuava mobiliado e
+## aceso, e "casa em obras" tem de constranger antes de premiar. Abaixo de 0,5 o
+## painel de texto fica ilegível, e é por isso que a luz só desce até aí.
+const PROGRESS_BAND_LIGHT: Array[Color] = [
+	Color(0.46, 0.46, 0.62),
+	Color(0.72, 0.72, 0.85),
+	Color(1.00, 1.00, 1.00),
+	Color(1.06, 1.03, 0.96),
+	Color(1.12, 1.07, 0.93),
 ]
 ## O que cada faixa acende. É a mesma lista que a camada desenhada em código lê,
 ## escrita para o painel: ninguém decora o que a chefe não consegue nomear.
 const PROGRESS_BAND_GIFTS: Array[String] = [
-	"o salão cru, com uma vela e o balcão de sempre",
+	"o salão em obras: poeira no ar, massa crua na parede, lona no piso e uma lâmpada no fio",
 	"piso encerado e tapete realçado na faixa de passeio",
 	"+ cordão de velas acesas nas paredes do salão",
 	"+ caixilho dourado na moldura da tela",
 	"+ lustre aceso no teto e poeira dourada no ar",
 ]
-## Onde a arte de cada sala já pintou o próprio tapete, em fração da tela. A camada
-## não desenha móvel novo por cima de móvel velho: ela realça o que já está lá.
+## A obra da faixa 0, em fração da tela. Nada aqui desenha um cenário novo nem emoldura
+## a arte que já existe: são demãos que faltam na parede, pano no piso, prancha de
+## andaime, entulho ancorado na linha do chão e o fio da lâmpada. Os móveis cobertos de
+## lona não usam coordenada nenhuma: é a própria cor do recorte dos móveis que fica
+## lavada (ver `_apply_progress_decor`), porque a oclusão repinta o móvel POR CIMA da
+## camada e comeria qualquer pano desenhado ali.
+##
+## A gramática é escura por medida, não por gosto: a arte do salão é saturada e no
+## escuro, e o probe `tools/probes/cara.gd` mostrou que retângulo claro por cima dela lê
+## como vidro fosco de interface, não como obra. Falta é sombra.
+##
+## A geometria fica na faixa de passeio da recepção (x 0,20 a 0,42), que é o piso livre
+## da sala principal. Sala onde uma peça colide com o contorno de um móvel mostra o que
+## sobra — mesma regra do tapete e do caixilho.
+const RENOVATION_WALL_PATCHES: Array[Rect2] = [
+	Rect2(0.185, 0.055, 0.175, 0.135),
+	Rect2(0.44, 0.02, 0.135, 0.095),
+	Rect2(0.675, 0.095, 0.165, 0.115),
+	Rect2(0.30, 0.235, 0.105, 0.085),
+	Rect2(0.78, 0.275, 0.12, 0.075),
+]
+## Pares de pé-direito do escoramento (dois por cavalete) e a altura da prancha.
+const RENOVATION_POLES: Array[float] = [0.222, 0.268, 0.352, 0.398]
+const RENOVATION_PLANK_Y := 0.455
+## A lona estendida no piso, em quatro cantos: superior esquerdo, superior direito,
+## inferior direito, inferior esquerdo. É o único claro grande da cena, e por isso é
+## chumbo, não branco.
+const RENOVATION_CLOTH: Array[Vector2] = [
+	Vector2(0.185, 0.795), Vector2(0.415, 0.772), Vector2(0.475, 0.905), Vector2(0.150, 0.928),
+]
+## Montículos de entulho, em deslocamento a partir do ponto do chão pintado: o pé
+## prende no piso da sala, não numa altura arbitrária da tela.
+const RENOVATION_RUBBLE: Array[Vector2] = [
+	Vector2(-0.375, -0.008), Vector2(-0.295, 0.012), Vector2(-0.225, -0.018),
+]
+## Balde de tinta no pé do andaime, em deslocamento do ponto do chão.
+const RENOVATION_BUCKET := Vector2(-0.185, 0.004)
+## Quantas faixas de progresso ainda mostram a obra. A lona some antes do luxo chegar,
+## senão a casa "respeitada" continuaria com o balcão tapado.
+const RENOVATION_LAST_BAND := 1
 ## Sala sem entrada aqui recebe a faixa de passeio no lugar.
 const PROGRESS_RUG := {
 	"res://assets/shop_scene.png": [
@@ -9958,63 +10013,238 @@ func _progress_band_now() -> int:
 			band = i
 	return band
 
-## Aplica a faixa: redesenha a camada, esquenta o fundo pintado do mesmo salão e
-## engorda a poeira do ar. Roda a cada atualização de painel e só faz alguma coisa
-## quando a faixa realmente muda, para não redesenhar o salão a cada tique.
+## Quanto da obra ainda está de pé numa faixa: 1.0 no canteiro, quase seca na
+## primeira reforma, 0.0 quando a casa já tem piso encerado. A lona não pode morar
+## numa loja "respeitada" — quem reformou tirou o pano, e a faixa tem de dizer isso.
+func _renovation_alpha(band: int) -> float:
+	if band > RENOVATION_LAST_BAND:
+		return 0.0
+	return 1.0 if band <= 0 else 0.45
+
+
+## Aplica a faixa: esquenta o fundo pintado do mesmo salão, lava a cor dos móveis
+## enquanto há lona, engorda a poeira do ar e, na mudança de faixa, redesenha a
+## camada. A luz e o pó acompanham a faixa em todo painel — trocar `modulate` não
+## custa nada, e é o que faz a casa abrir já em obras sem que ninguém tenha subido
+## a escada (faixa 0 nunca é "mudança"). O redraw e o aviso da chefe, esses ficam só
+## na mudança: redesenhar o salão a cada tique é redesenhar a mesma coisa.
 func _apply_progress_decor() -> void:
 	var band := _progress_band_now()
 	var antes := _progress_band
 	var quiet := _progress_quiet
 	_progress_quiet = false
+	# O mesmo PNG, um degrau mais quente e mais aceso: a casa não troca de arte,
+	# troca de luz, e é a luz que o olho lê como "essa loja cresceu". A obra começa
+	# abaixo da cor original — fria e apagada, parede sem última demão e nenhuma vela
+	# acesa — e a faixa 0 é justamente o canteiro. O aquecimento é o prêmio.
+	if is_instance_valid(background_layer):
+		background_layer.modulate = PROGRESS_BAND_LIGHT[
+			clampi(band, 0, PROGRESS_BAND_LIGHT.size() - 1)]
+	# O elenco mora na sala, então a luz da sala o atinge. Sem isso o corpo entra
+	# num salão a 0,46 queimando a 1,0 e vira desenho colado por cima da foto. O
+	# matiz vai a 0,78 do degradê e não 1,0: rosto precisa continuar lendo como
+	# rosto, e o escuro da obra é mais funda atrás do que em cima de quem trabalha.
+	# Só se troca o rgb — o alfa é do fade de troca de sala.
+	if is_instance_valid(stage_layer):
+		var luz: Color = PROGRESS_BAND_LIGHT[clampi(band, 0, PROGRESS_BAND_LIGHT.size() - 1)]
+		var corpo := Color(1.0, 1.0, 1.0).lerp(luz, 0.78)
+		stage_layer.modulate = Color(corpo.r, corpo.g, corpo.b, stage_layer.modulate.a)
+	# O móvel coberto tem outra cor: os móveis voltam ao tom de tinta quando a lona
+	# sai. A lona é clara porque pega a lâmpada, mas mora num salão escuro — clara
+	# demais, ela vira o objeto mais aceso da sala e a obra some. Só se troca o
+	# matiz aqui — o alfa é do fade de troca de sala, e mexer nele seria cortar a
+	# animação de outra.
+	if is_instance_valid(stage_occluder):
+		var washed := Color(1.0, 1.0, 1.0).lerp(Color(0.66, 0.68, 0.80), _renovation_alpha(band))
+		stage_occluder.modulate = Color(
+			washed.r, washed.g, washed.b, stage_occluder.modulate.a)
+	if is_instance_valid(ambient_particles):
+		# No canteiro o ar é grosso de pó de gesso; depois, a poeira dourada do luxo.
+		ambient_particles.amount = 52 if band <= 0 else 24 + band * 12
 	if band == antes:
 		return
 	_progress_band = band
 	if is_instance_valid(_progress_layer):
 		_progress_layer.queue_redraw()
-	# O mesmo PNG, um degrau mais quente e mais aceso: a casa não troca de arte,
-	# troca de luz, e é a luz que o olho lê como "essa loja cresceu". A faixa 0 é
-	# a cor original da pintura — o aquecimento é o prêmio, não o ponto de partida.
-	if is_instance_valid(background_layer):
-		var lift := float(band) * 0.045
-		background_layer.modulate = Color(1.0 + lift * 0.6, 1.0 + lift * 0.35, 1.0 - lift * 0.3)
-		background_layer.modulate.a = 1.0
-	if is_instance_valid(ambient_particles):
-		ambient_particles.amount = 24 + band * 12
 	# A faixa sobe sozinha, mas quem avisa é a chefe: ninguém pode descobrir o
 	# salão novo por acidente no meio de uma venda.
 	if band > antes and not quiet:
 		last_event = "A casa virou %s: %s" % [PROGRESS_BAND_NAMES[band], PROGRESS_BAND_GIFTS[band]]
 		_show_stage_emotion(stage_seller_body, "felicidade")
 
+## A obra em si, desenhada na camada entre o fundo pintado e o elenco: poeira no ar,
+## massa crua na parede, lona no piso, escoramento de madeira, entulho com o pé na
+## linha do chão, balde de tinta e uma única lâmpada no fio. Nenhum pixel de cenário
+## novo, nenhuma moldura, nenhuma arte duplicada — é a mesma sala, inacabada.
+func _draw_progress_works(wide: float, tall: float, ground: Vector2, alpha: float) -> void:
+	var stroke := maxf(1.0, wide * 0.0018)
+	# 1) Teto sem luz: a meia-luz da obra mora em cima, onde não há lustre nem vela
+	# acesa. São três faixas horizontais de carga decrescente, e não um gradiente — a
+	# camada só sabe retângulo, e retângulo escuro de carga baixa ninguém vê como régua.
+	for demao in range(3):
+		_progress_layer.draw_rect(Rect2(0.0, tall * float(demao) / 3.0, wide, tall / 3.0),
+			Color(0.10, 0.09, 0.16, (0.11 - float(demao) * 0.04) * alpha))
+	# 2) Parede sem última demão: onde a massa ainda não recebeu tinta é MAIS ESCURA que
+	# a parede. Cada remendo são dois retângulos deslocados, sem contorno — um traço de
+	# régua na beirada seria o suficiente para virar janela.
+	for i in RENOVATION_WALL_PATCHES.size():
+		var patch: Rect2 = RENOVATION_WALL_PATCHES[i]
+		var area := Rect2(wide * patch.position.x, tall * patch.position.y,
+			wide * patch.size.x, tall * patch.size.y)
+		_progress_layer.draw_rect(area, Color(0.10, 0.09, 0.13, 0.42 * alpha))
+		_progress_layer.draw_rect(Rect2(area.position.x + area.size.x * 0.12,
+			area.position.y + area.size.y * 0.16, area.size.x * 0.7, area.size.y * 0.62),
+			Color(0.17, 0.15, 0.20, 0.34 * alpha))
+		# A borda de baixo do remendo é a única parte clara: é onde a massa termina e a
+		# tinta começa, e sem esse degrau o retângulo escuro é só sombra de interface.
+		_progress_layer.draw_rect(Rect2(area.position.x, area.end.y - tall * 0.008,
+			area.size.x, tall * 0.008), Color(0.44, 0.41, 0.44, 0.20 * alpha))
+	# 3) Lona no piso: o pano que a obra estende para receber tinta e gesso. Fica no
+	# piso livre da frente da sala, onde o elenco passa por cima — corpo na frente do
+	# pano é o que faz o pano estar no chão e não flutuando.
+	var cloth := PackedVector2Array([])
+	for canto in RENOVATION_CLOTH.size():
+		var aqui: Vector2 = RENOVATION_CLOTH[canto]
+		cloth.append(Vector2(wide * aqui.x, tall * aqui.y))
+	_progress_layer.draw_colored_polygon(cloth, Color(0.52, 0.51, 0.58, 0.30 * alpha))
+	for vinco in range(3):
+		var t := 0.22 + float(vinco) * 0.26
+		_progress_layer.draw_line(cloth[0].lerp(cloth[1], t), cloth[3].lerp(cloth[2], t),
+			Color(0.18, 0.17, 0.22, 0.26 * alpha), stroke)
+	# 4) Escoramento: cavaletes de dois pés com prancha por cima. Os pés batem na linha
+	# do chão pintado, então o andaime pertence à sala, não à tela, e o elenco passa na
+	# frente dele porque a camada é mais funda que o palco. O pé é largo o bastante para
+	# ter duas bordas legíveis: a 5 pixels de traço ele era linha verde flutuando na
+	# sala, e linha não é móvel de obra.
+	var pole_w := maxf(3.0, wide * 0.0075)
+	var plank_y := tall * RENOVATION_PLANK_Y
+	var plank_w := maxf(2.0, tall * 0.014)
+	for i in range(0, RENOVATION_POLES.size(), 2):
+		var left := RENOVATION_POLES[i]
+		var right: float = RENOVATION_POLES[mini(i + 1, RENOVATION_POLES.size() - 1)]
+		for par in [left, right]:
+			var head := Vector2(wide * par, plank_y)
+			var foot := Vector2(wide * par, ground.y)
+			_progress_layer.draw_line(head, foot, Color(0.20, 0.15, 0.11, 0.92 * alpha), pole_w)
+			# O pé só existe na meia-luz porque tem aresta iluminada pela lâmpada: um
+			# fio claro do lado que dá para a luz, e a madeira volta a ser objeto.
+			_progress_layer.draw_line(head + Vector2(-pole_w * 0.5, 0.0),
+				foot + Vector2(-pole_w * 0.5, 0.0),
+				Color(0.62, 0.50, 0.36, 0.62 * alpha), maxf(1.5, stroke * 1.2))
+			_progress_layer.draw_circle(foot, pole_w * 1.4, Color(0.05, 0.04, 0.07, 0.45 * alpha))
+		var board := Rect2(wide * (left - 0.014), plank_y - plank_w * 0.5,
+			wide * (right - left + 0.028), plank_w)
+		_progress_layer.draw_rect(board, Color(0.30, 0.23, 0.15, 0.92 * alpha))
+		_progress_layer.draw_rect(Rect2(board.position.x, board.position.y,
+			board.size.x, plank_w * 0.26), Color(0.66, 0.54, 0.38, 0.55 * alpha))
+		_progress_layer.draw_rect(Rect2(board.position.x, board.end.y - plank_w * 0.3,
+			board.size.x, plank_w * 0.3), Color(0.10, 0.07, 0.06, 0.85 * alpha))
+		_progress_layer.draw_line(
+			Vector2(board.position.x + board.size.x * 0.5, board.position.y),
+			Vector2(board.position.x + board.size.x * 0.5, board.end.y),
+			Color(0.08, 0.06, 0.05, 0.60 * alpha), stroke)
+	# 5) Entulho: montículo após montículo com a base na linha do chão. Três arcos de
+	# raio diferente fazem pilha de gesso sem desenho novo, e o tijolo dá o canto duro
+	# que a pilha arredondada sozinha não tem.
+	for i in RENOVATION_RUBBLE.size():
+		var offset: Vector2 = RENOVATION_RUBBLE[i]
+		_draw_rubble_mound(ground + Vector2(wide * offset.x, tall * offset.y), wide * 0.050, alpha)
+	var bucket := ground + Vector2(wide * RENOVATION_BUCKET.x, tall * RENOVATION_BUCKET.y)
+	var bucket_w := wide * 0.022
+	_progress_layer.draw_colored_polygon(PackedVector2Array([
+		bucket + Vector2(-bucket_w, -tall * 0.028),
+		bucket + Vector2(bucket_w * 1.15, -tall * 0.028),
+		bucket + Vector2(bucket_w * 0.8, 0.0),
+		bucket + Vector2(-bucket_w * 0.7, 0.0),
+	]), Color(0.18, 0.18, 0.24, 0.80 * alpha))
+	_progress_layer.draw_line(bucket + Vector2(-bucket_w, -tall * 0.028),
+		bucket + Vector2(bucket_w * 1.15, -tall * 0.028),
+		Color(0.62, 0.62, 0.70, 0.40 * alpha), stroke)
+	# 6) A lâmpada do fio: enquanto não há lustre, a casa inteira depende de uma só
+	# lâmpada na altura de trabalho. O centro é a luz pintada mais próxima do meio do
+	# teto, porque é ali que o olho já procura o cabo.
+	var lamps: Array = STAGE_ROOM_LIGHTS.get(_stage_room, [])
+	var bulb_x := wide * 0.5
+	var best := 9.9
+	for lamp in lamps:
+		var aqui_luz: Vector2 = lamp
+		var score := absf(aqui_luz.x - 0.5) + aqui_luz.y
+		if score < best:
+			best = score
+			bulb_x = wide * aqui_luz.x
+	var bulb := Vector2(bulb_x, tall * 0.245)
+	_progress_layer.draw_line(Vector2(bulb_x, 0.0),
+		Vector2(bulb_x + wide * 0.006, bulb.y - tall * 0.010),
+		Color(0.07, 0.06, 0.08, 0.85 * alpha), stroke)
+	_progress_layer.draw_rect(Rect2(bulb + Vector2(-wide * 0.0035, -tall * 0.016),
+		Vector2(wide * 0.007, tall * 0.008)), Color(0.16, 0.15, 0.15, 0.85 * alpha))
+	_progress_layer.draw_circle(bulb, wide * 0.055, Color(1.0, 0.78, 0.40, 0.06 * alpha))
+	_progress_layer.draw_circle(bulb, wide * 0.026, Color(1.0, 0.82, 0.46, 0.12 * alpha))
+	_progress_layer.draw_circle(bulb, wide * 0.009, Color(1.0, 0.94, 0.72, 0.85 * alpha))
+	_progress_layer.draw_colored_polygon(PackedVector2Array([
+		bulb + Vector2(-wide * 0.012, tall * 0.007),
+		bulb + Vector2(wide * 0.012, tall * 0.007),
+		Vector2(bulb_x + wide * 0.16, ground.y),
+		Vector2(bulb_x - wide * 0.16, ground.y),
+	]), Color(1.0, 0.84, 0.50, 0.055 * alpha))
+
+## Um montículo de entulho: meia-cúpula chata, em três tamancos, com a base exatamente
+## na linha do chão. Sem RNG — o salão tem de sair igual de um redraw para o outro.
+func _draw_rubble_mound(center: Vector2, radius: float, alpha: float) -> void:
+	# A sombra no pé é o que prega a pilha no chão: sem ela o montículo flutua. Vem
+	# antes das cúpulas, para sobrar dela só a borda em volta da base.
+	_progress_layer.draw_circle(center, radius * 0.9, Color(0.05, 0.04, 0.07, 0.34 * alpha))
+	for tier in range(3):
+		var r := radius * (1.0 - float(tier) * 0.26)
+		var pe := center + Vector2(radius * 0.42 * float(tier - 1), -r * 0.06 * float(tier))
+		var shell := PackedVector2Array([pe + Vector2(-r, 0.0)])
+		for step in range(1, 6):
+			var angle := PI - float(step) * PI / 6.0
+			shell.append(pe + Vector2(cos(angle) * r, sin(angle) * -r * 0.58))
+		shell.append(pe + Vector2(r, 0.0))
+		_progress_layer.draw_colored_polygon(shell,
+			Color(0.36, 0.34, 0.38, (0.50 + float(tier) * 0.15) * alpha))
+	for tijolo in range(2):
+		var canto := center + Vector2(radius * (0.62 - float(tijolo) * 1.24), -radius * 0.2 * float(tijolo))
+		_progress_layer.draw_rect(Rect2(canto, Vector2(radius * 0.36, radius * 0.16)),
+			Color(0.34, 0.20, 0.16, 0.75 * alpha))
+
 ## A camada em si: tudo desenhado em código, em coordenadas normalizadas da sala,
 ## para funcionar nas quatro salas sem arte nova e sem arquivo novo no repositório.
 func _draw_progress_decor() -> void:
-	if _progress_band <= 0 or not _stage_walkable or _progress_layer.size.x <= 0.0:
+	if not _stage_walkable or _progress_layer.size.x <= 0.0:
 		return
 	var wide := _progress_layer.size.x
 	var tall := _progress_layer.size.y
 	var floor_line: Vector2 = STAGE_ROOM_FLOOR.get(_stage_room, Vector2(0.60, 0.80))
 	var ground := Vector2(wide * floor_line.x, tall * floor_line.y)
+	var obras := _renovation_alpha(_progress_band)
+	# A faixa 0 é o canteiro: nada de tapete, porque o piso ainda não foi encerado.
 	# Faixa 1 — o piso encerado: a camada não desenha um tapete novo por cima do
 	# que a arte já pintou, ela realça o tapete que está lá. Uma lavagem quente e
 	# outra funda na mesma silhueta, e o brilho da borda de trás.
-	var mat := PackedVector2Array([])
-	var rug: Array = PROGRESS_RUG.get(_stage_room, [])
-	if rug.size() == 4:
-		for corner in rug:
-			mat.append(Vector2(wide * (corner as Vector2).x, tall * (corner as Vector2).y))
-	else:
-		var w := wide * 0.30
-		var deep := tall * 0.055
-		mat = PackedVector2Array([
-			ground + Vector2(-w * 0.55, -deep * 2.0),
-			ground + Vector2(w * 0.55, -deep * 2.0),
-			ground + Vector2(w, deep),
-			ground + Vector2(-w, deep),
-		])
-	_progress_layer.draw_colored_polygon(mat, Color(1.0, 0.70, 0.36, 0.09))
-	_progress_layer.draw_colored_polygon(mat, Color(0.20, 0.02, 0.09, 0.16))
-	_progress_layer.draw_line(mat[0], mat[1], Color(0.88, 0.70, 0.34, 0.28), 2.0)
+	if _progress_band >= 1:
+		var mat := PackedVector2Array([])
+		var rug: Array = PROGRESS_RUG.get(_stage_room, [])
+		if rug.size() == 4:
+			for corner in rug:
+				mat.append(Vector2(wide * (corner as Vector2).x, tall * (corner as Vector2).y))
+		else:
+			var w := wide * 0.30
+			var deep := tall * 0.055
+			mat = PackedVector2Array([
+				ground + Vector2(-w * 0.55, -deep * 2.0),
+				ground + Vector2(w * 0.55, -deep * 2.0),
+				ground + Vector2(w, deep),
+				ground + Vector2(-w, deep),
+			])
+		_progress_layer.draw_colored_polygon(mat, Color(1.0, 0.70, 0.36, 0.09))
+		_progress_layer.draw_colored_polygon(mat, Color(0.20, 0.02, 0.09, 0.16))
+		_progress_layer.draw_line(mat[0], mat[1], Color(0.88, 0.70, 0.34, 0.28), 2.0)
+	# A obra por último: prancha, pé de escoramento e entulho têm de aparecer na
+	# frente do tapete, senão o andaime afunda no piso encerado.
+	if obras > 0.0:
+		_draw_progress_works(wide, tall, ground, obras)
 	if _progress_band < 2:
 		return
 	# Faixa 2 — velas acesas: cada luz que a sala já tem na arte ganha o próprio
