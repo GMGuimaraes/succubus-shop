@@ -18,13 +18,15 @@ extends SceneTree
 ##   env APPDATA="D:\\Downloads\\tmp-userdata" godot --headless --path . \
 ##     --quit-after 90000 --script res://tools/probes/idioma.gd
 ##
-## Veredito medido nesta rodada: catálogo de 80 chaves, com en 80/80 e es 80/80 e **zero
-## órfãs** entre as duas; a mesma frase sai "Ouro: %d / TALENTOS / ⚒ Forja" em pt,
+## Veredito medido nesta rodada: catálogo de 142 chaves, com en 142/142 e es 142/142 e
+## **zero órfãs** entre as duas; a mesma frase sai "Ouro: %d / TALENTOS / ⚒ Forja" em pt,
 ## "Gold: %d / TALENTS / ⚒ Forge" em en e "Oro: %d / TAENTOS / ⚒ Forja" em es. Registrar
 ## duas vezes deixa 3 tabelas no motor (sem duplicata). A armadilha do melhor-ajuste é
 ## real e medida: locale sem tabela ("de") acorda **em inglês** — por isso o português tem
 ## tabela identidade; ainda assim `set_locale("pt")` depois de inglês devolve "Ouro: 0".
-## ESC: menu abre (relógio para, 3 botões de idioma), ESC fecha (relógio volta), e por
+## ESC: menu abre a RAIZ (relógio para; o seletor não mora mais ali, mora na camada 🌐 a um
+## toque, e descendo nela os 3 botões de idioma aparecem com o ✓ na escolha), ESC volta para
+## a raiz e fecha (relógio volta), e por
 ## cima do balanço do dia o fechar **não** acorda a rua. Primeira abertura: sem escolha o
 ## jogo não abre menu em headless (não há quem clique) mas `locale_confirmed` está
 ## false; `_open_menu(true)` mostra o seletor, e fechar sem escolher grava preferência no
@@ -39,7 +41,13 @@ extends SceneTree
 ## Arquivo quebrado (settings "francês", save "klingon") acorda em pt com o painel de pé.
 ## Duzentos tiques sob a mesma semente, uma loja em pt e outra em en, fecharam **idênticas**
 ## (caixa 755 • fama 0 • 5 atendidos • 174 decepções • dia 11 • estoque 0 • placar 1024):
-## tradução não é engrenagem.
+## tradução não é engrenagem. A faixa da casa é o caso difícil e foi medida na loja de
+## verdade, não no catálogo: `A CASA ESTÁ: casa em obras (placar 45) — …` vira
+## `THE HOUSE IS: house under repair (score 45) — the hall under repair: …` em en e
+## `LA CASA ES: casa en obras (puntos 45) — el salón en obras: …` em es, nas duas pontas da
+## escada (0 e 4), e o aviso "A casa virou …" acompanha. Nome e presente vêm de lista, a
+## frase nasce montada, então é o `tr()` do chamador que salva — traduzir o catálogo sem
+## tocar em `main.gd` deixaria o painel em português dentro de uma loja em inglês.
 
 const SEED_VAL := 20261015
 const TICKS := 200
@@ -68,6 +76,36 @@ func _initialize() -> void:
 	var depois := TranslationServer.get_translations().size()
 	print("   registrar duas vezes: %d -> %d tabela(s) no motor (esperado idem)" % [antes, depois])
 
+	# O painel de faixa é o caso difícil: nome e presente vêm de listas e a frase é
+	# montada na hora, então só o `tr()` do chamador salva. Lido na loja de verdade,
+	# não traduzido à mão na sonda — copiar o molde aqui seria provar outra coisa.
+	print("── a faixa da casa fala as três línguas ──")
+	var casa = (load("res://main.tscn") as PackedScene).instantiate()
+	get_root().add_child(casa)
+	await _frames(4)
+	casa.world_timer.stop()
+	casa._reset_run()
+	for banda in [0, 4]:
+		casa.gold = int(casa.PROGRESS_BAND_SCORES[banda])
+		var bocas: Array[String] = []
+		for id in ids:
+			TranslationServer.set_locale(id)
+			casa._refresh_ui()
+			bocas.append("%s: %s" % [id, casa._progress_line()])
+		print("   faixa %d -> %s" % [banda, "  ||  ".join(bocas)])
+		var aviso: Array[String] = []
+		for id in ids:
+			TranslationServer.set_locale(id)
+			# `TranslationServer.translate` em vez de `tr` da SceneTree: o `tr` prende o
+			# contexto ao nome da classe, e aqui o que se quer medir é a chave solta.
+			aviso.append("%s: %s" % [id, TranslationServer.translate("A casa virou %s: %s") % [
+				TranslationServer.translate(casa.PROGRESS_BAND_NAMES[banda]),
+				TranslationServer.translate(casa.PROGRESS_BAND_GIFTS[banda])]])
+		print("      aviso -> %s" % "  ||  ".join(aviso))
+	TranslationServer.set_locale(Locales.DEFAULT)
+	casa.queue_free()
+	await _frames(2)
+
 	print("── voltar ao português volta de verdade ──")
 	TranslationServer.set_locale("en")
 	var em_ingles: String = TranslationServer.translate("Ouro: 0")
@@ -88,10 +126,24 @@ func _initialize() -> void:
 		"fechado" if not is_instance_valid(loja.menu_layer) else "aberto",
 		"rodando" if not loja.world_timer.is_stopped() else "parado"])
 	_esc(loja)
-	print("   depois do ESC: menu %s • relógio %s • %d botão(ões) de idioma • modo abertura %s" % [
+	print("   depois do ESC: menu %s • relógio %s • raiz com %d item(ns) • modo abertura %s" % [
 		"aberto" if is_instance_valid(loja.menu_layer) else "fechado",
 		"parado" if loja.world_timer.is_stopped() else "RODANDO",
-		loja.menu_language_buttons.size(), str(loja.menu_start_mode)])
+		loja.menu_box.get_child_count(), str(loja.menu_start_mode)])
+	# O seletor saiu da raiz: hoje mora na camada 🌐, a um toque do menu. Descer nela é
+	# a conta honesta dos botões de idioma.
+	var porta = _porta_da_camada(loja, "🌐")
+	if porta != null:
+		porta.pressed.emit()
+		await _frames(2)
+		print("   camada 🌐 Idioma: %d botão(ões) de idioma • o ✓ está em %s" % [
+			loja.menu_language_buttons.size(), _marcado(loja)])
+		var de_volta_raiz = _porta_da_camada(loja, "←")
+		if de_volta_raiz != null:
+			de_volta_raiz.pressed.emit()
+			await _frames(2)
+			print("   voltar sobe para a raiz: %s" % (
+				"sim" if str(loja.menu_screen) == "root" else "NÃO (%s)" % loja.menu_screen))
 	_esc(loja)
 	print("   ESC de novo: menu %s • relógio %s" % [
 		"aberto" if is_instance_valid(loja.menu_layer) else "fechado",
@@ -137,8 +189,8 @@ func _initialize() -> void:
 	print("   painel em inglês: %s" % " •  ".join(_painel_textos(loja)))
 	print("   aba (o motor traduz ao desenhar): text=%s • tr()=%s • auto_translate=%s" % [
 		loja.forge_button.text, loja.tr("⚒ Forja"), str(loja.forge_button.auto_translate_mode)])
-	print("   menu redesenhado: %d botões • o ✓ está em %s" % [
-		loja.menu_language_buttons.size(), _marcado(loja)])
+	print("   ✓ do seletor (camada 🌐, não desenhada na raiz): está em %s • %d botão(ões) de idioma em tela" % [
+		_marcado(loja), loja.menu_language_buttons.size()])
 	loja._pick_locale("es")
 	print("   castelhano: %s" % " •  ".join(_painel_textos(loja)))
 	loja._pick_locale("pt")
@@ -217,6 +269,17 @@ func _painel_textos(loja) -> Array[String]:
 			loja.affection_label, loja.speed_label]:
 		textos.append(str(label.text))
 	return textos
+
+
+## O botão da camada do menu cujo rótulo começa com o prefixo dado. Descer de camada por
+## aqui é apertar o botão de verdade, e não chamar `_show_menu_screen` por fora.
+func _porta_da_camada(loja, prefixo: String):
+	if not is_instance_valid(loja.menu_box):
+		return null
+	for filho in loja.menu_box.get_children():
+		if filho is Button and str(filho.text).contains(prefixo):
+			return filho
+	return null
 
 
 ## Qual botão de idioma do menu carrega o ✓: a escolha precisa aparecer marcada.

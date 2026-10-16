@@ -26,8 +26,8 @@ extends SceneTree
 ## Arrombo medido em caixa de 1000: saco de 90, 22 de barro, +1 de fúria, −2 de
 ## reputação e 1 peça fora da prateleira (5 → 4, a melhor do produto sorteado). Com a
 ## milícia, a porta segurada devolve 45 e sobe 2 de reputação em vez de 1. Trinta
-## viradas de jogo real, com ronda e criada contratadas e seis recusas na conta: 4
-## portas seguradas, 4 arrombadas, chance fechando em 26% e a dobradiça paga no
+## viradas de jogo real, com ronda e criada contratadas e seis recusas na conta: 5
+## portas seguradas, 8 arrombadas, chance fechando em 25% e a dobradiça paga no
 ## terceiro carimbo (defesa 0 → 10). Save: as dez chaves novas atravessam o
 ## carregamento; postura "santificado", escudo até o dia 999999, −5 portas e
 ## "espada_laser" duplicado acordam em postura vazia, portas 0 e só ["dobradica"].

@@ -75,6 +75,12 @@ var season_baseline: Dictionary = {}
 ## vida — sair dele é tão conquistador quanto nunca ter caído.
 var debt: int = 0
 var debt_peak: int = 0
+## A regra da casa nesta vida: etiqueta, conta e rua escalam por ela. O que a
+## reencarnação paga é a média dos dias efetivamente vividos em cada regra, então trocar
+## de modo no meio do caminho dilui o bônus em vez de comprá-lo.
+var difficulty: String = "calcada"
+## Dias de balcão vividos sob cada regra nesta vida ({ id_do_modo: dias }).
+var difficulty_days: Dictionary = {}
 ## Vidas que fecharam no vermelho, e as temporadas marcadas como perdidas no placar.
 var ruined_lives: int = 0
 var ruined_seasons: Array[String] = []
@@ -149,6 +155,16 @@ var prisoners: Array[Dictionary] = []
 var banned_regulars: Array[String] = []
 ## Frascos de sangue colhidos na cela nesta vida, só para a conquista contar.
 var blood_harvested: int = 0
+## O livro de fiado desta vida. Degrau zero = gaveta fechada, e com a gaveta fechada
+## nenhuma conta de antes se move. A nota é `id do freguês -> quanto deve, dia do
+## prazo e dias de atraso`, e a cobrança roda na virada, junto com casa e filiais.
+var credit_rank: int = 0
+var credit_book: Dictionary = {}
+## Contadores da vida que as conquistas lêem: nota quitada, nota riscada e o ouro que
+## a casa emprestou e nunca viu voltar.
+var credit_paid: int = 0
+var credit_written: int = 0
+var credit_lost_gold: int = 0
 ## Conserva da casa: cada visita pisa barro, a vassoura custa ouro, e a etiqueta
 ## despenca no salão imundo. Os números são a única novidade; todos caem em
 ## fórmulas que o jogo já usava (paciência de fila, multiplicador de preço, conta
@@ -177,6 +193,63 @@ const VANDAL_CHANCE_PER_MESS := 0.14
 ## Abaixo desta reputação o beco entende que a casa não tem quem a defenda, e cada
 ## ponto que falta vira convite.
 const VANDAL_REP_SHIELD := 8
+## As três regras da casa. Nenhum número aqui é enfeite: cada fator é consumido no
+## lugar onde o jogo já media aquela grandeza — a etiqueta sai por `_piece_price`, a
+## conta por `_daily_upkeep`, a rua por `_vandal_chance` e `_invasion_chance`, e o que a
+## vida paga na reencarnação por `_aura_gain`. O modo de risco muda o **limiar** do
+## sorteio, nunca o sorteio: a mesma semente continua sacando a mesma sequência, só bate
+## em paredes diferentes. O Calçada é identidade pura (1.0 em tudo), então nenhuma medida
+## antiga muda de valor enquanto ninguém escolhe outra regra.
+const DIFFICULTIES := [
+	{
+		"id": "calcada",
+		"name": "Calçada",
+		"note": "A loja como sempre foi medida: conta cheia, etiqueta cheia, rua no ritmo de sempre.",
+		"price": 1.0,
+		"upkeep": 1.0,
+		"risk": 1.0,
+		"aura": 1.0,
+	},
+	{
+		"id": "juro_alto",
+		"name": "Juro Alto",
+		"note": "A casa cobra mais, o freguês paga menos e o beco bate duas vezes: a aura vem depois do risco.",
+		"price": 0.9,
+		"upkeep": 1.3,
+		"risk": 1.5,
+		"aura": 1.6,
+	},
+	{
+		"id": "poco_sem_fundo",
+		"name": "Poço Sem Fundo",
+		"note": "Etiqueta curta, conta quase dobrada, rua sempre à porta — e o dobro e meio de aura para quem atravessa.",
+		"price": 0.8,
+		"upkeep": 1.8,
+		"risk": 2.0,
+		"aura": 2.5,
+	},
+]
+## Quantos dias de balcão na regra mais dura valem o selo da casa.
+const HARDEST_LIFE_DAYS := 10
+## O livro de fiado, em três degraus — e o degrau zero é a loja de sempre, com o
+## livro na gaveta e nenhuma medida antiga se movendo. Cada fator aqui é consumido no
+## lugar onde o jogo já media a grandeza: a nota nasce do preço que o balcão acabou de
+## calcular (`_shelf_price`), a cobrança roda na mesma virada que cobra filial e casa,
+## e a porta de abrir é ouro + fama, igual ao depósito de sal. Zero quer dizer livro
+## na gaveta: a venda que o bolso não paga continua perdida, exatamente como as sondas
+## antigas medem.
+const CREDIT_TIERS := [
+	{"rank": 0, "cost": 0, "rep": 0, "limit": 0, "seats": 0, "due": 0},
+	{"rank": 1, "cost": 150, "rep": 8, "limit": 90, "seats": 3, "due": 6},
+	{"rank": 2, "cost": 380, "rep": 20, "limit": 180, "seats": 5, "due": 8},
+	{"rank": 3, "cost": 720, "rep": 35, "limit": 320, "seats": 8, "due": 12},
+]
+## Juro sobre a nota que a casa teve de esperar. É pequeno de propósito: fiado bom é
+## o que volta, não o que castiga.
+const CREDIT_INTEREST := 0.15
+## Dias de atraso antes de a casa riscar a nota: o ouro vai embora, a reputação também
+## um pouco, e o vínculo do devedor desce um degrau.
+const CREDIT_WRITEOFF_DAYS := 3
 ## Os nomes que a casa enxerga quando a ronda segura um braço no ar. Ninguém aqui é
 ## freguês de casa: vândalo sorteado é gente de fora do elenco, e por isso vai para
 ## a cela sem levar vínculo junto.
@@ -218,19 +291,74 @@ var vicar_announced_day: int = 0
 ## consequência visível do que já é.
 const PROGRESS_BAND_SCORES: Array[int] = [0, 900, 2400, 5200, 9000]
 const PROGRESS_BAND_NAMES: Array[String] = [
-	"loja de beco", "balcão arrumado", "casa respeitada", "endereço no bairro", "império da rua",
+	"casa em obras", "balcão arrumado", "casa respeitada", "endereço no bairro", "império da rua",
+]
+## A luz de cada faixa, aplicada sobre o mesmo PNG. A escada começa ABAIXO da cor
+## original de propósito: o estado pintado da arte é o meio da escada (faixa 2, "casa
+## respeitada"), não o ponto de partida. Quem abre o jogo pela primeira vez vê um salão
+## cru e sem luz acesa; quem fecha a vida no império vê a mesma pintura mais quente do
+## que ela jamais foi. Um valor por faixa, sem fórmula, para a escada poder ter degrau
+## torto onde a sensação pedir.
+##
+## O degrau 0 é medido na tela, não no papel: a 0,58 o salão continuava mobiliado e
+## aceso, e "casa em obras" tem de constranger antes de premiar. Abaixo de 0,5 o
+## painel de texto fica ilegível, e é por isso que a luz só desce até aí.
+const PROGRESS_BAND_LIGHT: Array[Color] = [
+	Color(0.46, 0.46, 0.62),
+	Color(0.72, 0.72, 0.85),
+	Color(1.00, 1.00, 1.00),
+	Color(1.06, 1.03, 0.96),
+	Color(1.12, 1.07, 0.93),
 ]
 ## O que cada faixa acende. É a mesma lista que a camada desenhada em código lê,
 ## escrita para o painel: ninguém decora o que a chefe não consegue nomear.
 const PROGRESS_BAND_GIFTS: Array[String] = [
-	"o salão cru, com uma vela e o balcão de sempre",
+	"o salão em obras: poeira no ar, massa crua na parede, lona no piso e uma lâmpada no fio",
 	"piso encerado e tapete realçado na faixa de passeio",
 	"+ cordão de velas acesas nas paredes do salão",
 	"+ caixilho dourado na moldura da tela",
 	"+ lustre aceso no teto e poeira dourada no ar",
 ]
-## Onde a arte de cada sala já pintou o próprio tapete, em fração da tela. A camada
-## não desenha móvel novo por cima de móvel velho: ela realça o que já está lá.
+## A obra da faixa 0, em fração da tela. Nada aqui desenha um cenário novo nem emoldura
+## a arte que já existe: são demãos que faltam na parede, pano no piso, prancha de
+## andaime, entulho ancorado na linha do chão e o fio da lâmpada. Os móveis cobertos de
+## lona não usam coordenada nenhuma: é a própria cor do recorte dos móveis que fica
+## lavada (ver `_apply_progress_decor`), porque a oclusão repinta o móvel POR CIMA da
+## camada e comeria qualquer pano desenhado ali.
+##
+## A gramática é escura por medida, não por gosto: a arte do salão é saturada e no
+## escuro, e o probe `tools/probes/cara.gd` mostrou que retângulo claro por cima dela lê
+## como vidro fosco de interface, não como obra. Falta é sombra.
+##
+## A geometria fica na faixa de passeio da recepção (x 0,20 a 0,42), que é o piso livre
+## da sala principal. Sala onde uma peça colide com o contorno de um móvel mostra o que
+## sobra — mesma regra do tapete e do caixilho.
+const RENOVATION_WALL_PATCHES: Array[Rect2] = [
+	Rect2(0.185, 0.055, 0.175, 0.135),
+	Rect2(0.44, 0.02, 0.135, 0.095),
+	Rect2(0.675, 0.095, 0.165, 0.115),
+	Rect2(0.30, 0.235, 0.105, 0.085),
+	Rect2(0.78, 0.275, 0.12, 0.075),
+]
+## Pares de pé-direito do escoramento (dois por cavalete) e a altura da prancha.
+const RENOVATION_POLES: Array[float] = [0.222, 0.268, 0.352, 0.398]
+const RENOVATION_PLANK_Y := 0.455
+## A lona estendida no piso, em quatro cantos: superior esquerdo, superior direito,
+## inferior direito, inferior esquerdo. É o único claro grande da cena, e por isso é
+## chumbo, não branco.
+const RENOVATION_CLOTH: Array[Vector2] = [
+	Vector2(0.185, 0.795), Vector2(0.415, 0.772), Vector2(0.475, 0.905), Vector2(0.150, 0.928),
+]
+## Montículos de entulho, em deslocamento a partir do ponto do chão pintado: o pé
+## prende no piso da sala, não numa altura arbitrária da tela.
+const RENOVATION_RUBBLE: Array[Vector2] = [
+	Vector2(-0.375, -0.008), Vector2(-0.295, 0.012), Vector2(-0.225, -0.018),
+]
+## Balde de tinta no pé do andaime, em deslocamento do ponto do chão.
+const RENOVATION_BUCKET := Vector2(-0.185, 0.004)
+## Quantas faixas de progresso ainda mostram a obra. A lona some antes do luxo chegar,
+## senão a casa "respeitada" continuaria com o balcão tapado.
+const RENOVATION_LAST_BAND := 1
 ## Sala sem entrada aqui recebe a faixa de passeio no lugar.
 const PROGRESS_RUG := {
 	"res://assets/shop_scene.png": [
@@ -300,6 +428,9 @@ var world_speed_options: Array[float] = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
 var world_speed_index: int = 1
 var world_timer: Timer
 var offline_dialog: AcceptDialog
+## Diferencia o `visibility_changed` que abre a janela do que a fecha; ver
+## `_close_offline_report()`.
+var offline_report_shown: bool = false
 var _offline_elapsed_seconds: float = 0.0
 var _offline_branch_fraction: float = 0.0
 ## Idioma e menu do ESC. A língua é preferência da pessoa, não da vida: ela não é
@@ -311,9 +442,20 @@ var locale: String = Locales.DEFAULT
 var locale_confirmed: bool = false
 var menu_layer: Control
 var menu_start_mode: bool = false
-var menu_was_running: bool = false
+## A tela aberta dentro do menu. `root` é a única que fecha com ESC; as outras voltam
+## para a raiz, como em jogo moderno.
+var menu_screen: String = "root"
 var menu_language_buttons: Array[Button] = []
 var menu_status_label: Label
+var menu_volume_label: Label
+## Onde a tela atual é montada dentro da moldura.
+var menu_box: VBoxContainer
+var menu_button: Button
+## Janela e desenho são da pessoa que joga, não da vida: moram no mesmo arquivo do
+## idioma e sobrevivem a reencarnar e a apagar o progresso.
+var window_mode: int = DisplayServer.WINDOW_MODE_WINDOWED
+var ui_scale: float = 1.0
+var vsync_mode: int = DisplayServer.VSYNC_ENABLED
 ## O arquivo de preferências respondeu? Se sim, ele manda sobre o save: o save é a conta
 ## da loja, e a loja pode ser exportada para outra máquina sem arrastar o idioma dela.
 var _locale_from_settings: bool = false
@@ -325,11 +467,19 @@ var library_upgrade_level: int = 0
 var sanctum_upgrade_level: int = 0
 var library_upgrade_button: Button
 var sanctum_upgrade_button: Button
+var cold_storage_button: Button
 var sector_action_button: Button
 var queue_distractions: int = 0
 var ingredient_stock: Dictionary = STARTING_PANTRY.duplicate()
 ## Estoque de peças por qualidade: { id_do_produto: [torto, honesto, refinado, prima, mitico] }
 var quality_stock: Dictionary = {}
+## Idade de cada peça que vence: { id_do_produto: [{tier, day}] }, da mais antiga
+## para a mais nova. Sem registro a peça entra como recém-posta — save antigo nunca
+## acorda com a despensa virada.
+var shelf_batches: Dictionary = {}
+## Depósito de sal (0..3): cada nível soma uma validade inteira ao relógio da
+## prateleira. Não muda preço nem sorte — muda só o prazo.
+var cold_storage_level: int = 0
 ## Mercado reativo: { "ingredient": {id: calor}, "product": {id: calor} }
 var economy_state: Dictionary = Economy.fresh_state()
 var auto_buy_mission_loot: bool = true
@@ -383,16 +533,16 @@ const PRODUCT_ICONS := ["🧪", "🦆", "💧", "📦", "✨", "🐟", "🌀", "
 var _starting_shelf: Dictionary = {}
 
 var products: Array = [
-	{"id": "dano_emocional", "name": "Poção de Dano Emocional", "cost": 8, "price": 15, "stock": 1, "ingredients": {"essencia": 1}, "desc": "Lembra você daquela mensagem que mandou em 2018."},
+	{"id": "dano_emocional", "name": "Poção de Dano Emocional", "cost": 8, "price": 15, "stock": 1, "validade": 6, "ingredients": {"essencia": 1}, "desc": "Lembra você daquela mensagem que mandou em 2018."},
 	{"id": "pato_amaldicoado", "name": "Pato Amaldiçoado Premium", "cost": 10, "price": 24, "stock": 1, "ingredients": {"pena": 1}, "desc": "Ele não faz nada. Mas julga suas decisões."},
-	{"id": "lagrimas_jogador", "name": "Lágrimas de Jogador Derrotado", "cost": 12, "price": 30, "stock": 1, "ingredients": {"sal": 1}, "desc": "Ingrediente raro. Salgado. Muito salgado."},
+	{"id": "lagrimas_jogador", "name": "Lágrimas de Jogador Derrotado", "cost": 12, "price": 30, "stock": 1, "validade": 14, "ingredients": {"sal": 1}, "desc": "Ingrediente raro. Salgado. Muito salgado."},
 	{"id": "caixa_misteriosa", "name": "Caixa Misteriosa Vazia", "cost": 5, "price": 12, "stock": 1, "ingredients": {"vazio": 1}, "desc": "A surpresa é perceber que você pagou por uma caixa."},
-	{"id": "confianca_instantanea", "name": "Poção de Confiança Instantânea", "cost": 9, "price": 22, "stock": 1, "ingredients": {"essencia": 1, "tinta": 1}, "desc": "Funciona até alguém pedir para você explicar."},
-	{"id": "elixir_memoria", "name": "Elixir de Memória de Peixe", "cost": 18, "price": 48, "stock": 0, "required_level": 3, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Você esquece por que comprou. E compra de novo."},
-	{"id": "incenso_teleporte", "name": "Incenso de Teletransporte Barato", "cost": 26, "price": 68, "stock": 0, "required_level": 5, "ingredients": {"po_lunar": 1, "tinta": 1}, "desc": "Leva você a três metros dali. Às vezes quatro."},
+	{"id": "confianca_instantanea", "name": "Poção de Confiança Instantânea", "cost": 9, "price": 22, "stock": 1, "validade": 4, "ingredients": {"essencia": 1, "tinta": 1}, "desc": "Funciona até alguém pedir para você explicar."},
+	{"id": "elixir_memoria", "name": "Elixir de Memória de Peixe", "cost": 18, "price": 48, "stock": 0, "required_level": 3, "validade": 8, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Você esquece por que comprou. E compra de novo."},
+	{"id": "incenso_teleporte", "name": "Incenso de Teletransporte Barato", "cost": 26, "price": 68, "stock": 0, "required_level": 5, "validade": 5, "ingredients": {"po_lunar": 1, "tinta": 1}, "desc": "Leva você a três metros dali. Às vezes quatro."},
 	{"id": "cristal_credito", "name": "Cristal de Crédito Cósmico", "cost": 42, "price": 115, "stock": 0, "required_level": 8, "ingredients": {"vazio": 1, "tinta": 2}, "desc": "Converte promessas vagas em dívidas muito concretas."},
 	{"id": "pergaminho_procrastinacao", "name": "Pergaminho de Procrastinação Certificada", "cost": 55, "price": 150, "stock": 0, "required_level": 10, "ingredients": {"tinta": 2, "essencia": 1}, "desc": "Adia tarefas importantes com selo ISO de preguiça."},
-	{"id": "frasco_motivacao", "name": "Frasco de Motivação de Segunda-feira", "cost": 70, "price": 195, "stock": 0, "required_level": 12, "ingredients": {"po_lunar": 2, "sal": 1}, "desc": "Efeito dura até o primeiro e-mail."},
+	{"id": "frasco_motivacao", "name": "Frasco de Motivação de Segunda-feira", "cost": 70, "price": 195, "stock": 0, "required_level": 12, "validade": 3, "ingredients": {"po_lunar": 2, "sal": 1}, "desc": "Efeito dura até o primeiro e-mail."},
 	{"id": "adaga_charme", "name": "Adaga de Charme Duvidoso", "cost": 30, "price": 95, "stock": 0, "required_level": 2, "ingredients": {"pena": 1, "tinta": 1}, "desc": "Brilha quando alguém promete pagar amanhã."},
 	{"id": "martelo_faisca", "name": "Martelo de Faísca Dramática", "cost": 45, "price": 140, "stock": 0, "required_level": 4, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Cada golpe produz uma faísca e uma opinião não solicitada."
 		}
@@ -602,6 +752,8 @@ var spec_labels: Array = []
 var spec_state_labels: Array = []
 var spec_buttons: Array = []
 var pack_button: Button
+var credit_button: Button
+var credit_label: Label
 var card_gallery_labels: Array = []
 var board_label: Label
 var score_button: Button
@@ -623,6 +775,8 @@ var prestige_box: VBoxContainer
 var prestige_label: Label
 var prestige_perk_buttons: Array = []
 var prestige_button: Button
+var difficulty_button: Button
+var difficulty_label: Label
 var adult_toggle_button: Button
 var save_file_dialog: FileDialog
 var hard_reset_dialog: ConfirmationDialog
@@ -971,11 +1125,9 @@ var music_player: AudioStreamPlayer
 var music_base_db: float = -13.0
 const GameAudio = preload("res://audio.gd")
 var audio: Node
-var mute_button: Button
 var toast_label: Label
 var toast_tween: Tween
 var market_panel: VBoxContainer
-var market_toggle_button: Button
 var sensual_tween: Tween
 ## Índice usado em "portrait" nos perfis e em regulars.gd. Ordem fixa:
 ## 0 aventureiro, 1 maga/mago, 2 gótico, 3 bárbaro, 4 ladina, 5 clérigo,
@@ -1053,12 +1205,56 @@ const MEME_TRUST_LINES := [
 "Ela anota o bordão do cliente: “É sobre isso. E sobre você voltar amanhã com o bolso cheio.”",
 "A chefe aponta para o ladrão: “Ctrl+C não copia ficha de fidelidade. Essa é proprietária.”"
 ]
+## A escada de momentos só da casa, em doze degraus. A fala sobe a lista em vez de
+## reciclar: cada momento liberado mostra o próximo degrau do tom, e o topo é o
+## quarto andar — a casa corta antes de mostrar qualquer coisa. Nada aqui muda
+## economia, porta ou placar: é só a voz.
+const SENSUAL_MOMENTS: Array[String] = [
+	"A súcubo inclina a cabeça, dá uma piscadela e puxa você para mais perto: “Esse é nosso segredinho, combinado?”",
+	"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais de mim quando nossa parceria ficar ainda mais lucrativa.”",
+	"A chefe faz uma pose provocante e ri baixinho: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”",
+	"Ela vira a placa de FECHADO antes da hora e não explica para quem: “Senta atrás do balcão. Hoje eu quero ver como você atende.”",
+	"A chefe sopra a vela que fica do seu lado e a luz cai pela metade: “Aqui dentro ninguém cobra gorjeta de quem fica até o fim.”",
+	"Ela pendura o avental no gancho e cruça os braços, de camiseta de trabalho: “Fica tranquilo. Hoje eu não quero freguês, quero companhia.”",
+	"A chefe derrama dois copos e empurra um na sua direção: “Ninguém bebe aqui sem me contar um fracasso. Começa pelo seu.”",
+	"Ela deixa a porta dos fundos entreaberta de propósito: “Se quiser ver onde a casa guarda o que não está à venda, é só pedir.”",
+	"A chefe tira a chave do bolso, deixa passar entre os dedos dela e devolve: “O porão tem mais uma porta. Ainda não decidimos se você é gente de abrir.”",
+	"Ela se encosta na moldura da tela pintada e mostra o piso riscado: “Essa casa já foi um casebre com uma vela só. Você é o terceiro que eu deixo chegar aqui.”",
+	"A chefe apaga todas as luzes menos uma e ri no escuro: “Não se aproxima tanto. Eu gosto de deixar o cliente escolhendo onde parar.”",
+	"Ela puxa a cadeira, senta de frente para você, e a loja fica em silêncio: “Fica até a última vela. Depois do apagão a casa não conta nada — nem para mim.”"
+]
 ## Os momentos só da loja na versão sem cena: a chefe baixa a voz do mesmo jeito,
-## só que o que ela entrega é a confiança da casa, não o flerte.
-const TRUST_MOMENTS := [
-"A chefe inclina a cabeça, puxa a cadeira para perto e abaixa a voz: “Isso aqui não sai da loja, combinado?”",
-"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais da casa quando nossa parceria ficar ainda mais lucrativa.”",
-"A chefe bate o punho no balcão e ri baixo: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”"
+## só que o que ela entrega é a confiança da casa, não o flerte. Espelho degrau a
+## degrau da escada de cima — mesma porta, mesmo contador, só a voz trocando.
+const TRUST_MOMENTS: Array[String] = [
+	"A chefe inclina a cabeça, puxa a cadeira para perto e abaixa a voz: “Isso aqui não sai da loja, combinado?”",
+	"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais da casa quando nossa parceria ficar ainda mais lucrativa.”",
+	"A chefe bate o punho no balcão e ri baixo: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”",
+	"Ela vira a placa de FECHADO antes da hora e não explica para quem: “Senta atrás do balcão. Hoje eu quero ver como você atende.”",
+	"A chefe acende a segunda vela da sala e aponta o banquinho do balcão: “Quem fica até o fim do dia ganha nome no caderno. O seu acabou de entrar.”",
+	"Ela pendura o avental no gancho e senta no degrau da porta, de camiseta de trabalho: “Fica tranquilo. Hoje eu não quero freguês, quero uma conversa honesta.”",
+	"A chefe derrama dois copos e empurra um na sua direção: “Ninguém bebe aqui sem me contar um fracasso. Começa pelo seu.”",
+	"Ela deixa a porta dos fundos aberta e chama você para ver: “É aqui que a casa guarda o que não está à venda: o estoque e a própria palavra.”",
+	"A chefe mostra a chave do porão e devolve o bolso: “Lá embaixo tem mais uma porta. Ela abre para quem já provou que volta.”",
+	"Ela se encosta na moldura da tela pintada e mostra o piso riscado: “Essa casa já foi um casebre com uma vela só. Você é o terceiro que eu deixo chegar aqui.”",
+	"A chefe apaga todas as luzes menos uma e ri no escuro: “Fica aí. Eu gosto de deixar o cliente medindo sozinho até onde a confiança vai.”",
+	"Ela puxa a cadeira, senta de frente para você, e a loja fica em silêncio: “Fica até a última vela. Depois do apagão a casa não conta nada — nem para mim.”"
+]
+## As falas do marco de afeição (a cada 10 pontos do medidor), na mesma lógica da
+## escada de momentos: o degrau sobe com o medidor em vez de reciclar.
+const SENSUAL_AFFECTION_MILESTONES: Array[String] = [
+	"A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”",
+	"Ela ajeita a mecha de cabelo e não se afasta do balcão: “Olha o tanto que você já subiu aqui dentro. E olha o que ainda falta.”",
+	"Ela se inclina até a voz virar sussurro: “Poucos clientes chegaram onde você está. Nenhum ficou quando eu pedi para ficar.”",
+	"A chefe mede o salão vazio, apaga a última vela da vitrine e ri baixo no escuro: “Cheio demais, querido. Agora você já não cabe no lado de cá do balcão.”"
+]
+## Espelho sem cena do bloco de cima: a chefe continua descendo a voz no mesmo
+## degrau do medidor, só que o que ela entrega é a conta da casa, não o flerte.
+const TRUST_AFFECTION_MILESTONES: Array[String] = [
+	"A chefe anota a linha nova do caderno e vira a página para você ver: “Você está conquistando a confiança da casa… e isso rende consequência boa.”",
+	"Ela apoia as duas mãos no balcão e olha a fila inteira: “Olha o tanto que você já subiu aqui dentro. E olha o que ainda falta.”",
+	"Ela baixa a voz para ninguém mais na sala ouvir: “Poucos clientes chegaram onde você está. Nenhum ficou quando eu pedi para ficar.”",
+	"A chefe mede o salão vazio, apaga a última vela da vitrine e ri baixo no escuro: “Confiança cheia. Agora você já não cabe no lado de cá do balcão.”"
 ]
 ## A escada de confiança de um freguês: cada degrau cobra visitas de balcão e
 ## ouro na hora, e paga de volta para sempre na conta dele. O degrau três é o
@@ -1103,7 +1299,8 @@ func _ready() -> void:
 	steam.boot(_achievement_ids())
 	steam.connect("leaderboard_ready", _on_leaderboard_ready)
 	Locales.register()
-	_load_locale_settings()
+	_load_person_settings()
+	_apply_player_settings()
 	_load_game()
 	TranslationServer.set_locale(locale)
 	_mark_day_start()
@@ -1230,19 +1427,58 @@ func _apply_offline_progress() -> void:
 		offline_dialog.title = "Resumo do período offline"
 		offline_dialog.dialog_text = last_event + "\n\nO farm offline é limitado a 12 horas e não avança clientes, eventos aleatórios do salão ou dias de loja."
 		offline_dialog.confirmed.connect(_close_offline_report)
+		# O botão OK é um jeito de fechar a janela; ESC, o X da janela e hide() são outros.
+		# Preso só ao `confirmed`, o relógio ficava parado para sempre em qualquer um desses
+		# caminhos — loja congelada com um freguês plantado no balcão.
+		offline_dialog.visibility_changed.connect(_close_offline_report)
 		add_child(offline_dialog)
-		world_timer.stop()
+		offline_report_shown = false
+		# Depois do popup, não antes: com a janela ainda escondida o `_sync_clock()`
+		# não a veria e a rua continuaria andando atrás do resumo.
 		offline_dialog.popup_centered(Vector2i(720, 320))
+		offline_report_shown = true
+		_sync_clock()
 
+## O resumo fecha por quatro caminhos: o OK, que emite `confirmed` com a janela ainda na
+## tela, e o ESC, o X e um hide(), que só escondem o Window. Preso só ao `confirmed`, o
+## relógio ficava parado para sempre nos outros três — loja congelada com um freguês
+## plantado no balcão. A marca `offline_report_shown` separa o visibility_changed da
+## abertura do do fechamento; sem ela a janela se fecharia no frame em que nasce.
 func _close_offline_report() -> void:
-	if is_instance_valid(offline_dialog):
-		offline_dialog.queue_free()
+	if offline_dialog == null:
+		return
+	if offline_dialog.visible and not offline_report_shown:
+		return
+	offline_dialog.queue_free()
 	offline_dialog = null
-	if is_instance_valid(world_timer) and not is_instance_valid(day_layer) \
-			and not is_instance_valid(origin_layer) and not is_instance_valid(ending_layer):
-		world_timer.start()
+	offline_report_shown = false
+	_sync_clock()
 
 # ── Idioma e menu do ESC ──
+
+## Toda janela que segura a rua parada neste instante. VISÍVEL é a palavra-chave: o
+## painel do final é escondido e reusado em vez de liberado, e um nó escondido na árvore
+## não tem o direito de fechar a loja. O painel do final também não está na lista porque
+## ele nunca parou a rua — no modo livre o dia continua correndo atrás dele.
+func _modal_holds_clock() -> bool:
+	if offline_dialog != null and offline_dialog.visible:
+		return true
+	for layer in [day_layer, origin_layer, menu_layer]:
+		if is_instance_valid(layer) and layer.visible:
+			return true
+	return false
+
+## O relógio obedece a uma frase só: anda enquanto nenhuma janela estiver na tela. Cada
+## janela decidia isso sozinha, do seu próprio jeito, sem saber das outras — era assim
+## que a loja acordava parada para sempre.
+func _sync_clock() -> void:
+	if not is_instance_valid(world_timer):
+		return
+	if _modal_holds_clock():
+		if not world_timer.is_stopped():
+			world_timer.stop()
+	elif world_timer.is_stopped():
+		world_timer.start()
 
 ## ESC abre e fecha o menu, como em jogo moderno, e a janela para a rua: enquanto a
 ## chefe está no menu, nenhum cliente bate na porta. O diálogo de escolha de idioma da
@@ -1252,26 +1488,29 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if key == null or not key.pressed or key.echo or key.keycode != KEY_ESCAPE:
 		return
 	if is_instance_valid(menu_layer):
-		_close_menu()
+		# Dois toques, dois papéis: o ESC primeiro desfaz a submenu e só depois fecha o
+		# menu. Quem está dentro de "Opções" quer voltar, não sair da loja.
+		if menu_start_mode or menu_screen == "root":
+			_close_menu()
+		else:
+			_show_menu_screen("root")
 	else:
 		_open_menu(false)
 	get_viewport().set_input_as_handled()
 
-## Toda janela que já parou o relógio por conta própria. O menu por cima delas não pode
-## prometer "retomar" o que estava parado antes de elas existirem.
-func _overlay_blocks_clock() -> bool:
-	return is_instance_valid(day_layer) or is_instance_valid(origin_layer) \
-			or is_instance_valid(ending_layer)
-
 func _open_menu(start_mode: bool) -> void:
 	menu_start_mode = start_mode
-	# A foto do relógio só é tirada quando não há janela aberta: com o balanço do dia na
-	# tela o timer já está parado, e "retomar" acordaria a rua ao fechar o menu.
-	if not is_instance_valid(menu_layer):
-		menu_was_running = is_instance_valid(world_timer) and not world_timer.is_stopped()
+	menu_screen = "idioma" if start_mode else "root"
 	_build_menu_layer()
-	if is_instance_valid(world_timer):
-		world_timer.stop()
+	_sync_clock()
+
+## Navegar dentro do menu é redesenhar a mesma janela, não abrir outra: o relógio continua
+## parado porque continua havendo uma janela na tela, e é `_sync_clock()` que garante isso
+## em vez de cada tela decidir por conta.
+func _show_menu_screen(screen: String) -> void:
+	menu_screen = screen
+	_build_menu_layer()
+	_sync_clock()
 
 func _close_menu() -> void:
 	var was_start := menu_start_mode
@@ -1281,10 +1520,9 @@ func _close_menu() -> void:
 		# Fechar o seletor sem escolher também é resposta: a loja fica no idioma que já
 		# tinha, e o seletor não volta a cada abertura do jogo.
 		locale_confirmed = true
-		_save_locale_settings()
+		_save_person_settings()
 	_save_game()
-	if menu_was_running and is_instance_valid(world_timer) and not _overlay_blocks_clock():
-		world_timer.start()
+	_sync_clock()
 
 func _free_menu_layer() -> void:
 	if is_instance_valid(menu_layer):
@@ -1292,10 +1530,12 @@ func _free_menu_layer() -> void:
 	menu_layer = null
 	menu_language_buttons.clear()
 	menu_status_label = null
+	menu_volume_label = null
+	menu_box = null
 
-## A janela em si: título, nota de cobertura por idioma, um botão por língua e a saída.
-## Os textos são literais em português porque o catálogo traduz o rótulo pronto — é por
-## isso que dar mais idioma ao jogo não pede tocar nesta função.
+## A moldura: fundo escuro, painel, título fixo e uma caixa rolável onde a tela atual é
+## montada. Os textos são literais em português porque o catálogo traduz o rótulo pronto —
+## é por isso que dar mais idioma ao jogo não pede tocar em nenhuma destas funções.
 func _build_menu_layer() -> void:
 	_free_menu_layer()
 	var dim := ColorRect.new()
@@ -1322,67 +1562,284 @@ func _build_menu_layer() -> void:
 	panel.add_theme_stylebox_override("panel", panel_style)
 	center.add_child(panel)
 
-	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(560, 0)
-	box.add_theme_constant_override("separation", 10)
-	panel.add_child(box)
+	var frame := VBoxContainer.new()
+	frame.custom_minimum_size = Vector2(560, 0)
+	frame.add_theme_constant_override("separation", 10)
+	panel.add_child(frame)
 
 	var title := Label.new()
-	title.text = "ESCOLHA O IDIOMA" if menu_start_mode else "MENU"
+	title.text = _menu_title()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", Color(0.85, 0.62, 1.0))
-	box.add_child(title)
+	frame.add_child(title)
 
+	# A conquista são umas cinquenta linhas; sem rolagem a tela ficaria maior que a loja.
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(520, 420)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	frame.add_child(scroll)
+
+	menu_box = VBoxContainer.new()
+	menu_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	menu_box.add_theme_constant_override("separation", 8)
+	scroll.add_child(menu_box)
+
+	match menu_screen:
+		"opcoes":
+			_menu_screen_opcoes()
+		"save":
+			_menu_screen_save()
+		"conquistas":
+			_menu_screen_conquistas()
+		"creditos":
+			_menu_screen_creditos()
+		"idioma":
+			_menu_screen_idioma()
+		_:
+			_menu_screen_root()
+
+func _menu_title() -> String:
 	if menu_start_mode:
-		var note := Label.new()
-		note.text = "O jogo abre em português, sua língua de origem. Trocar de idioma não muda nenhuma conta da loja: nem a porta, nem o bolso, nem o placar."
-		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		note.add_theme_font_size_override("font_size", 13)
-		note.add_theme_color_override("font_color", Color(0.78, 0.72, 0.86))
-		box.add_child(note)
+		return "ESCOLHA O IDIOMA"
+	match menu_screen:
+		"opcoes":
+			return "OPÇÕES"
+		"save":
+			return "SALVAR E CARREGAR"
+		"conquistas":
+			return "CONQUISTAS"
+		"creditos":
+			return "CRÉDITOS"
+		"idioma":
+			return "IDIOMA"
+	return "MENU"
 
-	var header := Label.new()
-	header.text = "Idioma"
-	header.add_theme_font_size_override("font_size", 16)
-	header.add_theme_color_override("font_color", Color(0.78, 0.62, 0.92))
-	box.add_child(header)
+func _menu_button(text: String, callback: Callable, height: int = 44) -> void:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(0, height)
+	button.pressed.connect(callback)
+	menu_box.add_child(button)
 
+func _menu_note(text: String, color := Color(0.78, 0.72, 0.86), size := 13) -> void:
+	var note := Label.new()
+	note.text = text
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.add_theme_font_size_override("font_size", size)
+	note.add_theme_color_override("font_color", color)
+	menu_box.add_child(note)
+
+func _menu_back_button() -> void:
+	_menu_button("← Voltar ao menu", _show_menu_screen.bind("root"))
+
+## Raiz: tudo que a loja tinha espalhado pelo topo e nas abas cabe agora aqui, e o que é
+## conta da pessoa (som, tela, escala) está uma camada abaixo, nunca na frente do balcão.
+func _menu_screen_root() -> void:
+	_menu_note("O balcão continua aqui. Este é o menu da loja — o mesmo que o ESC abre.",
+			Color(0.72, 0.66, 0.8), 13)
+	_menu_button("Continuar a loja", _close_menu, 48)
+	_menu_button("⚙ Opções", _show_menu_screen.bind("opcoes"))
+	_menu_button("💾 Salvar e carregar", _show_menu_screen.bind("save"))
+	_menu_button(tr("🏆 Conquistas (%d/%d)") % [unlocked_achievements.size(), _achievement_definitions().size()],
+			_show_menu_screen.bind("conquistas"))
+	_menu_button("✨ Créditos", _show_menu_screen.bind("creditos"))
+	_menu_button("🌐 Idioma", _show_menu_screen.bind("idioma"))
+	_menu_button("🐞 Relatar um problema", _show_bug_report_dialog, 40)
+	_menu_note("Fechar menu (ESC)", Color(0.62, 0.56, 0.74), 12)
+
+func _menu_screen_idioma() -> void:
+	if menu_start_mode:
+		_menu_note("O jogo abre em português, sua língua de origem. Trocar de idioma não muda nenhuma conta da loja: nem a porta, nem o bolso, nem o placar.")
 	for supported in Locales.SUPPORTED:
 		var id := str(supported["id"])
 		var button := Button.new()
 		button.text = _locale_button_text(id)
 		button.custom_minimum_size = Vector2(0, 44)
 		button.pressed.connect(_pick_locale.bind(id))
-		box.add_child(button)
+		menu_box.add_child(button)
 		menu_language_buttons.append(button)
+	if menu_start_mode:
+		_menu_button("Entrar na loja", _close_menu, 48)
+	else:
+		_menu_note("A prosa montada durante a partida — falas de cliente, balanço da virada, eventos — ainda sai no idioma original.",
+				Color(0.72, 0.66, 0.8), 12)
+		_menu_back_button()
 
-	var enter := Button.new()
-	enter.text = "Entrar na loja" if menu_start_mode else "Continuar a loja"
-	enter.custom_minimum_size = Vector2(240, 46)
-	enter.pressed.connect(_close_menu)
-	box.add_child(enter)
+func _menu_screen_opcoes() -> void:
+	var volume_row := HBoxContainer.new()
+	volume_row.add_theme_constant_override("separation", 12)
+	menu_box.add_child(volume_row)
+	menu_volume_label = Label.new()
+	menu_volume_label.text = _menu_volume_text()
+	menu_volume_label.custom_minimum_size = Vector2(150, 42)
+	menu_volume_label.add_theme_color_override("font_color", Color(0.85, 0.78, 0.95))
+	volume_row.add_child(menu_volume_label)
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.value = audio.volume
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.custom_minimum_size = Vector2(0, 42)
+	slider.value_changed.connect(_menu_volume_changed)
+	volume_row.add_child(slider)
 
-	if not menu_start_mode:
-		var save_button := Button.new()
-		save_button.text = "Salvar agora"
-		save_button.custom_minimum_size = Vector2(240, 40)
-		save_button.pressed.connect(_menu_save_now)
-		box.add_child(save_button)
+	_menu_button("🔥 Cenas sensuais: LIBERADAS" if adult_content_enabled else "🌸 Cenas sensuais: CONTIDAS",
+			_menu_toggle_adult)
+	_menu_button("🔇 Som: DESLIGADO" if audio.muted else "🔊 Som: LIGADO", _menu_toggle_mute)
+	_menu_button("Ocultar o painel da loja" if is_instance_valid(market_panel) and market_panel.visible
+			else "Mostrar o painel da loja", _menu_toggle_market)
+	_menu_button("Balanço do dia: automático" if day_auto_ok else "Balanço do dia: pede OK",
+			_menu_toggle_day_auto)
+	_menu_button(_menu_window_mode_label(), _cycle_window_mode)
+	_menu_button(_menu_scale_label(), _cycle_ui_scale)
+	_menu_button(_menu_vsync_label(), _cycle_vsync)
+	_menu_note("Nada aqui é conta da loja: som, tela e o tom das cenas são preferência de quem joga. Dotes, servos e o resto da administração ficam na Biblioteca e no Santuário.",
+			Color(0.66, 0.6, 0.76), 12)
+	_menu_back_button()
 
-		menu_status_label = Label.new()
-		menu_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		menu_status_label.add_theme_font_size_override("font_size", 13)
-		menu_status_label.add_theme_color_override("font_color", Color(0.62, 1.0, 0.72))
-		box.add_child(menu_status_label)
+## O tom das cenas é a preferência mais sensível do menu, e por isso ela mora embaixo de
+## um toque de distância do balcão, nunca no meio da fila: ligar e desligar troca a voz da
+## loja, os dotes e as poses, mas não mexe em caixa, reputação nem freguês atendido.
+func _menu_toggle_adult() -> void:
+	_toggle_adult_content()
+	_show_menu_screen("opcoes")
 
-		var hint := Label.new()
-		hint.text = "Fechar menu (ESC)"
-		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		hint.add_theme_font_size_override("font_size", 12)
-		hint.add_theme_color_override("font_color", Color(0.62, 0.56, 0.74))
-		box.add_child(hint)
+func _menu_screen_save() -> void:
+	_menu_button("Salvar agora", _menu_save_now)
+	menu_status_label = Label.new()
+	menu_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	menu_status_label.add_theme_font_size_override("font_size", 13)
+	menu_status_label.add_theme_color_override("font_color", Color(0.62, 1.0, 0.72))
+	menu_box.add_child(menu_status_label)
+	_menu_note(tr("Save da vida: dia %d, nível %d, %d de ouro.") % [shop_day, player_level, gold],
+			Color(0.72, 0.66, 0.8), 12)
+	_menu_button("Exportar save para arquivo", _show_save_dialog.bind(true), 40)
+	_menu_button("Importar save de arquivo", _show_save_dialog.bind(false), 40)
+	_menu_button("Carregar o último save do disco", _reload_from_disk, 40)
+	_menu_button("Apagar todo o progresso", _confirm_full_reset, 40)
+	_menu_note("Importar e apagar reabrem a loja: nada é escrito sem a janela de confirmação aparecer antes.",
+			Color(0.66, 0.6, 0.76), 12)
+	_menu_back_button()
+
+func _menu_screen_conquistas() -> void:
+	var definitions := _achievement_definitions()
+	_menu_note(tr("Desbloqueadas: %d de %d.") % [unlocked_achievements.size(), definitions.size()],
+			Color(0.85, 0.78, 0.95), 15)
+	var shown := 0
+	for achievement in definitions:
+		if unlocked_achievements.has(str(achievement["id"])):
+			shown += 1
+			_menu_note(tr("✓ %s  (+%d ouro, +%d fama)") % [str(achievement["name"]),
+					int(achievement["gold"]), int(achievement["rep"])], Color(0.72, 0.95, 0.8), 13)
+	if shown == 0:
+		_menu_note("Nenhuma ainda. A primeira chega com o primeiro atendimento do dia.",
+				Color(0.66, 0.6, 0.76), 13)
+	else:
+		_menu_note(tr("Trancadas neste balcão: %d — os nomes ficam escondidos para não estragar a surpresa.")
+				% (definitions.size() - shown), Color(0.66, 0.6, 0.76), 12)
+	_menu_back_button()
+
+func _menu_screen_creditos() -> void:
+	_menu_note("SUCCUBUS SHOP", Color(1.0, 0.67, 0.88), 20)
+	_menu_note("Concepção, código, escrita e arte: GMGuimaraes.", Color(0.85, 0.78, 0.95), 14)
+	var engine_version := str(Engine.get_version_info().get("string", "4"))
+	_menu_note("Motor: Godot %s (gl_compatibility)." % engine_version, Color(0.85, 0.78, 0.95), 14)
+	_menu_note("Trilha e efeitos gravados no próprio projeto; retratos e poses desenhados para a loja, sem arte explícita.",
+			Color(0.78, 0.72, 0.86), 13)
+	_menu_note("As IAs que revisaram este repositório no mesmo ritmo das madrugadas: Claude, ChatGPT, Copilot e Manus.",
+			Color(0.72, 0.66, 0.8), 13)
+	_menu_note(tr("Obrigado por jogar — e por relatar o que quebrou."), Color(0.85, 0.62, 1.0), 14)
+	_menu_back_button()
+
+func _menu_volume_text() -> String:
+	return tr("Volume: %d%%") % int(round(audio.volume * 100.0))
+
+## Arrastar a barra não pode redesenhar a tela: o slider sumiria debaixo do dedo a cada
+## passo. Só a legenda atrás dele se atualiza.
+func _menu_volume_changed(value: float) -> void:
+	audio.set_volume(value)
+	if is_instance_valid(menu_volume_label):
+		menu_volume_label.text = _menu_volume_text()
+
+func _menu_toggle_mute() -> void:
+	audio.toggle_muted()
+	_apply_music_settings()
+	_show_menu_screen("opcoes")
+
+func _menu_toggle_market() -> void:
+	_toggle_market_panel()
+	_show_menu_screen("opcoes")
+
+func _menu_toggle_day_auto() -> void:
+	_on_day_auto_ok_toggled(not day_auto_ok)
+	_show_menu_screen("opcoes")
+
+const WINDOW_MODES: Array[int] = [
+	DisplayServer.WINDOW_MODE_WINDOWED,
+	DisplayServer.WINDOW_MODE_MAXIMIZED,
+	DisplayServer.WINDOW_MODE_FULLSCREEN,
+]
+const UI_SCALES: Array[float] = [1.0, 1.25, 1.5, 0.85]
+const VSYNC_MODES: Array[int] = [
+	DisplayServer.VSYNC_ENABLED,
+	DisplayServer.VSYNC_ADAPTIVE,
+	DisplayServer.VSYNC_DISABLED,
+]
+
+## Cada rótulo entra inteiro na tabela, e não como "Tela: %s" com a palavra solta
+## costurada depois: "Janela" traduzida sozinha seria um termo de menu órfão, e o
+## genêro e a ordem das palavras mudam de idioma para idioma.
+func _menu_window_mode_label() -> String:
+	if window_mode == DisplayServer.WINDOW_MODE_MAXIMIZED:
+		return tr("Tela: Maximizada")
+	if window_mode == DisplayServer.WINDOW_MODE_FULLSCREEN:
+		return tr("Tela: Tela cheia")
+	return tr("Tela: Janela")
+
+func _menu_scale_label() -> String:
+	return tr("Escala da interface: %d%%") % int(round(ui_scale * 100.0))
+
+func _menu_vsync_label() -> String:
+	if vsync_mode == DisplayServer.VSYNC_DISABLED:
+		return tr("Sincronismo vertical: Desligado")
+	if vsync_mode == DisplayServer.VSYNC_ADAPTIVE:
+		return tr("Sincronismo vertical: Adaptativo")
+	return tr("Sincronismo vertical: Ligado")
+
+func _cycle_window_mode() -> void:
+	window_mode = WINDOW_MODES[(WINDOW_MODES.find(window_mode) + 1) % WINDOW_MODES.size()]
+	_apply_player_settings()
+	_save_person_settings()
+	_show_menu_screen("opcoes")
+
+func _cycle_ui_scale() -> void:
+	ui_scale = UI_SCALES[(UI_SCALES.find(ui_scale) + 1) % UI_SCALES.size()]
+	_apply_player_settings()
+	_save_person_settings()
+	_show_menu_screen("opcoes")
+
+func _cycle_vsync() -> void:
+	vsync_mode = VSYNC_MODES[(VSYNC_MODES.find(vsync_mode) + 1) % VSYNC_MODES.size()]
+	_apply_player_settings()
+	_save_person_settings()
+	_show_menu_screen("opcoes")
+
+## As três trocas de janela são do sistema, não da loja: em headless elas apenas são
+## aceitas e ignoradas, e a sonda lê o valor guardado, não o pixel na tela. Aplicar não
+## grava em disco — o boot aplica o que já está gravado sem reescrever o arquivo.
+func _apply_player_settings() -> void:
+	DisplayServer.window_set_mode(window_mode)
+	var window := get_window()
+	if is_instance_valid(window):
+		window.content_scale_factor = ui_scale
+	DisplayServer.window_set_vsync_mode(vsync_mode)
+
+## Voltar ao disco sem apagar a conta: a cena reinicia e lê o que está gravado.
+func _reload_from_disk() -> void:
+	audio.play("click")
+	get_tree().reload_current_scene()
 
 func _locale_button_text(id: String) -> String:
 	var line := Locales.display_name(id)
@@ -1410,32 +1867,63 @@ func _pick_locale(id: String) -> void:
 	locale = id
 	locale_confirmed = true
 	TranslationServer.set_locale(locale)
-	_save_locale_settings()
+	_save_person_settings()
 	_save_game()
 	_build_menu_layer()
-	if is_instance_valid(world_timer):
-		world_timer.stop()
+	_sync_clock()
 	_refresh_ui()
 	audio.play("click")
 
 ## A preferência mora fora do save de propósito: reencarnar, resetar a vida e até apagar
-## o progresso são contas da loja, e o idioma é da pessoa que joga.
-func _save_locale_settings() -> void:
+## o progresso são contas da loja, e o idioma e a tela são da pessoa que joga. Um arquivo
+## só, lido antes de escrito: salvar o idioma sem ler apagava a seção da tela, e vice-versa.
+func _save_person_settings() -> void:
 	var config := ConfigFile.new()
+	config.load(Locales.SETTINGS_PATH)
 	config.set_value("locale", "language", locale)
 	config.set_value("locale", "confirmed", locale_confirmed)
+	config.set_value("display", "window_mode", window_mode)
+	config.set_value("display", "ui_scale", ui_scale)
+	config.set_value("display", "vsync_mode", vsync_mode)
 	config.save(Locales.SETTINGS_PATH)
 
-func _load_locale_settings() -> void:
+func _load_person_settings() -> void:
 	var config := ConfigFile.new()
 	if config.load(Locales.SETTINGS_PATH) != OK:
 		return
 	var saved := str(config.get_value("locale", "language", ""))
-	if not Locales.knows(saved):
-		return
-	locale = saved
-	locale_confirmed = bool(config.get_value("locale", "confirmed", false))
-	_locale_from_settings = true
+	if Locales.knows(saved):
+		locale = saved
+		locale_confirmed = bool(config.get_value("locale", "confirmed", false))
+		_locale_from_settings = true
+	if WINDOW_MODES.has(int(config.get_value("display", "window_mode", window_mode))):
+		window_mode = int(config.get_value("display", "window_mode", window_mode))
+	if UI_SCALES.has(float(config.get_value("display", "ui_scale", ui_scale))):
+		ui_scale = float(config.get_value("display", "ui_scale", ui_scale))
+	if VSYNC_MODES.has(int(config.get_value("display", "vsync_mode", vsync_mode))):
+		vsync_mode = int(config.get_value("display", "vsync_mode", vsync_mode))
+
+## O rótulo do botão de um produto que está na bancada. É aqui que quem joga olha para
+## saber quanto falta, então o número tem de cair no ritmo do relógio do mundo e não no
+## ritmo dos eventos: `_refresh_timed_ui()` reescreve só estes botões a cada quarto de
+## segundo de mundo, enquanto `_refresh_ui()` continua desenhando o resto quando algo muda.
+func _forge_button_label(index: int) -> String:
+	var job := _craft_job_of(index)
+	if job.is_empty():
+		return "⏳ Na fila"
+	var remaining := maxf(0.0, float(job.get("remaining", 0.0)) - _world_seconds_since_tick())
+	var total := maxf(1.0, float(job.get("total", remaining)))
+	var progress := clampf(1.0 - remaining / total, 0.0, 1.0)
+	return "⏳ %s • %s" % [tr("Forjando %.1fs") % remaining, _bar(progress)]
+
+
+## O trabalho em bancada de um produto, se ele estiver lá.
+func _craft_job_of(index: int) -> Dictionary:
+	for job in craft_jobs:
+		if int(job.get("index", -1)) == index:
+			return job
+	return {}
+
 
 func _refresh_timed_ui() -> void:
 	var elapsed := _world_seconds_since_tick()
@@ -1449,6 +1937,13 @@ func _refresh_timed_ui() -> void:
 				var remaining := maxf(0.0, float(job.get("remaining", 0.0)) - elapsed)
 				queue_text.append("%s %.1fs" % [queued_item["name"], remaining])
 			forge_status_label.text = "Forja: " + " | ".join(queue_text)
+	# O botão do produto é onde a pessoa olha; a faixa do topo é só o resumo da fila.
+	for i in range(mini(craft_buttons.size(), products.size())):
+		if not is_instance_valid(craft_buttons[i]):
+			continue
+		if _craft_job_of(i).is_empty():
+			continue
+		craft_buttons[i].text = _forge_button_label(i)
 	if is_instance_valid(ritual_label):
 		ritual_label.text = Sanctum.summary(active_buffs, elapsed)
 	for i in range(mini(ritual_labels.size(), Sanctum.DATA.size())):
@@ -2827,18 +3322,14 @@ func _build_ui() -> void:
 	title.add_theme_color_override("font_color", Color(1.0, 0.67, 0.88))
 	header.add_child(title)
 
-	market_toggle_button = Button.new()
-	market_toggle_button.text = "☰ Ocultar"
-	market_toggle_button.custom_minimum_size = Vector2(104, 42)
-	market_toggle_button.pressed.connect(_toggle_market_panel)
-	header.add_child(market_toggle_button)
-
-	var bug_report_button := Button.new()
-	bug_report_button.text = "🐞 Relatar"
-	bug_report_button.custom_minimum_size = Vector2(100, 42)
-	bug_report_button.tooltip_text = "Revisar um relatório com os logs recentes antes de enviá-lo ao GitHub."
-	bug_report_button.pressed.connect(_show_bug_report_dialog)
-	header.add_child(bug_report_button)
+	# O ☰ é o mesmo menu do ESC, e é a porta de entrada de tudo que antes estava
+	# espalhado pelo topo: som, volume, ocultar o painel, salvar, relatar bug.
+	menu_button = Button.new()
+	menu_button.text = "☰"
+	menu_button.tooltip_text = tr("Menu (ESC)")
+	menu_button.custom_minimum_size = Vector2(52, 42)
+	menu_button.pressed.connect(_open_menu.bind(false))
+	header.add_child(menu_button)
 
 	reception_button = Button.new()
 	reception_button.text = "Recepção"
@@ -2869,21 +3360,6 @@ func _build_ui() -> void:
 	expedition_button.custom_minimum_size = Vector2(126, 42)
 	expedition_button.pressed.connect(_set_sector.bind("expedition"))
 	header.add_child(expedition_button)
-
-	mute_button = Button.new()
-	mute_button.custom_minimum_size = Vector2(54, 42)
-	mute_button.tooltip_text = "Ligar/desligar o som"
-	mute_button.pressed.connect(func() -> void: audio.toggle_muted())
-	header.add_child(mute_button)
-	var volume_slider := HSlider.new()
-	volume_slider.min_value = 0.0
-	volume_slider.max_value = 1.0
-	volume_slider.step = 0.05
-	volume_slider.value = audio.volume
-	volume_slider.custom_minimum_size = Vector2(90, 42)
-	volume_slider.tooltip_text = "Volume"
-	volume_slider.value_changed.connect(func(v: float) -> void: audio.set_volume(v))
-	header.add_child(volume_slider)
 
 	var stats := FlowContainer.new()
 	stats.add_theme_constant_override("h_separation", 24)
@@ -3090,6 +3566,10 @@ func _build_ui() -> void:
 	forge_mastery_label.add_theme_font_size_override("font_size", 13)
 	forge_mastery_label.add_theme_color_override("font_color", Color(1.0, 0.80, 0.55))
 	forge_box.add_child(forge_mastery_label)
+	cold_storage_button = Button.new()
+	cold_storage_button.custom_minimum_size = Vector2(820, 36)
+	cold_storage_button.pressed.connect(_buy_cold_storage)
+	forge_box.add_child(cold_storage_button)
 
 	for i in range(products.size()):
 		var card := PanelContainer.new()
@@ -3195,6 +3675,18 @@ func _build_ui() -> void:
 	prestige_button.add_theme_font_size_override("font_size", 15)
 	prestige_button.pressed.connect(_reincarnate)
 	prestige_box.add_child(prestige_button)
+	# A regra da casa mora ao lado de quem a paga: o painel que mostra a aura é o mesmo
+	# que escolhe a dificuldade que multiplicou essa aura.
+	difficulty_label = Label.new()
+	difficulty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	difficulty_label.add_theme_font_size_override("font_size", 13)
+	difficulty_label.add_theme_color_override("font_color", Color(0.86, 0.82, 0.96))
+	prestige_box.add_child(difficulty_label)
+	difficulty_button = Button.new()
+	difficulty_button.custom_minimum_size = Vector2(320, 42)
+	difficulty_button.add_theme_font_size_override("font_size", 14)
+	difficulty_button.pressed.connect(_cycle_difficulty)
+	prestige_box.add_child(difficulty_button)
 
 	reception_box.add_child(_make_section_title("BOLETIM DO MERCADO", Color(1.0, 0.86, 0.45)))
 	reception_box.add_child(_make_section_hint("A loja reage ao que você compra e vende: estoque encalhado derruba o preço, demanda em alta empurra para cima."))
@@ -3420,6 +3912,25 @@ func _build_ui() -> void:
 		staff_button.pressed.connect(_manage_staff.bind(str(seat["id"])))
 		staff_row.add_child(staff_button)
 		staff_buttons.append(staff_button)
+
+	reception_box.add_child(_make_section_title("O LIVRO DE FIADO", Color(0.95, 0.80, 0.55)))
+	reception_box.add_child(_make_section_hint("Fiado é nome, não moeda: a casa só anota para quem já é freguês de casa, e o ouro da venda fica na rua até a cobrança — que pode não voltar. Cada degrau abre teto, páginas e prazo; a nota riscada no terceiro dia de atraso custa reputação e vínculo, e a conta da casa chega igualmente na virada."))
+	var credit_card := _make_sector_card(Color(0.08, 0.05, 0.045, 0.94), Color(0.86, 0.66, 0.34, 0.95))
+	reception_box.add_child(credit_card)
+	var credit_hrow := HBoxContainer.new()
+	credit_hrow.add_theme_constant_override("separation", 12)
+	credit_card.add_child(credit_hrow)
+	credit_label = Label.new()
+	credit_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	credit_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	credit_label.add_theme_font_size_override("font_size", 13)
+	credit_label.add_theme_color_override("font_color", Color(0.92, 0.82, 0.62))
+	credit_hrow.add_child(credit_label)
+	credit_button = Button.new()
+	credit_button.custom_minimum_size = Vector2(190, 44)
+	credit_button.add_theme_font_size_override("font_size", 14)
+	credit_button.pressed.connect(_buy_credit_rank)
+	credit_hrow.add_child(credit_button)
 
 	reception_box.add_child(_make_section_title("A PORTA DA CASA", Color(0.62, 0.86, 1.0)))
 	reception_box.add_child(_make_section_hint("Loja que dá lucro tem alvo na porta. Cada visita é resolvida com a mão que a casa já tem: a ronda da folha, os servos do salão, os batedores do cadastro, o santuário reformado e a Administração. O vigário passa na frente para cobrar — dízimo, suborno ou porta na cara dele, e as três respostas têm preço."))
@@ -4196,8 +4707,6 @@ func _toggle_market_panel() -> void:
 	if not is_instance_valid(market_panel):
 		return
 	market_panel.visible = not market_panel.visible
-	if is_instance_valid(market_toggle_button):
-		market_toggle_button.text = "☰ Ocultar" if market_panel.visible else "☰ Abrir"
 	audio.play("click")
 	_show_feedback("Mercado expandido." if market_panel.visible else "Recepção em foco.", Color(0.78, 0.95, 1.0))
 
@@ -4291,8 +4800,6 @@ func _set_sector(sector: String) -> void:
 		sector_title_label.text = "RECEPÇÃO • MERCADO E BALCÃO" if is_reception else "FORJA & OFICINA" if is_forge else "BIBLIOTECA ARCANA" if is_library else "EXPEDIÇÕES & RARIDADES" if is_expedition else "SANTUÁRIO DE ARTEFATOS"
 	if is_instance_valid(sector_hint_label):
 		sector_hint_label.text = "Compre ingredientes e venda itens no balcão. Os clientes chegam sozinhos para negociar." if is_reception else "Aqui apenas se fabrica: o ferreiro transforma ingredientes e ouro em mercadorias." if is_forge else "Aperfeiçoe talentos e adiante receitas presas ao nível." if is_library else "Nem tudo tem fornecedor. Mande o batedor buscar e torça pelo caminho de volta." if is_expedition else "Relíquias carregadas de magia aguardam uma negociação cuidadosa."
-	if is_instance_valid(market_toggle_button):
-		market_toggle_button.text = "☰ Ocultar" if is_instance_valid(market_panel) and market_panel.visible else "☰ Abrir"
 	# A trilha segue a sala e a rua: a mesma gravação, afinada pelo setor, pela visita
 	# que acabou de bater na porta e pela conta que a casa deve.
 	_apply_situation_music()
@@ -4336,18 +4843,22 @@ func _apply_sector_visibility() -> void:
 	if is_instance_valid(scene_action_box):
 		scene_action_box.visible = current_sector == "library" or current_sector == "sanctum"
 
-func _play_sensual_reception_moment() -> void:
+## A cena da recepção. `intensidade` (0 a 1) é o degrau da escada de momentos: quanto
+## mais alto, mais ela se aproxima, mais quente fica o retrato e mais tempo ela segura
+## antes de voltar para o balcão. Não muda economia nem porta — é só a respiração.
+func _play_sensual_reception_moment(intensidade: float = 0.0) -> void:
 	if not adult_content_enabled or not is_instance_valid(seller_portrait):
 		return
+	var peso := clampf(intensidade, 0.0, 1.0)
 	_seller_lean_in()
 	_show_stage_emotion(stage_seller_body, "ousadia")
 	if sensual_tween != null and sensual_tween.is_valid():
 		sensual_tween.kill()
 	seller_portrait.pivot_offset = seller_portrait.size / 2.0
 	sensual_tween = create_tween()
-	sensual_tween.tween_property(seller_portrait, "scale", Vector2(1.07, 1.07), 0.32).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	sensual_tween.tween_property(seller_portrait, "modulate", Color(1.0, 0.82, 0.95, 1.0), 0.32)
-	sensual_tween.tween_interval(1.6)
+	sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE * lerpf(1.07, 1.14, peso), 0.32).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	sensual_tween.tween_property(seller_portrait, "modulate", Color(1.0, lerpf(0.82, 0.72, peso), lerpf(0.95, 0.90, peso), 1.0), 0.32)
+	sensual_tween.tween_interval(lerpf(1.6, 2.4, peso))
 	sensual_tween.tween_property(seller_portrait, "scale", Vector2.ONE, 0.42).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	sensual_tween.tween_property(seller_portrait, "modulate", Color.WHITE, 0.42)
 
@@ -4401,8 +4912,6 @@ func _setup_background_music() -> void:
 	_apply_situation_music()
 
 func _apply_music_settings() -> void:
-	if is_instance_valid(mute_button):
-		mute_button.text = "🔇" if audio.muted else "🔊"
 	if is_instance_valid(music_player):
 		music_player.stream_paused = audio.muted
 		music_player.volume_db = music_base_db + linear_to_db(maxf(audio.volume, 0.0001))
@@ -4446,7 +4955,7 @@ func _craft_product(index: int) -> void:
 	duration /= Sanctum.scale(active_buffs, "craft")
 	var catalyst := _take_catalyst()
 	var job_luck := int(catalyst.get("catalyst_luck", 0))
-	craft_jobs.append({"index": index, "remaining": maxf(3.0, duration), "luck": job_luck})
+	craft_jobs.append({"index": index, "remaining": maxf(3.0, duration), "total": maxf(3.0, duration), "luck": job_luck})
 	last_event = "Forja iniciada: %s levará %.1fs de tempo de mundo." % [item["name"], maxf(3.0, duration)]
 	if not catalyst.is_empty():
 		last_event += " %s virou pó dentro da forma: a peça sai com mais sorte." % str(catalyst["name"])
@@ -5004,6 +5513,152 @@ func _add_piece(index: int, tier: int) -> void:
 	item["stock"] = int(item["stock"]) + 1
 	var stock := _quality_for(str(item["id"]))
 	stock[tier] = int(stock[tier]) + 1
+	if _shelf_life(index) > 0:
+		_batches_for(str(item["id"])).append({"tier": tier, "day": shop_day})
+
+## Quantos dias de balcão a peça aguenta antes de começar a virar. Zero quer dizer
+## "não vence": lâmina, pergaminho e caixa vazia não apodrecem. O depósito de sal
+## soma uma validade inteira por nível, então o prazo cresce sem mexer em preço.
+func _shelf_life(index: int) -> int:
+	var days := int(products[index].get("validade", 0))
+	if days <= 0:
+		return 0
+	return days * (1 + cold_storage_level)
+
+func _batches_for(product_id: String) -> Array:
+	var stored = shelf_batches.get(product_id, null)
+	if stored is Array:
+		return stored
+	var fresh: Array = []
+	shelf_batches[product_id] = fresh
+	return fresh
+
+## A prateleira e o registro de idade têm de bater antes de a virada cobrar: peça
+## que chegou por save antigo, migração ou carga avulso entra como recém-posta no
+## degrau dela, e sobra de registro sem peça correspondente é podada. Sem isso uma
+## peça órfã apodrecia sozinha, uma peça real nunca estragava, ou — pior —
+## a virada re-escrevia o estoque e derrubava o nível de quem só estava guardado.
+func _reconcile_batches(index: int) -> void:
+	var product_id := str(products[index]["id"])
+	var life := _shelf_life(index)
+	var batches := _batches_for(product_id)
+	if life <= 0:
+		batches.clear()
+		return
+	var counts := _quality_for(product_id)
+	var tracked := Quality.empty_stock()
+	for batch in batches:
+		var tier := clampi(int(batch["tier"]), 0, Quality.size() - 1)
+		batch["tier"] = tier
+		tracked[tier] = int(tracked[tier]) + 1
+	for tier in range(Quality.size()):
+		var missing := int(counts[tier]) - int(tracked[tier])
+		for _added in range(maxi(0, missing)):
+			batches.append({"tier": tier, "day": shop_day})
+		var extra := int(tracked[tier]) - int(counts[tier])
+		for _cut in range(maxi(0, extra)):
+			for position in range(batches.size()):
+				if int(batches[position]["tier"]) == tier:
+					batches.remove_at(position)
+					break
+
+## Vence é descer um degrau, não sumir: a peça mais antiga da prateleira perde uma
+## casa de qualidade, e a que já está no fundo sai pela porta. Sem sorteio nenhum,
+## porque a mesma semente tem de fechar o mesmo estoque. Devolve quanto virou e
+## quanto se perdeu para o balanço da manhã poder contar.
+func _age_shelf() -> Dictionary:
+	var turned := 0
+	var lost := 0
+	for index in range(products.size()):
+		var life := _shelf_life(index)
+		if life <= 0:
+			continue
+		var product_id := str(products[index]["id"])
+		_reconcile_batches(index)
+		var batches := _batches_for(product_id)
+		var kept: Array = []
+		for batch in batches:
+			if shop_day - int(batch["day"]) < life:
+				kept.append(batch)
+				continue
+			turned += 1
+			var tier := int(batch["tier"])
+			if tier <= 0:
+				lost += 1
+				continue
+			batch["tier"] = tier - 1
+			batch["day"] = shop_day
+			kept.append(batch)
+		batches.assign(kept)
+		var counts := _quality_for(product_id)
+		for tier in range(Quality.size()):
+			counts[tier] = 0
+		for batch in batches:
+			var tier := int(batch["tier"])
+			counts[tier] = int(counts[tier]) + 1
+		products[index]["stock"] = Quality.total(counts)
+	return {"turned": turned, "lost": lost}
+
+## Quantos dias faltam para a peça mais antiga da prateleira começar a virar.
+func _shelf_countdown(index: int) -> int:
+	var life := _shelf_life(index)
+	if life <= 0:
+		return 0
+	var product_id := str(products[index]["id"])
+	var batches := _batches_for(product_id)
+	if batches.is_empty():
+		return life
+	var oldest := shop_day
+	for batch in batches:
+		oldest = mini(oldest, int(batch["day"]))
+	return clampi(life - (shop_day - oldest), 0, life)
+
+## A linha de prazo que a forja mostra embaixo da peça. Prateleira vazia não vence
+## nada, e o que não tem validade ganha o ∞ para a lista ter leitura igual.
+func _shelf_marker(index: int) -> String:
+	var life := _shelf_life(index)
+	if life <= 0:
+		return "∞ Não vence"
+	if int(products[index]["stock"]) <= 0:
+		return "⏳ %d dias de prazo • nada vencendo na prateleira vazia" % life
+	var dias := _shelf_countdown(index)
+	if dias <= 1:
+		return "⏳ Vira HOJE: a peça mais antiga desce um degrau"
+	return "⏳ Vence em %d dias de balcão" % dias
+
+## O depósito de sal é compra de vida, como a biblioteca e o santuário: cada nível
+## soma uma validade inteira ao relógio da prateleira. Não mexe em preço, sorte nem
+## porta — só no prazo, que é justamente o que a ruína de quem esquece a poção
+## na estante cobra.
+func _cold_storage_cost() -> int:
+	return 120 + cold_storage_level * 180
+
+func _buy_cold_storage() -> void:
+	if cold_storage_level >= 3:
+		last_event = "Três baús de sal é o que a casa guarda. Mais que isso, poção velha vira história de balcão."
+		audio.play("click")
+		_refresh_ui()
+		return
+	var cost := _cold_storage_cost()
+	if gold < cost:
+		last_event = "Depósito de sal Nv.%d custa %d ouro. O sal é barato; a porta com chave, não." % [
+			cold_storage_level + 1, cost]
+		audio.play("sad")
+		_refresh_ui()
+		return
+	gold -= cost
+	cold_storage_level += 1
+	reputation += 1
+	_add_xp(10)
+	if cold_storage_level == 1:
+		last_event = "Primeiro baú de sal no fundo da forja: toda mercadoria perecível agora tem o dobro de prazo na prateleira."
+	elif cold_storage_level == 2:
+		last_event = "Segundo baú: a despensa respira três validades antes de a primeira peça descer de degrau."
+	else:
+		last_event = "Depósito cheio. A chefe tranca a porta e joga a chave no bolso: “Agora o que vence aqui é porque eu deixei.”"
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
 
 ## O diabrete contratado não tira poção do chapéu: ele revira a despensa e usa a
 ## primeira matéria-prima que encontra. Sem estoque ele reclama e não produz,
@@ -5027,8 +5682,26 @@ func _imp_work() -> void:
 func _take_piece(index: int, mode: int) -> int:
 	var item: Dictionary = products[index]
 	item["stock"] = maxi(0, int(item["stock"]) - 1)
-	var stock := _quality_for(str(item["id"]))
+	var product_id := str(item["id"])
+	var stock := _quality_for(product_id)
 	var tier := Quality.take(stock, mode)
+	if tier >= 0 and _shelf_life(index) > 0:
+		# Saiu pela porta, sai também da idade: a mais antiga daquele degrau, que é
+		# justamente a que o balcão empurra primeiro. A ordem do registro não garante
+		# idade — peça que desceu de degrau na virada mantém o lugar que tinha na lista
+		# e reescreve o dia — então quem manda é o dia, não a posição.
+		var batches := _batches_for(product_id)
+		var pick := -1
+		var oldest := 0
+		for position in range(batches.size()):
+			if int(batches[position]["tier"]) != tier:
+				continue
+			var day := int(batches[position]["day"])
+			if pick < 0 or day < oldest:
+				pick = position
+				oldest = day
+		if pick >= 0:
+			batches.remove_at(pick)
 	return 1 if tier < 0 else tier
 
 ## Peça que sai pela porta é peça entregue: só ela conta para a etapa Lendária da
@@ -5040,9 +5713,11 @@ func _register_sold_piece(tier: int) -> void:
 	legendary_sold += 1
 	_progress_commission("legendary", 1)
 
-## Etiqueta da peça: preço base do catálogo multiplicado pelo nível de qualidade.
+## Etiqueta da peça: preço base do catálogo, nível de qualidade e a regra da casa. É o
+## único lugar onde o preço nasce, então vitrine, balcão e margem estimada escalam
+## juntas — e no Calçada o fator é 1.0, o que deixa toda medida antiga de pé.
 func _piece_price(item: Dictionary, tier: int) -> float:
-	return float(item["price"]) * float(Quality.tier(tier)["mult"])
+	return float(item["price"]) * float(Quality.tier(tier)["mult"]) * _difficulty_price_factor()
 
 ## Olha a peça que sairia sem tirar da prateleira. Serve para a fila decidir o que
 ## cabe no bolso antes de a venda consumir o estoque.
@@ -5450,6 +6125,9 @@ func _on_customer_tick() -> void:
 		reaction_label.text = ""
 	if ticks % 20 == 0:
 		shop_day += 1
+		# O caderno de regra marca o dia no modo que a loja efetivamente morou: é ele, e
+		# não o botão batido na hora da reencarnação, que decide o multiplicador de aura.
+		difficulty_days[difficulty] = int(difficulty_days.get(difficulty, 0)) + 1
 		_show_stage_emotion(stage_seller_body, "sono")
 		Economy.advance_day(economy_state)
 		_roll_weather()
@@ -5513,10 +6191,27 @@ func _on_customer_tick() -> void:
 		# A placa que acendeu hoje entra no balanço: a loja lê o rombo antes de a
 		# primeira batida pegar menos corpo na calçada.
 		var rival_line := _rival_opening_line()
-		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s" % [
+		# A despensa vira depois de todos os sorteios da manhã: estrago de prazo não
+		# consome sorte, senão a mesma semente mudaria de vândalo só porque havia
+		# poção velha na prateleira.
+		var spoil := _age_shelf()
+		var spoil_line := ""
+		if int(spoil["turned"]) > 0:
+			spoil_line = " A prateleira virou: %d peça(s) desceu(ram) de qualidade" % int(spoil["turned"])
+			if int(spoil["lost"]) > 0:
+				spoil_line += " e %d saiu(ram) do fundo da estante pela porta." % int(spoil["lost"])
+			else:
+				spoil_line += "."
+		# O livro de fiado vira junto com a prateleira: atraso é dia morado, não sorteio,
+		# e a nota riscada dói na conta uma única vez por virada.
+		var credit_line := _age_credit_book()
+		var credit_report := (" " + credit_line) if credit_line != "" else ""
+		var credit_event := ("\n📖 " + credit_line) if credit_line != "" else ""
+		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line + spoil_line + credit_report
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s%s" % [
 			shop_day, Economy.report(economy_state, products, Ingredients.DATA), _weather_line(), bill_line,
-			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line, rival_line]
+			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line, rival_line,
+			credit_event]
 		# A manhã também afina a faixa: alarme novo, vigário na porta ou ruína velha
 		# mudam o tom da mesma gravação antes de a chefe abrir o balcão.
 		_apply_situation_music()
@@ -5609,6 +6304,16 @@ func _on_customer_tick() -> void:
 		_animate_customer_arrival(profile)
 		var preferred_index: int = _product_index(str(profile["favorite"]))
 		current_customer_budget = _visit_budget(profile)
+		# Quem deve à casa paga antes de comprar: o bolso que a visita trouxe é o
+		# mesmo que quita a nota, e o que sobra é o que ele leva hoje. Quitar não dá
+		# direito a uma nota nova no mesmo balcão — senão a casa giraria o próprio
+		# ouro e chamaria isso de freguês fiel.
+		var credit_note: Dictionary = _settle_credit_note(str(profile.get("regular_id", "")))
+		var credit_settled := not credit_note.is_empty()
+		if credit_settled:
+			current_customer_budget = maxi(0, current_customer_budget - int(credit_note["purse"]))
+		var credit_lending := false
+		var credit_choice := -1
 		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank + Sanctum.patience_bonus(active_buffs) + distraction_pending) / world_speed())) - _fury_patience_loss() - _mess_patience_loss())
 		distraction_pending = 0
 		var seduction_used := false
@@ -5651,25 +6356,54 @@ func _on_customer_tick() -> void:
 					if _shelf_price(affordable_index) <= current_customer_budget:
 						affordable.append(affordable_index)
 			else:
-				last_event = "%s não conseguiu pagar nenhum item e saiu %s: “Volto quando meu bolso parar de chorar.”" % [profile["name"], "com pressa" if current_customer_patience <= 1 else "frustrado"]
-				disappointed_customers += 1
-				reputation = maxi(0, reputation - 1)
-				_set_customer_status("CLIENTE: saiu sem comprar")
-				if is_instance_valid(customer_emotion_label):
-					customer_emotion_label.text = "😤 frustração"
-				_play_customer_reaction("broke")
-				# O charme não bastou, e ela faz de conta que era teste de balcão.
-				_show_stage_emotion(stage_seller_body, "vergonha")
-				_check_achievements()
-				_save_game()
-				_refresh_ui()
-				return
-		var chosen_index: int = affordable[randi() % affordable.size()] if not affordable.is_empty() else available[randi() % available.size()]
-		if preferred_index >= 0 and available.has(preferred_index) and randi() % 100 < 70:
-			chosen_index = preferred_index
-			# Ele viu o que queria do outro lado do salão e aponta antes de pedir.
-			_show_stage_emotion(stage_customer, "aponta")
-			if not seduction_used and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 + sanctum_upgrade_level * 3 and (preferred_index == chosen_index or current_customer_patience <= 1):
+				var fiado_index := _cheapest_index(available)
+				var fiado_valor := 0 if fiado_index < 0 else _shelf_price(fiado_index)
+				if not credit_settled and _can_lend(str(profile.get("regular_id", "")), fiado_valor):
+					# O bolso não chega, mas o nome chega: a casa anota no livro e a
+					# peça sai. O ouro fica na rua até a virada cobrar — e é isso que
+					# faz o fiado doer quando a conta da casa chega antes do pagamento.
+					credit_lending = true
+					credit_choice = fiado_index
+				else:
+					last_event = "%s não conseguiu pagar nenhum item e saiu %s: “Volto quando meu bolso parar de chorar.”" % [profile["name"], "com pressa" if current_customer_patience <= 1 else "frustrado"]
+					disappointed_customers += 1
+					reputation = maxi(0, reputation - 1)
+					_set_customer_status("CLIENTE: saiu sem comprar")
+					if is_instance_valid(customer_emotion_label):
+						customer_emotion_label.text = "😤 frustração"
+					_play_customer_reaction("broke")
+					# O charme não bastou, e ela faz de conta que era teste de balcão.
+					_show_stage_emotion(stage_seller_body, "vergonha")
+					_check_achievements()
+					_save_game()
+					_refresh_ui()
+					return
+		# A segunda porta do fiado é o pedido pessoal: quem veio pela peça que a casa
+		# tem na estante, e não chega na etiqueta dela, hoje levaria outra e o pedido
+		# continuaria por fazer. No livro ele leva a que pediu, a casa marca a
+		# encomenda concluída e recebe amanhã — com o risco da riscada. Degrau zero não
+		# empresta, então nenhuma visita de loja nova passa por aqui.
+		if not credit_lending and not credit_settled and not seduction_used \
+				and not affordable.is_empty() and bool(profile.get("personal_request", false)):
+			if preferred_index >= 0 and available.has(preferred_index) and not affordable.has(preferred_index):
+				var pedido_valor := _shelf_price(preferred_index)
+				if _can_lend(str(profile.get("regular_id", "")), pedido_valor):
+					# O fiado aqui não é um presente nem um desconto: é o mesmo preço
+					# honesto do balcão, cobrado um dia depois. O que a casa troca é o
+					# dia, e o risco passa a ser seu — a riscada mora na virada.
+					credit_lending = true
+					credit_choice = preferred_index
+		var chosen_index: int = credit_choice if credit_lending else (affordable[randi() % affordable.size()] if not affordable.is_empty() else available[randi() % available.size()])
+		if preferred_index >= 0 and available.has(preferred_index) and not credit_lending and randi() % 100 < 70:
+			# O dedo aponta a vitrine, mas quem decide a compra é o bolso. Este `if` trocava
+			# o escolhido pela favorita sem consultar `affordable`, e a loja recebia o preço
+			# cheio de quem tinha menos da metade no bolso — medido: 143 de ouro na mão de 60.
+			var leva_a_favorita := affordable.has(preferred_index)
+			if leva_a_favorita:
+				chosen_index = preferred_index
+				# Ele viu o que queria do outro lado do salão e aponta antes de pedir.
+				_show_stage_emotion(stage_customer, "aponta")
+			if not seduction_used and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 + sanctum_upgrade_level * 3 and (leva_a_favorita or current_customer_patience <= 1):
 				seduction_used = true
 				seduction_attempts += 1
 				seduction_successes += 1
@@ -5721,14 +6455,46 @@ func _on_customer_tick() -> void:
 			sale_price += request_bonus
 			var completed_id := str(profile["regular_id"])
 			regular_orders_completed[completed_id] = int(regular_orders_completed.get(completed_id, 0)) + 1
-			last_event = "PEDIDO ESPECIAL concluído para %s! +%d ouro e +10 XP. %s" % [profile["name"], request_bonus, profile["line"]]
+			if credit_lending:
+				# No fiado o pedido sai concluído e o prêmio vai na nota junto com a
+				# peça: a casa anota o preço honesto e cobra na virada.
+				last_event = "PEDIDO ESPECIAL concluído para %s no fiado: o prêmio de %d ouro entra na nota, e a casa cobra na virada. +10 XP. %s" % [profile["name"], request_bonus, profile["line"]]
+			else:
+				last_event = "PEDIDO ESPECIAL concluído para %s! +%d ouro e +10 XP. %s" % [profile["name"], request_bonus, profile["line"]]
 			_add_xp(10)
 			headline_locked = true
 			reputation += 1 + (1 if seduction_used else 0)
 		sale_price = maxi(1, int(round(float(sale_price) * _retail_price_factor())))
-		# A peça saiu da prateleira, o dinheiro entra no caixa. Até aqui só o
-		# pedido especial pagava: a venda comum levava o item e devovia XP.
-		gold += sale_price
+		# A peça saiu da prateleira. No balcão de sempre o dinheiro entra no caixa; no
+		# fiado ele entra no livro, e o caixa fica esperando a virada — a mesma virada
+		# em que a casa cobra conta e filial. É aí que o crédito dói: emprestar é fechar
+		# o dia com a conta pronta e o ouro na rua.
+		if credit_lending:
+			# O livro anota o preço honesto da peça, não a etiqueta de vitrine: a casa
+			# empresta o ouro de hoje e cobra amanhã o que cobraria no balcão — inclusive
+			# o prêmio do pedido pessoal. O que muda é o dia, nunca o valor. E o teto do
+			# degrau é teto da nota: fiado acima do que a casa aceita ter na rua não é
+			# crédito, é aposta.
+			var fiado_devido := mini(sale_price, _credit_limit())
+			_lend_note(str(profile.get("regular_id", "")), str(profile["name"]), str(item["name"]), fiado_devido)
+			var nota := "📖 %s levou %s (%s) no fiado: %d de ouro anotados no livro, prazo no dia %d. %s" % [
+				profile["name"], item["name"], quality_name, fiado_devido,
+				shop_day + _credit_due_days(), str(profile["line"])
+			]
+			# Quem veio pelo pedido e levou no fiado tem dois motivos para ler: a encomenda
+			# saiu feita e a casa anotou o prêmio junto. A nota é a manchete, o pedido fica
+			# na linha de cima — sem isso o balcão emprestava sem avisar do favor.
+			if fulfilled_personal_request:
+				nota = "%s\n%s" % [str(last_event), nota]
+			last_event = nota
+			# A nota é o recibo do ouro que saiu pela porta: vira manchete trancada, e
+			# nenhuma festa de balcão (degrau de freguês, faixa da reforma) pode apagá-la
+			# no mesmo turno em que ela foi escrita.
+			headline_locked = true
+		else:
+			gold += sale_price
+		if credit_settled:
+			last_event = "%s\n%s" % [str(credit_note["line"]), last_event]
 		customers_served += 1
 		_add_mess(MESS_PER_VISIT)
 		if profile.has("regular_id"):
@@ -5742,7 +6508,11 @@ func _on_customer_tick() -> void:
 			if new_tier > old_tier:
 				var tier_lines: Array = regular_data.get("tier_up", [])
 				var tier_line := str(tier_lines[new_tier - 1]) if tier_lines.size() >= new_tier else "Este freguês agora confia mais na sua loja."
-				last_event = "%s agora é %s! %s" % [regular_data.get("short", regular_data.get("name", "Freguês")), Regulars.TIER_NAMES[new_tier], tier_line]
+				var escada := "%s agora é %s! %s" % [regular_data.get("short", regular_data.get("name", "Freguês")), Regulars.TIER_NAMES[new_tier], tier_line]
+				# O degrau novo é a notícia maior, mas não apaga o recibo do balcão: num
+				# balcão de fiado o pedido sobe de degrau justamente na visita em que a
+				# nota é escrita, e perder a nota aqui é o ouro emprestado sumir do mural.
+				last_event = escada if not headline_locked else "%s\n%s" % [escada, str(last_event)]
 				headline_locked = true
 			if preferred_index == chosen_index and new_bond >= 3 and not regular_story_completed.has(regular_id):
 				var story_progress := int(regular_story_progress.get(regular_id, 0)) + 1
@@ -5753,12 +6523,14 @@ func _on_customer_tick() -> void:
 					gold += story_reward
 					reputation += 2
 					_add_xp(30)
-					last_event = "CAPÍTULO CONCLUÍDO: a história de %s avança! Recompensa: %d ouro, +30 XP e +2 reputação." % [regular_data.get("short", regular_data.get("name", "Freguês")), story_reward]
+					var capitulo := "CAPÍTULO CONCLUÍDO: a história de %s avança! Recompensa: %d ouro, +30 XP e +2 reputação." % [regular_data.get("short", regular_data.get("name", "Freguês")), story_reward]
+					last_event = capitulo if not headline_locked else "%s\n%s" % [capitulo, str(last_event)]
 					headline_locked = true
 				else:
 					last_event += "\nMissão pessoal: %d/3 compras favoritas." % story_progress
 			var romance_tip := _romance_tip(regular_id)
-			if romance_tip > 0:
+			# quem leva no fiado não deixa gorjeta no mesmo turno: a dívida é a gorjeta.
+			if romance_tip > 0 and not credit_lending:
 				gold += romance_tip
 				daily_gold_earned += romance_tip
 				last_event += "\n%s deixa uma gorjeta de coração sobre o balcão: +%d ouro." % [
@@ -5788,10 +6560,16 @@ func _on_customer_tick() -> void:
 				last_event = last_event + "\n" + faction_msg if headline_locked else faction_msg
 			elif faction_bonus > 0:
 				last_event += "\nBônus de facção (%s): +%d ouro." % [Factions.find(faction_id).get("short", faction_id), faction_bonus]
-		daily_gold_earned += sale_price
+		if not credit_lending:
+			daily_gold_earned += sale_price
 		_add_xp(12)
 		_progress_contracts("customers", 1)
-		_progress_contracts("gold", sale_price)
+		# A meta de ouro do dia é o que entrou no caixa. No fiado a peça saiu, o cliente
+		# saiu satisfeito e o ouro saiu pela porta — a conta dele é do livro, e só entra
+		# no balanço na virada em que a casa recebe. Somar a etiqueta aqui era o dia
+		# bater cheio com a gaveta vazia.
+		if not credit_lending:
+			_progress_contracts("gold", sale_price)
 		_add_affection(1 + charm_rank + sanctum_upgrade_level + (1 if _has_spec("charm", "coracao") else 0))
 		_set_customer_status("CLIENTE: %s" % profile["name"])
 		_set_seller_mood("happy")
@@ -5800,9 +6578,14 @@ func _on_customer_tick() -> void:
 		if not buyback.is_empty():
 			last_event += "\n" + str(buyback["line"])
 
-	if adult_content_enabled and affection >= 10 and affection % 10 == 0:
-		last_event = "A súcubo se aproxima com um sorriso cúmplice: “Você está conquistando minha confiança… e isso pode render recompensas bem interessantes.”"
-		_play_sensual_reception_moment()
+	if affection >= 10 and affection % 10 == 0:
+		var marco := _affection_milestone_index()
+		var topo_m: float = float(maxi(SENSUAL_AFFECTION_MILESTONES.size() - 1, 1))
+		if adult_content_enabled:
+			last_event = str(SENSUAL_AFFECTION_MILESTONES[marco])
+			_play_sensual_reception_moment(float(marco) / topo_m)
+		else:
+			last_event = str(TRUST_AFFECTION_MILESTONES[marco])
 	elif affection > 0 and affection % 5 == 0:
 		last_event = "A chefe pisca para você: “Olha só, estamos nos entendendo melhor, querido.”" if adult_content_enabled else "A chefe assina o caderno: “Olha só, estamos nos entendendo melhor.”"
 
@@ -5889,7 +6672,7 @@ func _trigger_random_event() -> void:
 		if is_instance_valid(customer_emotion_label):
 			customer_emotion_label.text = "💘 distraído"
 		_set_customer_status("CLIENTE: distraído pelo charme")
-		_play_sensual_reception_moment()
+		_play_sensual_reception_moment(float(_private_moment_index()) / float(maxi(SENSUAL_MOMENTS.size() - 1, 1)))
 	else:
 		_show_stage_emotion(stage_seller_body, "pensativo")
 	audio.play("rare")
@@ -6348,6 +7131,9 @@ func _refresh_ui() -> void:
 		var sanctum_cost := 90 + sanctum_upgrade_level * 120
 		sanctum_upgrade_button.text = "Santuário Nv.%d • Upgrade %d ouro" % [sanctum_upgrade_level, sanctum_cost] if sanctum_upgrade_level < 5 else "Santuário Nv.5 • Máximo"
 		sanctum_upgrade_button.disabled = sanctum_upgrade_level >= 5 or gold < sanctum_cost
+	if is_instance_valid(cold_storage_button):
+		cold_storage_button.text = "❄ Depósito de sal Nv.%d • %d ouro" % [cold_storage_level, _cold_storage_cost()] if cold_storage_level < 3 else "❄ Depósito de sal Nv.3 • Máximo"
+		cold_storage_button.disabled = cold_storage_level >= 3 or gold < _cold_storage_cost()
 	if is_instance_valid(sector_action_button):
 		sector_action_button.text = "Consultar grimório vivo" if current_sector == "library" else "Harmonizar relíquia" if current_sector == "sanctum" else "Interagir com o cenário"
 		sector_action_button.disabled = current_sector != "library" and current_sector != "sanctum"
@@ -6459,7 +7245,7 @@ func _refresh_ui() -> void:
 		var shelf := _shelf_price(i)
 		if unlocked:
 			var margin := _estimated_margin(item)
-			product_labels[i].text = "%s%s %s\nEstoque: %d  •  Vitrine: %d ouro\nPeças: %s" % [item["name"], demand_marker, heat_marker, item["stock"], shelf, Quality.summary(quality)]
+			product_labels[i].text = "%s%s %s\nEstoque: %d  •  Vitrine: %d ouro\nPeças: %s\n%s" % [item["name"], demand_marker, heat_marker, item["stock"], shelf, Quality.summary(quality), _shelf_marker(i)]
 			product_margin_labels[i].text = "Margem estimada: %s%d ouro" % ["+" if margin >= 0 else "−", abs(margin)]
 			product_margin_labels[i].add_theme_color_override("font_color", Color(0.65, 1.0, 0.72) if margin >= 0 else Color(1.0, 0.55, 0.55))
 		else:
@@ -6474,7 +7260,7 @@ func _refresh_ui() -> void:
 		for job in craft_jobs:
 			if int(job.get("index", -1)) == i:
 				already_queued = true
-		craft_buttons[i].text = "Na fila" if already_queued else "Fabricar (%d)" % craft_cost if unlocked and missing_ingredients.is_empty() else "Faltam ingredientes" if unlocked else "Receita bloqueada"
+		craft_buttons[i].text = _forge_button_label(i) if already_queued else "Fabricar (%d)" % craft_cost if unlocked and missing_ingredients.is_empty() else "Faltam ingredientes" if unlocked else "Receita bloqueada"
 		craft_buttons[i].disabled = already_queued or craft_jobs.size() >= 3 or not unlocked or gold < craft_cost or not missing_ingredients.is_empty()
 		var counter_stock := int(item["stock"])
 		var counter_tier := _peek_tier(i, Quality.WORST)
@@ -6612,6 +7398,17 @@ func _refresh_ui() -> void:
 				" • %d furtos barrados pela ronda." % theft_blocked if staff_hired.has("ronda") else "",
 				_servants_line()
 			]
+	if is_instance_valid(credit_label):
+		credit_label.text = _credit_summary()
+	if is_instance_valid(credit_button):
+		var credit_next := _credit_next_row()
+		if credit_next.is_empty():
+			credit_button.text = "📖 Livro no degrau máximo"
+			credit_button.disabled = true
+		else:
+			credit_button.text = "📖 Abrir o fiado — degrau %d (%d)" % [
+				int(credit_next["rank"]), int(credit_next["cost"])]
+			credit_button.disabled = false
 	for i in range(Staff.DATA.size()):
 		var seat: Dictionary = Staff.DATA[i]
 		var seat_id := str(seat["id"])
@@ -7135,6 +7932,15 @@ func _save_game() -> void:
 	config.set_value("game", "house_rank", house_rank)
 	config.set_value("game", "ingredient_stock", ingredient_stock)
 	config.set_value("game", "quality_stock", quality_stock)
+	config.set_value("game", "shelf_batches", shelf_batches)
+	config.set_value("game", "cold_storage_level", cold_storage_level)
+	config.set_value("game", "difficulty", difficulty)
+	config.set_value("game", "difficulty_days", difficulty_days)
+	config.set_value("game", "credit_rank", credit_rank)
+	config.set_value("game", "credit_book", credit_book)
+	config.set_value("game", "credit_paid", credit_paid)
+	config.set_value("game", "credit_written", credit_written)
+	config.set_value("game", "credit_lost_gold", credit_lost_gold)
 	config.set_value("game", "economy_state", economy_state)
 	config.set_value("game", "auto_buy_mission_loot", auto_buy_mission_loot)
 	config.set_value("game", "loot_buyback_percent", loot_buyback_percent)
@@ -7480,6 +8286,68 @@ func _load_game() -> void:
 				for i in range(mini(saved_counts.size(), counts.size())):
 					counts[i] = maxi(0, int(saved_counts[i]))
 			quality_stock[str(product_id)] = counts
+	cold_storage_level = clampi(int(config.get_value("game", "cold_storage_level", cold_storage_level)), 0, 3)
+	# A idade da prateleira vem depois do `shop_day` e do registro de qualidade: peça
+	# sem dia registrado, ou com dia no futuro, entra como recém-posta. Save antigo
+	# acorda com a despensa fresca, não com ela virada.
+	var saved_batches = config.get_value("game", "shelf_batches", {})
+	shelf_batches = {}
+	if saved_batches is Dictionary:
+		for product_id in (saved_batches as Dictionary).keys():
+			var kept: Array = []
+			var saved_list = (saved_batches as Dictionary)[product_id]
+			if saved_list is Array:
+				for entry in saved_list:
+					if not (entry is Dictionary):
+						continue
+					var day := int((entry as Dictionary).get("day", shop_day))
+					if day > shop_day or day < 1:
+						day = shop_day
+					kept.append({
+						"tier": clampi(int((entry as Dictionary).get("tier", 1)), 0, Quality.size() - 1),
+						"day": day,
+					})
+			shelf_batches[str(product_id)] = kept
+	# A regra da casa é escolha, não conta: id fora da tabela (save adulterado, ou modo
+	# que deixou de existir) volta ao Calçada, e dia de modo fantasma some do caderno.
+	# Save antigo não tem as chaves e acorda no Calçada com o caderno vazio.
+	var saved_difficulty := str(config.get_value("game", "difficulty", difficulty))
+	difficulty = str(_difficulty_row(saved_difficulty)["id"])
+	var saved_days = config.get_value("game", "difficulty_days", {})
+	difficulty_days = {}
+	if saved_days is Dictionary:
+		for id in (saved_days as Dictionary).keys():
+			var dia := maxi(0, int((saved_days as Dictionary)[id]))
+			if dia <= 0 or str(_difficulty_row(str(id))["id"]) != str(id):
+				continue
+			difficulty_days[str(id)] = dia
+	# O livro de fiado volta como estava, mas sem nota impossível: deve quem a casa
+	# conhece, deve ouro de verdade e vence num dia que ainda existe. Payload lixo
+	# (id fantasma, owed 0, prazo negativo) é riscado na entrada, não cobrado para sempre.
+	credit_rank = clampi(int(config.get_value("game", "credit_rank", credit_rank)), 0, CREDIT_TIERS.size() - 1)
+	credit_paid = maxi(0, int(config.get_value("game", "credit_paid", credit_paid)))
+	credit_written = maxi(0, int(config.get_value("game", "credit_written", credit_written)))
+	credit_lost_gold = maxi(0, int(config.get_value("game", "credit_lost_gold", credit_lost_gold)))
+	var saved_book = config.get_value("game", "credit_book", {})
+	credit_book = {}
+	if saved_book is Dictionary:
+		for debtor_id in (saved_book as Dictionary).keys():
+			var id := str(debtor_id)
+			var raw = (saved_book as Dictionary)[debtor_id]
+			if id.is_empty() or Regulars.find(id).is_empty() or not (raw is Dictionary):
+				continue
+			var entry: Dictionary = raw
+			var owed := int(entry.get("owed", 0))
+			var due_day := int(entry.get("due_day", 0))
+			if owed <= 0 or due_day <= 0:
+				continue
+			credit_book[id] = {
+				"name": str(entry.get("name", Regulars.find(id).get("short", "O devedor"))),
+				"item": str(entry.get("item", "uma peça do balcão")),
+				"owed": owed,
+				"due_day": due_day,
+				"late": clampi(int(entry.get("late", 0)), 0, CREDIT_WRITEOFF_DAYS - 1),
+			}
 	var legacy_premium = config.get_value("game", "premium_stock", {})
 	if legacy_premium is Dictionary:
 		for legacy_name in legacy_premium.keys():
@@ -7558,9 +8426,11 @@ func _load_game() -> void:
 			var job_index := int(saved_job.get("index", -1))
 			if job_index < 0 or job_index >= products.size():
 				continue
+			var saved_remaining := maxf(0.5, float(saved_job.get("remaining", 0.5)))
 			craft_jobs.append({
 				"index": job_index,
-				"remaining": maxf(0.5, float(saved_job.get("remaining", 0.5))),
+				"remaining": saved_remaining,
+				"total": maxf(saved_remaining, float(saved_job.get("total", 0.0))),
 				"luck": float(saved_job.get("luck", 0.0)),
 			})
 	var saved_achievements = config.get_value("game", "unlocked_achievements", [])
@@ -7977,6 +8847,10 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "catalyst_touch", "name": "Toque de Catalisador (peça rara na forja)", "condition": catalyst_crafted >= 1, "gold": 60, "rep": 3, "pose": "relic"},
 		{"id": "library_master", "name": "Bibliotecária do Submundo (Biblioteca Nv.3)", "condition": library_upgrade_level >= 3, "gold": 80, "rep": 4, "pose": "book"},
 		{"id": "sanctum_keeper", "name": "Guardiã das Relíquias (Santuário Nv.3)", "condition": sanctum_upgrade_level >= 3, "gold": 90, "rep": 5, "pose": "relic"},
+		{"id": "salt_shelf", "name": "Sal na prateleira (Depósito de sal Nv.3)", "condition": cold_storage_level >= 3, "gold": 70, "rep": 4},
+		{"id": "poco_atravessado", "name": "Poço Sem Fundo por %d dias de balcão" % HARDEST_LIFE_DAYS, "condition": int(difficulty_days.get("poco_sem_fundo", 0)) >= HARDEST_LIFE_DAYS, "gold": 90, "rep": 5},
+		{"id": "credit_paid_five", "name": "Quem deve, paga (5 notas quitadas no balcão)", "condition": credit_paid >= 5, "gold": 75, "rep": 4},
+		{"id": "credit_red_ink", "name": "Tinta vermelha no livro (3 notas riscadas)", "condition": credit_written >= 3, "gold": 50, "rep": 0},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
 		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"},
 		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
@@ -8056,7 +8930,7 @@ func _grant_pack(free: bool) -> void:
 	var price := Cards.pack_price(packs_opened, card_counts)
 	if not free:
 		if gold < price:
-			last_event = "O pacote custa %d ouro. A loja não aprova fiado nem para nostalgia." % price
+			last_event = "O pacote custa %d ouro. Fiado é para mercadoria, não para nostalgia." % price
 			_refresh_ui()
 			return
 		gold -= price
@@ -8224,8 +9098,9 @@ func _daily_upkeep() -> int:
 		+ Staff.total_wage(staff_hired) + CELL_FOOD * prisoners.size() \
 		- SERVANT_UPKEEP_RELIEF * servants.size()
 	## Conta de casa bem administrada encolhe 8% por marcha, e a conta é o que
-	## segura o império: por isso a trilha mexe nela e não na receita.
-	return maxi(1, int(round(float(bill) * (1.0 - 0.08 * float(house_rank)) * (0.9 if _has_spec("house", "livro") else 1.0))))
+	## segura o império: por isso a trilha mexe nela e não na receita. A regra da casa
+	## multiplica o mesmo número — sob Juro Alto e Poço o aluguel chega maior.
+	return maxi(1, int(round(float(bill) * (1.0 - 0.08 * float(house_rank)) * (0.9 if _has_spec("house", "livro") else 1.0) * _difficulty_upkeep_factor())))
 
 ## A virada de dia cobra a conta. Pagar em dia usa o que sobrou de caixa para
 ## escavar a dívida; não pagar não perdoa — o faltante entra no vermelho da casa.
@@ -8257,6 +9132,199 @@ func _pay_upkeep() -> String:
 ## As filiais trabalham na virada: cada uma paga o lucro do dia ou cobra o
 ## conserto. O saldo entra no caixa, e o que o caixa não cobre vira dívida — é
 ## exatamente assim que a expansão afunda quem mediu mal a própria conta.
+## ── O livro de fiado ────────────────────────────────────────────────────────────
+## Nenhum sorteio mora aqui embaixo. A nota nasce do preço que o balcão acabou de
+## calcular, a quitação depende do bolso que a visita já tinha sorteado, e o atraso
+## depende do dia que virava de qualquer jeito. Com o degrau zero a gaveta fica
+## fechada: `_can_lend()` devolve false e a venda perdida continua perdida exatamente
+## como as sondas antigas mediram.
+
+## A etiqueta mais barata da prateleira: é a que a casa aceita no fiado, porque é a
+## que o devedor tem mais chance de pagar. Empate fica com a que veio primeiro.
+func _cheapest_index(candidates: Array[int]) -> int:
+	var best := -1
+	var best_price := 0
+	for candidate in candidates:
+		var price := _shelf_price(candidate)
+		if best < 0 or price < best_price:
+			best = candidate
+			best_price = price
+	return best
+
+
+func _credit_row() -> Dictionary:
+	return CREDIT_TIERS[clampi(credit_rank, 0, CREDIT_TIERS.size() - 1)]
+
+
+func _credit_next_row() -> Dictionary:
+	if credit_rank >= CREDIT_TIERS.size() - 1:
+		return {}
+	return CREDIT_TIERS[credit_rank + 1]
+
+
+func _credit_limit() -> int:
+	return int(_credit_row()["limit"])
+
+
+func _credit_seats() -> int:
+	return int(_credit_row()["seats"])
+
+
+func _credit_due_days() -> int:
+	return int(_credit_row()["due"])
+
+
+## Fiado é nome, não moeda: só entra no livro quem já é freguês de casa (tem vínculo
+## onde a cobrança pode bater), a etiqueta caiba no teto do degrau e sobre página no
+## livro. Uma nota por freguês — a casa não empresta duas vezes para o mesmo nome.
+func _can_lend(regular_id: String, price: int) -> bool:
+	if credit_rank <= 0 or regular_id.is_empty():
+		return false
+	if price > _credit_limit():
+		return false
+	if credit_book.has(regular_id):
+		return false
+	return credit_book.size() < _credit_seats()
+
+
+func _lend_note(regular_id: String, debtor: String, item_name: String, price: int) -> void:
+	credit_book[regular_id] = {
+		"name": debtor,
+		"item": item_name,
+		"owed": price,
+		"due_day": shop_day + _credit_due_days(),
+		"late": 0,
+	}
+
+
+## O devedor voltou ao balcão com o bolso na mão: paga primeiro a casa, e o que sobra
+## é o que ele leva hoje. É por isso que quitar pode custar a venda do dia — o preço
+## honesto de quem emprestou. Sem nota aberta, a visita segue o balcão de sempre.
+func _settle_credit_note(regular_id: String) -> Dictionary:
+	if regular_id.is_empty() or not credit_book.has(regular_id):
+		return {}
+	var note: Dictionary = credit_book[regular_id]
+	var owed := int(note.get("owed", 0))
+	if owed > current_customer_budget:
+		return {}
+	var late := int(note.get("late", 0))
+	var interest := int(round(float(owed) * CREDIT_INTEREST)) if late > 0 else 0
+	var purse := owed + interest
+	gold += purse
+	# O ouro da nota é caixa do dia em que chega, não do dia em que a peça saiu. Sem
+	# esta linha o fiado saía do balanço duas vezes: a etiqueta contava como ganha na
+	# venda e o pagamento, quando vinha, não aparecia em lugar nenhum.
+	daily_gold_earned += purse
+	_progress_contracts("gold", purse)
+	credit_paid += 1
+	credit_book.erase(regular_id)
+	reputation += 1
+	regular_bonds[regular_id] = int(regular_bonds.get(regular_id, 0)) + 1
+	_add_xp(4)
+	var tail := " (juro de %d por ter atrasado %d dia(s))" % [interest, late] if interest > 0 else ""
+	return {
+		"purse": purse,
+		"line": "📖 %s quitou %d de fiado no balcão%s." % [str(note.get("name", "O devedor")), purse, tail],
+	}
+
+
+## A virada só envelhece o livro: quem não voltou ao balcão entra em atraso, e no
+## terceiro dia de atraso a casa risca a nota. O ouro não volta, a reputação paga o
+## prejuízo junto, e o vínculo do devedor desce um degrau — a praça inteira aprende o
+## nome de quem não paga.
+func _age_credit_book() -> String:
+	if credit_book.is_empty():
+		return ""
+	var lines: Array[String] = []
+	var riscadas: Array[String] = []
+	for id in credit_book:
+		var note: Dictionary = credit_book[id]
+		if shop_day <= int(note.get("due_day", shop_day)):
+			continue
+		note["late"] = int(note.get("late", 0)) + 1
+		if int(note["late"]) < CREDIT_WRITEOFF_DAYS:
+			continue
+		var debtor_id := str(id)
+		var owed := int(note.get("owed", 0))
+		credit_written += 1
+		credit_lost_gold += owed
+		reputation = maxi(0, reputation - 2)
+		regular_bonds[debtor_id] = maxi(0, int(regular_bonds.get(debtor_id, 0)) - 1)
+		lines.append("a casa riscou a nota de %s: %d de ouro que não voltam" % [
+			str(note.get("name", "O devedor")), owed])
+		riscadas.append(debtor_id)
+	for id in riscadas:
+		credit_book.erase(str(id))
+	if lines.is_empty():
+		return ""
+	audio.play("sad")
+	return "FIADO: %s • %d nota(s) no livro, %d de ouro na rua." % [
+		"; ".join(lines), credit_book.size(), _credit_on_street()]
+
+
+func _credit_on_street() -> int:
+	var total := 0
+	for id in credit_book:
+		total += int((credit_book[id] as Dictionary).get("owed", 0))
+	return total
+
+
+## Abrir o livro é decisão de caixa e de fama: a casa só empresta para quem já a
+## conhece, e o degrau seguinte custa o preço inteiro, sem desconto de entusiasmo.
+func _buy_credit_rank() -> void:
+	var next_row := _credit_next_row()
+	if next_row.is_empty():
+		last_event = "O livro já está no último degrau: %d notas de até %d, prazo de %d dias." % [
+			_credit_seats(), _credit_limit(), _credit_due_days()]
+		_show_feedback("📖 O livro está aberto até a última página.", Color(0.90, 0.82, 0.60))
+		_refresh_ui()
+		return
+	if reputation < int(next_row["rep"]):
+		last_event = "Abrir o fiado até o degrau %d pede %d de fama; a casa tem %d. Fiado é nome, não moeda." % [
+			int(next_row["rank"]), int(next_row["rep"]), reputation]
+		_show_feedback("✕ Falta fama para emprestar.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	var cost := int(next_row["cost"])
+	if gold < cost:
+		last_event = "O livro de fiado custa %d de ouro, e o caixa tem %d. Quem deve com a mão vazia não cobra." % [
+			cost, gold]
+		_show_feedback("✕ Falta ouro para abrir o livro.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	gold -= cost
+	credit_rank = int(next_row["rank"])
+	reputation += 1
+	_add_xp(12)
+	last_event = "📖 Livro de fiado no degrau %d: notas de até %d, %d lugares na rua e %d dias de prazo (−%d de ouro)." % [
+		credit_rank, _credit_limit(), _credit_seats(), _credit_due_days(), cost]
+	_show_feedback("✦ Fiado liberado no balcão.", Color(0.90, 0.82, 0.60))
+	audio.play("coin")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+
+func _credit_summary() -> String:
+	if credit_rank <= 0:
+		return "O livro está na gaveta: quem não tem com que pagar sai da loja sem a peça, como sempre saiu. Abrir o caderno custa %d de ouro e pede %d de fama." % [
+			int(CREDIT_TIERS[1]["cost"]), int(CREDIT_TIERS[1]["rep"])]
+	var head := "DEGRAU %d • nota de até %d • %d de %d lugares ocupados • %d de ouro na rua • prazo %d dias • %d quitada(s), %d riscada(s) (%d de prejuízo)." % [
+		credit_rank, _credit_limit(), credit_book.size(), _credit_seats(),
+		_credit_on_street(), _credit_due_days(), credit_paid, credit_written, credit_lost_gold]
+	var notas: Array[String] = []
+	for id in credit_book:
+		var note: Dictionary = credit_book[id]
+		var atraso := int(note.get("late", 0))
+		notas.append(" • %s deve %d (vence dia %d%s)" % [
+			str(note.get("name", "O devedor")), int(note.get("owed", 0)), int(note.get("due_day", 0)),
+			", %d dia(s) de atraso" % atraso if atraso > 0 else "",
+		])
+	if not notas.is_empty():
+		head += "\n" + "\n".join(notas)
+	return head
+
+
 func _collect_branches() -> String:
 	if branches.is_empty():
 		return ""
@@ -8757,7 +9825,7 @@ func _show_ending(ending: Dictionary = {}, ruined := false) -> void:
 	# paga. A ruína é o momento em que ela diz que não paga nada.
 	var prestige_note := Label.new()
 	prestige_note.text = "Esta vida não deixou aura: reabrir as portas recomeça do zero com o que a loja aprendeu, e o que ela aprendeu não enche caixa." if ruined \
-		else "Esta vida vale %d de aura na reencarnação. A recepção mostra o que fica e o que volta a zero." % Prestige.aura_for(business_score())
+		else "Esta vida vale %d de aura na reencarnação. A recepção mostra o que fica e o que volta a zero." % _aura_gain(business_score())
 	prestige_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	prestige_note.add_theme_font_size_override("font_size", 13)
 	prestige_note.add_theme_color_override("font_color", Color(1.0, 0.62, 0.55) if ruined else Color(0.85, 0.7, 1.0))
@@ -8866,7 +9934,7 @@ func _show_origin(scene: Dictionary) -> void:
 	close_button.custom_minimum_size = Vector2(240, 46)
 	close_button.pressed.connect(_close_origin)
 	box.add_child(close_button)
-	world_timer.stop()
+	_sync_clock()
 	audio.play("rare")
 	_refresh_ui()
 
@@ -8876,10 +9944,7 @@ func _close_origin() -> void:
 	if is_instance_valid(origin_layer):
 		origin_layer.queue_free()
 	origin_layer = null
-	# Duas janelas na mesma manhã: o balanço do dia e a lembrança seguram o relógio,
-	# e quem fecha uma não tem o direito de reabrir a loja por cima da outra.
-	if not is_instance_valid(day_layer) and not is_instance_valid(ending_layer):
-		world_timer.start()
+	_sync_clock()
 	audio.play("click")
 	# O botão de relembrar abre o quadro sem prêmio: a cena já foi paga no dia em
 	# que a loja a descobriu.
@@ -8994,7 +10059,7 @@ func _show_day_report(balance: Dictionary) -> void:
 	close_button.pressed.connect(_close_day_report)
 	box.add_child(close_button)
 
-	world_timer.stop()
+	_sync_clock()
 	audio.play("coin" if net >= 0 else "sad", true)
 	_refresh_ui()
 	if day_auto_ok:
@@ -9032,9 +10097,7 @@ func _close_day_report() -> void:
 		day_layer.queue_free()
 	day_layer = null
 	_day_countdown_label = null
-	if is_instance_valid(origin_layer) or is_instance_valid(ending_layer):
-		return
-	world_timer.start()
+	_sync_clock()
 	audio.play("click", true)
 
 ## Painel das memórias: o que a loja já contou de si e o que ainda está trancado
@@ -9105,12 +10168,18 @@ func _prestige_text() -> String:
 func _prestige_button_text() -> String:
 	if not game_completed:
 		return "Reencarnar o balcão (trancado: falta o império)"
-	return "Reencarnar o balcão: esta vida vale +%d de aura" % Prestige.aura_for(business_score())
+	return "Reencarnar o balcão: esta vida vale +%d de aura" % _aura_gain(business_score())
 
 ## O painel do prestígio desenhado. A meta é medida em pontuação, e pontuação muda
 ## a cada venda, por isso isto roda em todo refresco e não só no tique do mundo.
 func _refresh_prestige() -> void:
 	prestige_label.text = _prestige_text()
+	# A regra da casa é painel do prestígio porque é o prestígio que ela paga: o texto
+	# mostra os fatores e os dias morados em cada um, para o bônus ter proveniência.
+	if is_instance_valid(difficulty_label):
+		difficulty_label.text = _difficulty_summary()
+	if is_instance_valid(difficulty_button):
+		difficulty_button.text = "🏠 Regra da casa: %s ▶" % str(_difficulty_row()["name"])
 	var aura_open := game_completed or prestige_runs > 0 or prestige_aura > 0
 	for i in range(Prestige.PERKS.size()):
 		if i >= prestige_perk_buttons.size():
@@ -9174,6 +10243,93 @@ func _buy_perk(index: int) -> void:
 	_save_game()
 	_refresh_ui()
 
+## A linha da tabela que a casa segue hoje. Id desconhecido — save adulterado, ou modo
+## que saiu da lista — cai no Calçada: a loja nunca acorda sem regra.
+func _difficulty_row(id: String = "") -> Dictionary:
+	var wanted := id if id != "" else difficulty
+	for row in DIFFICULTIES:
+		if str(row["id"]) == wanted:
+			return row
+	return DIFFICULTIES[0]
+
+
+## Etiqueta: o freguês paga a regra da casa, não o preço de tabela. Consumido em
+## `_piece_price`, que é onde vitrine, balcão e fila já mediam a mesma peça.
+func _difficulty_price_factor() -> float:
+	return float(_difficulty_row()["price"])
+
+
+## Conta da casa: sob regra dura o aluguel do inferno pesa mais.
+func _difficulty_upkeep_factor() -> float:
+	return float(_difficulty_row()["upkeep"])
+
+
+## Pressão da rua: o limiar é que muda, nunca o sorteio.
+func _difficulty_risk_factor() -> float:
+	return float(_difficulty_row()["risk"])
+
+
+## Dias de balcão já vividos sob alguma regra nesta vida.
+func _difficulty_days_total() -> int:
+	var total := 0
+	for id in difficulty_days:
+		total += maxi(0, int(difficulty_days[id]))
+	return total
+
+
+## O pagamento da regra: a média dos dias efetivamente morados em cada modo. Quem passa
+## a vida inteira no Poço leva o multiplicador inteiro; quem troca de regra no meio do
+## caminho leva a fração que de fato viveu — é o dia na prateleira que prova a regra, não
+## o botão batido na hora de reencarnar. Vida sem dia virado ainda não morou nada, então
+## paga a regra do momento.
+func _difficulty_aura_factor() -> float:
+	var total := _difficulty_days_total()
+	if total <= 0:
+		return float(_difficulty_row()["aura"])
+	var peso := 0.0
+	for row in DIFFICULTIES:
+		peso += float(row["aura"]) * float(maxi(0, int(difficulty_days.get(str(row["id"]), 0))))
+	return peso / float(total)
+
+
+## Aura que a vida de hoje paga: o número de sempre da tabela, escalado pela regra
+## vivida. Um único lugar para o cofre, o botão e o final lerem.
+func _aura_gain(score: int) -> int:
+	return maxi(1, int(round(float(Prestige.aura_for(score)) * _difficulty_aura_factor())))
+
+
+## O ciclista de regra da casa. Trocar vale desde a próxima batida de fila — e custa a
+## diluição do bônus, porque o dia já vivido em outra regra continua no caderno.
+func _cycle_difficulty() -> void:
+	var index := 0
+	for i in range(DIFFICULTIES.size()):
+		if str(DIFFICULTIES[i]["id"]) == difficulty:
+			index = i
+			break
+	difficulty = str(DIFFICULTIES[(index + 1) % DIFFICULTIES.size()]["id"])
+	last_event = "Regra da casa: %s. %s" % [_difficulty_row()["name"], _difficulty_row()["note"]]
+	_show_feedback("🏠 Regra: %s" % _difficulty_row()["name"], Color(0.86, 0.92, 1.0))
+	audio.play("click")
+	_save_game()
+	_refresh_ui()
+
+
+## O painel da regra: o nome, o que cada alavanca faz de verdade e os dias morados em
+## cada uma — sem ler o caderno de dias a loja não teria como provar o bônus.
+func _difficulty_summary() -> String:
+	var row := _difficulty_row()
+	var parts: Array[String] = []
+	for id in difficulty_days:
+		var dias := maxi(0, int(difficulty_days[id]))
+		if dias <= 0:
+			continue
+		parts.append("%s %d" % [str(_difficulty_row(str(id))["name"]), dias])
+	var caderno := " • dias morados: %s" % ", ".join(parts) if not parts.is_empty() else " • nenhum dia de balcão nesta regra ainda"
+	return "REGRA DA CASA: %s — etiqueta ×%.2f, conta ×%.2f, rua ×%.2f, aura ×%.2f%s\n%s" % [
+		str(row["name"]), float(row["price"]), float(row["upkeep"]), float(row["risk"]),
+		_difficulty_aura_factor(), caderno, str(row["note"])]
+
+
 ## Trocar a vida é o prestígio em si: o caixa, a prateleira e a campanha voltam ao
 ## zero, e o que a loja aprendeu — povo, álbum, lembranças, dotes e conquistas —
 ## atravessa com a chefe.
@@ -9181,7 +10337,7 @@ func _reincarnate() -> void:
 	if not game_completed:
 		return
 	var score := business_score()
-	var gain := Prestige.aura_for(score)
+	var gain := _aura_gain(score)
 	var temporada := Prestige.season(prestige_runs)
 	_bank_season()
 	prestige_runs += 1
@@ -9311,6 +10467,18 @@ func _reset_run() -> void:
 	catalyst_enabled = false
 	economy_state = Economy.fresh_state()
 	quality_stock.clear()
+	shelf_batches.clear()
+	cold_storage_level = 0
+	# O caderno de regra é da vida: a escolha da próxima vida continua a mesma, mas os
+	# dias morados voltam ao zero junto com o caixa — senão a aura herdaria dias alheios.
+	difficulty_days.clear()
+	# Fiado é desta vida e deste balcão: reencarnar apaga as notas da rua, o degrau do
+	# caderno e as duas contagens. Quem começou do zero não herda cobrança de outra chefe.
+	credit_rank = 0
+	credit_book.clear()
+	credit_paid = 0
+	credit_written = 0
+	credit_lost_gold = 0
 	for item in products:
 		var held := int(_starting_shelf.get(str(item["id"]), 0))
 		item["stock"] = held
@@ -9519,10 +10687,12 @@ func _clean_house_turn() -> String:
 func _cell_capacity() -> int:
 	return sanctum_upgrade_level
 
-## Chance de o beco testar a loja numa virada: o barro chama, a fama afasta.
+## Chance de o beco testar a loja numa virada: o barro chama, a fama afasta, e a regra da
+## casa decide o tamanho da parede. Só o limiar muda — o sorteio continua o mesmo.
 func _vandal_chance() -> int:
-	return clampi(int(round(float(mess) * VANDAL_CHANCE_PER_MESS)) \
-		+ maxi(0, VANDAL_REP_SHIELD - reputation), 0, 40)
+	var base := int(round(float(mess) * VANDAL_CHANCE_PER_MESS)) \
+		+ maxi(0, VANDAL_REP_SHIELD - reputation)
+	return clampi(int(round(float(base) * _difficulty_risk_factor())), 0, 40)
 
 ## A guilda leva o preso embora e paga a escolta: é o único destino de quem é pego
 ## antes de a casa ter cela, e é por isso que a cela existe.
@@ -9623,8 +10793,9 @@ func _vicar_panel_line() -> String:
 ## Chance de a rua testar a porta numa virada: o alvo é o placar que a vitrine mostra,
 ## o escudo é a resposta dada ao vigário e o sino da campanha.
 func _invasion_chance() -> int:
-	return Invasions.invasion_chance(business_score(), tithe_stance, tithe_until, shop_day,
+	var base := Invasions.invasion_chance(business_score(), tithe_stance, tithe_until, shop_day,
 		vicar_refusals, _defense_snapshot())
+	return clampi(int(round(float(base) * _difficulty_risk_factor())), 0, 100)
 
 ## A visita que o calendário da loja já permite, com o poder escalado pelos carimbos de
 ## porta segurada. Vazio quer dizer "loja nova demais para ter alvo na porta".
@@ -9904,63 +11075,245 @@ func _progress_band_now() -> int:
 			band = i
 	return band
 
-## Aplica a faixa: redesenha a camada, esquenta o fundo pintado do mesmo salão e
-## engorda a poeira do ar. Roda a cada atualização de painel e só faz alguma coisa
-## quando a faixa realmente muda, para não redesenhar o salão a cada tique.
+## Quanto da obra ainda está de pé numa faixa: 1.0 no canteiro, quase seca na
+## primeira reforma, 0.0 quando a casa já tem piso encerado. A lona não pode morar
+## numa loja "respeitada" — quem reformou tirou o pano, e a faixa tem de dizer isso.
+func _renovation_alpha(band: int) -> float:
+	if band > RENOVATION_LAST_BAND:
+		return 0.0
+	return 1.0 if band <= 0 else 0.45
+
+
+## Aplica a faixa: esquenta o fundo pintado do mesmo salão, lava a cor dos móveis
+## enquanto há lona, engorda a poeira do ar e, na mudança de faixa, redesenha a
+## camada. A luz e o pó acompanham a faixa em todo painel — trocar `modulate` não
+## custa nada, e é o que faz a casa abrir já em obras sem que ninguém tenha subido
+## a escada (faixa 0 nunca é "mudança"). O redraw e o aviso da chefe, esses ficam só
+## na mudança: redesenhar o salão a cada tique é redesenhar a mesma coisa.
 func _apply_progress_decor() -> void:
 	var band := _progress_band_now()
 	var antes := _progress_band
 	var quiet := _progress_quiet
 	_progress_quiet = false
+	# O mesmo PNG, um degrau mais quente e mais aceso: a casa não troca de arte,
+	# troca de luz, e é a luz que o olho lê como "essa loja cresceu". A obra começa
+	# abaixo da cor original — fria e apagada, parede sem última demão e nenhuma vela
+	# acesa — e a faixa 0 é justamente o canteiro. O aquecimento é o prêmio.
+	if is_instance_valid(background_layer):
+		background_layer.modulate = PROGRESS_BAND_LIGHT[
+			clampi(band, 0, PROGRESS_BAND_LIGHT.size() - 1)]
+	# O elenco mora na sala, então a luz da sala o atinge. Sem isso o corpo entra
+	# num salão a 0,46 queimando a 1,0 e vira desenho colado por cima da foto. O
+	# matiz vai a 0,78 do degradê e não 1,0: rosto precisa continuar lendo como
+	# rosto, e o escuro da obra é mais funda atrás do que em cima de quem trabalha.
+	# Só se troca o rgb — o alfa é do fade de troca de sala.
+	if is_instance_valid(stage_layer):
+		var luz: Color = PROGRESS_BAND_LIGHT[clampi(band, 0, PROGRESS_BAND_LIGHT.size() - 1)]
+		var corpo := Color(1.0, 1.0, 1.0).lerp(luz, 0.78)
+		stage_layer.modulate = Color(corpo.r, corpo.g, corpo.b, stage_layer.modulate.a)
+	# O móvel coberto tem outra cor: os móveis voltam ao tom de tinta quando a lona
+	# sai. A lona é clara porque pega a lâmpada, mas mora num salão escuro — clara
+	# demais, ela vira o objeto mais aceso da sala e a obra some. Só se troca o
+	# matiz aqui — o alfa é do fade de troca de sala, e mexer nele seria cortar a
+	# animação de outra.
+	if is_instance_valid(stage_occluder):
+		var washed := Color(1.0, 1.0, 1.0).lerp(Color(0.66, 0.68, 0.80), _renovation_alpha(band))
+		stage_occluder.modulate = Color(
+			washed.r, washed.g, washed.b, stage_occluder.modulate.a)
+	if is_instance_valid(ambient_particles):
+		# No canteiro o ar é grosso de pó de gesso; depois, a poeira dourada do luxo.
+		ambient_particles.amount = 52 if band <= 0 else 24 + band * 12
 	if band == antes:
 		return
 	_progress_band = band
 	if is_instance_valid(_progress_layer):
 		_progress_layer.queue_redraw()
-	# O mesmo PNG, um degrau mais quente e mais aceso: a casa não troca de arte,
-	# troca de luz, e é a luz que o olho lê como "essa loja cresceu". A faixa 0 é
-	# a cor original da pintura — o aquecimento é o prêmio, não o ponto de partida.
-	if is_instance_valid(background_layer):
-		var lift := float(band) * 0.045
-		background_layer.modulate = Color(1.0 + lift * 0.6, 1.0 + lift * 0.35, 1.0 - lift * 0.3)
-		background_layer.modulate.a = 1.0
-	if is_instance_valid(ambient_particles):
-		ambient_particles.amount = 24 + band * 12
 	# A faixa sobe sozinha, mas quem avisa é a chefe: ninguém pode descobrir o
 	# salão novo por acidente no meio de uma venda.
 	if band > antes and not quiet:
-		last_event = "A casa virou %s: %s" % [PROGRESS_BAND_NAMES[band], PROGRESS_BAND_GIFTS[band]]
+		var anuncio := tr("A casa virou %s: %s") % [
+			tr(PROGRESS_BAND_NAMES[band]), tr(PROGRESS_BAND_GIFTS[band])]
+		# A faixa nova é a notícia maior, mas não apaga o que o balcão acabou de dizer:
+		# quem levou no fiado, quem pagou o capítulo, quem levou a encomenda. Perder essa
+		# linha no meio de uma reforma é o jogador fazer a conta da casa sem ler o
+		# recibo. A obra entra por cima, o recibo fica embaixo.
+		var recibo := str(last_event)
+		last_event = anuncio if recibo.is_empty() else "%s\n%s" % [anuncio, recibo]
 		_show_stage_emotion(stage_seller_body, "felicidade")
+
+## A obra em si, desenhada na camada entre o fundo pintado e o elenco: poeira no ar,
+## massa crua na parede, lona no piso, escoramento de madeira, entulho com o pé na
+## linha do chão, balde de tinta e uma única lâmpada no fio. Nenhum pixel de cenário
+## novo, nenhuma moldura, nenhuma arte duplicada — é a mesma sala, inacabada.
+func _draw_progress_works(wide: float, tall: float, ground: Vector2, alpha: float) -> void:
+	var stroke := maxf(1.0, wide * 0.0018)
+	# 1) Teto sem luz: a meia-luz da obra mora em cima, onde não há lustre nem vela
+	# acesa. São três faixas horizontais de carga decrescente, e não um gradiente — a
+	# camada só sabe retângulo, e retângulo escuro de carga baixa ninguém vê como régua.
+	for demao in range(3):
+		_progress_layer.draw_rect(Rect2(0.0, tall * float(demao) / 3.0, wide, tall / 3.0),
+			Color(0.10, 0.09, 0.16, (0.11 - float(demao) * 0.04) * alpha))
+	# 2) Parede sem última demão: onde a massa ainda não recebeu tinta é MAIS ESCURA que
+	# a parede. Cada remendo são dois retângulos deslocados, sem contorno — um traço de
+	# régua na beirada seria o suficiente para virar janela.
+	for i in RENOVATION_WALL_PATCHES.size():
+		var patch: Rect2 = RENOVATION_WALL_PATCHES[i]
+		var area := Rect2(wide * patch.position.x, tall * patch.position.y,
+			wide * patch.size.x, tall * patch.size.y)
+		_progress_layer.draw_rect(area, Color(0.10, 0.09, 0.13, 0.42 * alpha))
+		_progress_layer.draw_rect(Rect2(area.position.x + area.size.x * 0.12,
+			area.position.y + area.size.y * 0.16, area.size.x * 0.7, area.size.y * 0.62),
+			Color(0.17, 0.15, 0.20, 0.34 * alpha))
+		# A borda de baixo do remendo é a única parte clara: é onde a massa termina e a
+		# tinta começa, e sem esse degrau o retângulo escuro é só sombra de interface.
+		_progress_layer.draw_rect(Rect2(area.position.x, area.end.y - tall * 0.008,
+			area.size.x, tall * 0.008), Color(0.44, 0.41, 0.44, 0.20 * alpha))
+	# 3) Lona no piso: o pano que a obra estende para receber tinta e gesso. Fica no
+	# piso livre da frente da sala, onde o elenco passa por cima — corpo na frente do
+	# pano é o que faz o pano estar no chão e não flutuando.
+	var cloth := PackedVector2Array([])
+	for canto in RENOVATION_CLOTH.size():
+		var aqui: Vector2 = RENOVATION_CLOTH[canto]
+		cloth.append(Vector2(wide * aqui.x, tall * aqui.y))
+	_progress_layer.draw_colored_polygon(cloth, Color(0.52, 0.51, 0.58, 0.30 * alpha))
+	for vinco in range(3):
+		var t := 0.22 + float(vinco) * 0.26
+		_progress_layer.draw_line(cloth[0].lerp(cloth[1], t), cloth[3].lerp(cloth[2], t),
+			Color(0.18, 0.17, 0.22, 0.26 * alpha), stroke)
+	# 4) Escoramento: cavaletes de dois pés com prancha por cima. Os pés batem na linha
+	# do chão pintado, então o andaime pertence à sala, não à tela, e o elenco passa na
+	# frente dele porque a camada é mais funda que o palco. O pé é largo o bastante para
+	# ter duas bordas legíveis: a 5 pixels de traço ele era linha verde flutuando na
+	# sala, e linha não é móvel de obra.
+	var pole_w := maxf(3.0, wide * 0.0075)
+	var plank_y := tall * RENOVATION_PLANK_Y
+	var plank_w := maxf(2.0, tall * 0.014)
+	for i in range(0, RENOVATION_POLES.size(), 2):
+		var left := RENOVATION_POLES[i]
+		var right: float = RENOVATION_POLES[mini(i + 1, RENOVATION_POLES.size() - 1)]
+		for par in [left, right]:
+			var head := Vector2(wide * par, plank_y)
+			var foot := Vector2(wide * par, ground.y)
+			_progress_layer.draw_line(head, foot, Color(0.20, 0.15, 0.11, 0.92 * alpha), pole_w)
+			# O pé só existe na meia-luz porque tem aresta iluminada pela lâmpada: um
+			# fio claro do lado que dá para a luz, e a madeira volta a ser objeto.
+			_progress_layer.draw_line(head + Vector2(-pole_w * 0.5, 0.0),
+				foot + Vector2(-pole_w * 0.5, 0.0),
+				Color(0.62, 0.50, 0.36, 0.62 * alpha), maxf(1.5, stroke * 1.2))
+			_progress_layer.draw_circle(foot, pole_w * 1.4, Color(0.05, 0.04, 0.07, 0.45 * alpha))
+		var board := Rect2(wide * (left - 0.014), plank_y - plank_w * 0.5,
+			wide * (right - left + 0.028), plank_w)
+		_progress_layer.draw_rect(board, Color(0.30, 0.23, 0.15, 0.92 * alpha))
+		_progress_layer.draw_rect(Rect2(board.position.x, board.position.y,
+			board.size.x, plank_w * 0.26), Color(0.66, 0.54, 0.38, 0.55 * alpha))
+		_progress_layer.draw_rect(Rect2(board.position.x, board.end.y - plank_w * 0.3,
+			board.size.x, plank_w * 0.3), Color(0.10, 0.07, 0.06, 0.85 * alpha))
+		_progress_layer.draw_line(
+			Vector2(board.position.x + board.size.x * 0.5, board.position.y),
+			Vector2(board.position.x + board.size.x * 0.5, board.end.y),
+			Color(0.08, 0.06, 0.05, 0.60 * alpha), stroke)
+	# 5) Entulho: montículo após montículo com a base na linha do chão. Três arcos de
+	# raio diferente fazem pilha de gesso sem desenho novo, e o tijolo dá o canto duro
+	# que a pilha arredondada sozinha não tem.
+	for i in RENOVATION_RUBBLE.size():
+		var offset: Vector2 = RENOVATION_RUBBLE[i]
+		_draw_rubble_mound(ground + Vector2(wide * offset.x, tall * offset.y), wide * 0.050, alpha)
+	var bucket := ground + Vector2(wide * RENOVATION_BUCKET.x, tall * RENOVATION_BUCKET.y)
+	var bucket_w := wide * 0.022
+	_progress_layer.draw_colored_polygon(PackedVector2Array([
+		bucket + Vector2(-bucket_w, -tall * 0.028),
+		bucket + Vector2(bucket_w * 1.15, -tall * 0.028),
+		bucket + Vector2(bucket_w * 0.8, 0.0),
+		bucket + Vector2(-bucket_w * 0.7, 0.0),
+	]), Color(0.18, 0.18, 0.24, 0.80 * alpha))
+	_progress_layer.draw_line(bucket + Vector2(-bucket_w, -tall * 0.028),
+		bucket + Vector2(bucket_w * 1.15, -tall * 0.028),
+		Color(0.62, 0.62, 0.70, 0.40 * alpha), stroke)
+	# 6) A lâmpada do fio: enquanto não há lustre, a casa inteira depende de uma só
+	# lâmpada na altura de trabalho. O centro é a luz pintada mais próxima do meio do
+	# teto, porque é ali que o olho já procura o cabo.
+	var lamps: Array = STAGE_ROOM_LIGHTS.get(_stage_room, [])
+	var bulb_x := wide * 0.5
+	var best := 9.9
+	for lamp in lamps:
+		var aqui_luz: Vector2 = lamp
+		var score := absf(aqui_luz.x - 0.5) + aqui_luz.y
+		if score < best:
+			best = score
+			bulb_x = wide * aqui_luz.x
+	var bulb := Vector2(bulb_x, tall * 0.245)
+	_progress_layer.draw_line(Vector2(bulb_x, 0.0),
+		Vector2(bulb_x + wide * 0.006, bulb.y - tall * 0.010),
+		Color(0.07, 0.06, 0.08, 0.85 * alpha), stroke)
+	_progress_layer.draw_rect(Rect2(bulb + Vector2(-wide * 0.0035, -tall * 0.016),
+		Vector2(wide * 0.007, tall * 0.008)), Color(0.16, 0.15, 0.15, 0.85 * alpha))
+	_progress_layer.draw_circle(bulb, wide * 0.055, Color(1.0, 0.78, 0.40, 0.06 * alpha))
+	_progress_layer.draw_circle(bulb, wide * 0.026, Color(1.0, 0.82, 0.46, 0.12 * alpha))
+	_progress_layer.draw_circle(bulb, wide * 0.009, Color(1.0, 0.94, 0.72, 0.85 * alpha))
+	_progress_layer.draw_colored_polygon(PackedVector2Array([
+		bulb + Vector2(-wide * 0.012, tall * 0.007),
+		bulb + Vector2(wide * 0.012, tall * 0.007),
+		Vector2(bulb_x + wide * 0.16, ground.y),
+		Vector2(bulb_x - wide * 0.16, ground.y),
+	]), Color(1.0, 0.84, 0.50, 0.055 * alpha))
+
+## Um montículo de entulho: meia-cúpula chata, em três tamancos, com a base exatamente
+## na linha do chão. Sem RNG — o salão tem de sair igual de um redraw para o outro.
+func _draw_rubble_mound(center: Vector2, radius: float, alpha: float) -> void:
+	# A sombra no pé é o que prega a pilha no chão: sem ela o montículo flutua. Vem
+	# antes das cúpulas, para sobrar dela só a borda em volta da base.
+	_progress_layer.draw_circle(center, radius * 0.9, Color(0.05, 0.04, 0.07, 0.34 * alpha))
+	for tier in range(3):
+		var r := radius * (1.0 - float(tier) * 0.26)
+		var pe := center + Vector2(radius * 0.42 * float(tier - 1), -r * 0.06 * float(tier))
+		var shell := PackedVector2Array([pe + Vector2(-r, 0.0)])
+		for step in range(1, 6):
+			var angle := PI - float(step) * PI / 6.0
+			shell.append(pe + Vector2(cos(angle) * r, sin(angle) * -r * 0.58))
+		shell.append(pe + Vector2(r, 0.0))
+		_progress_layer.draw_colored_polygon(shell,
+			Color(0.36, 0.34, 0.38, (0.50 + float(tier) * 0.15) * alpha))
+	for tijolo in range(2):
+		var canto := center + Vector2(radius * (0.62 - float(tijolo) * 1.24), -radius * 0.2 * float(tijolo))
+		_progress_layer.draw_rect(Rect2(canto, Vector2(radius * 0.36, radius * 0.16)),
+			Color(0.34, 0.20, 0.16, 0.75 * alpha))
 
 ## A camada em si: tudo desenhado em código, em coordenadas normalizadas da sala,
 ## para funcionar nas quatro salas sem arte nova e sem arquivo novo no repositório.
 func _draw_progress_decor() -> void:
-	if _progress_band <= 0 or not _stage_walkable or _progress_layer.size.x <= 0.0:
+	if not _stage_walkable or _progress_layer.size.x <= 0.0:
 		return
 	var wide := _progress_layer.size.x
 	var tall := _progress_layer.size.y
 	var floor_line: Vector2 = STAGE_ROOM_FLOOR.get(_stage_room, Vector2(0.60, 0.80))
 	var ground := Vector2(wide * floor_line.x, tall * floor_line.y)
+	var obras := _renovation_alpha(_progress_band)
+	# A faixa 0 é o canteiro: nada de tapete, porque o piso ainda não foi encerado.
 	# Faixa 1 — o piso encerado: a camada não desenha um tapete novo por cima do
 	# que a arte já pintou, ela realça o tapete que está lá. Uma lavagem quente e
 	# outra funda na mesma silhueta, e o brilho da borda de trás.
-	var mat := PackedVector2Array([])
-	var rug: Array = PROGRESS_RUG.get(_stage_room, [])
-	if rug.size() == 4:
-		for corner in rug:
-			mat.append(Vector2(wide * (corner as Vector2).x, tall * (corner as Vector2).y))
-	else:
-		var w := wide * 0.30
-		var deep := tall * 0.055
-		mat = PackedVector2Array([
-			ground + Vector2(-w * 0.55, -deep * 2.0),
-			ground + Vector2(w * 0.55, -deep * 2.0),
-			ground + Vector2(w, deep),
-			ground + Vector2(-w, deep),
-		])
-	_progress_layer.draw_colored_polygon(mat, Color(1.0, 0.70, 0.36, 0.09))
-	_progress_layer.draw_colored_polygon(mat, Color(0.20, 0.02, 0.09, 0.16))
-	_progress_layer.draw_line(mat[0], mat[1], Color(0.88, 0.70, 0.34, 0.28), 2.0)
+	if _progress_band >= 1:
+		var mat := PackedVector2Array([])
+		var rug: Array = PROGRESS_RUG.get(_stage_room, [])
+		if rug.size() == 4:
+			for corner in rug:
+				mat.append(Vector2(wide * (corner as Vector2).x, tall * (corner as Vector2).y))
+		else:
+			var w := wide * 0.30
+			var deep := tall * 0.055
+			mat = PackedVector2Array([
+				ground + Vector2(-w * 0.55, -deep * 2.0),
+				ground + Vector2(w * 0.55, -deep * 2.0),
+				ground + Vector2(w, deep),
+				ground + Vector2(-w, deep),
+			])
+		_progress_layer.draw_colored_polygon(mat, Color(1.0, 0.70, 0.36, 0.09))
+		_progress_layer.draw_colored_polygon(mat, Color(0.20, 0.02, 0.09, 0.16))
+		_progress_layer.draw_line(mat[0], mat[1], Color(0.88, 0.70, 0.34, 0.28), 2.0)
+	# A obra por último: prancha, pé de escoramento e entulho têm de aparecer na
+	# frente do tapete, senão o andaime afunda no piso encerado.
+	if obras > 0.0:
+		_draw_progress_works(wide, tall, ground, obras)
 	if _progress_band < 2:
 		return
 	# Faixa 2 — velas acesas: cada luz que a sala já tem na arte ganha o próprio
@@ -10021,10 +11374,13 @@ func _progress_line() -> String:
 	var band := _progress_band_now()
 	var next_score: int = PROGRESS_BAND_SCORES[band + 1] if band + 1 < PROGRESS_BAND_SCORES.size() else 0
 	var missing: int = next_score - business_score()
-	return "A CASA ESTÁ: %s (placar %d) — %s%s" % [
-		PROGRESS_BAND_NAMES[band], business_score(), PROGRESS_BAND_GIFTS[band],
-		"" if missing <= 0 else " Próxima faixa em %d de placar." % missing
-	]
+	# Nome e presente de faixa são conteúdo montado na hora, então passam pelo `tr()`
+	# do chamador: a frase final nunca existiria na tabela para o motor achar sozinha.
+	var linha := tr("A CASA ESTÁ: %s (placar %d) — %s") % [
+		tr(PROGRESS_BAND_NAMES[band]), business_score(), tr(PROGRESS_BAND_GIFTS[band])]
+	if missing > 0:
+		linha += tr(" Próxima faixa em %d de placar.") % missing
+	return linha
 
 ## Entregar à guilda é o meio-termo que existe só porque a cela existe: a casa
 ## ganha a rua como aliada e abre mão do sangue que aquele prisioneiro daria.
@@ -10368,7 +11724,7 @@ func _advance_romance_step() -> void:
 	gold -= cost
 	romance_pending = ""
 	romance_stage[regular_id] = step + 1
-	_play_sensual_reception_moment()
+	_play_sensual_reception_moment(float(step) / float(maxi(ROMANCE_STEPS.size() - 1, 1)))
 	var wait := _summon_romance_partner(regular_id, int(invited["portrait"]))
 	var pose := str(requirement["pose"])
 	if not adult_content_enabled:
@@ -10401,6 +11757,17 @@ func _advance_romance_step() -> void:
 	_save_game()
 	_refresh_ui()
 
+## O degrau da escada de momentos, sem reciclar: o primeiro momento puxa a primeira
+## fala e o último degrau fica parado no topo para sempre. Os dois modos usam o mesmo
+## índice, porque o espelho é da voz, não da porta.
+func _private_moment_index() -> int:
+	return clampi(private_moments_unlocked - 1, 0, SENSUAL_MOMENTS.size() - 1)
+
+## O degrau do medidor de afeição: um quarto da escada a cada 10 pontos, com topo em
+## 40. Serve aos dois modos, porque a fala é a mesma subida nos dois lados.
+func _affection_milestone_index() -> int:
+	return clampi(int(float(affection) / 10.0) - 1, 0, SENSUAL_AFFECTION_MILESTONES.size() - 1)
+
 func _show_private_moment() -> void:
 	if affection < 5:
 		last_event = "“Paciência, querido. Primeiro conquiste minha confiança.”" if adult_content_enabled else "“Paciência. Primeiro conquiste minha confiança: o caderno da casa registra quem volta.”"
@@ -10408,17 +11775,14 @@ func _show_private_moment() -> void:
 		_refresh_ui()
 		return
 	private_moments_unlocked += 1
+	var degrau := _private_moment_index()
 	if adult_content_enabled:
-		var moments: Array[String] = [
-				"A súcubo inclina a cabeça, dá uma piscadela e puxa você para mais perto: “Esse é nosso segredinho, combinado?”",
-				"Ela gira uma moeda entre os dedos e sorri de lado: “Talvez eu revele mais de mim quando nossa parceria ficar ainda mais lucrativa.”",
-				"A chefe faz uma pose provocante e ri baixinho: “Você desbloqueou meu lado favorito: o que não aparece para qualquer cliente.”"
-			]
-		last_event = moments[(private_moments_unlocked - 1) % moments.size()]
-		_play_sensual_reception_moment()
+		last_event = str(SENSUAL_MOMENTS[degrau])
+		var topo: float = float(maxi(SENSUAL_MOMENTS.size() - 1, 1))
+		_play_sensual_reception_moment(float(degrau) / topo)
 	else:
-		last_event = str(TRUST_MOMENTS[(private_moments_unlocked - 1) % TRUST_MOMENTS.size()])
-	_show_feedback("♥ Momento só da casa.", Color(1.0, 0.62, 0.88))
+		last_event = str(TRUST_MOMENTS[degrau])
+	_show_feedback("♥ Momento %d/%d só da casa." % [degrau + 1, SENSUAL_MOMENTS.size()], Color(1.0, 0.62, 0.88))
 	_save_game()
 	_refresh_ui()
 
