@@ -75,6 +75,12 @@ var season_baseline: Dictionary = {}
 ## vida — sair dele é tão conquistador quanto nunca ter caído.
 var debt: int = 0
 var debt_peak: int = 0
+## A regra da casa nesta vida: etiqueta, conta e rua escalam por ela. O que a
+## reencarnação paga é a média dos dias efetivamente vividos em cada regra, então trocar
+## de modo no meio do caminho dilui o bônus em vez de comprá-lo.
+var difficulty: String = "calcada"
+## Dias de balcão vividos sob cada regra nesta vida ({ id_do_modo: dias }).
+var difficulty_days: Dictionary = {}
 ## Vidas que fecharam no vermelho, e as temporadas marcadas como perdidas no placar.
 var ruined_lives: int = 0
 var ruined_seasons: Array[String] = []
@@ -177,6 +183,44 @@ const VANDAL_CHANCE_PER_MESS := 0.14
 ## Abaixo desta reputação o beco entende que a casa não tem quem a defenda, e cada
 ## ponto que falta vira convite.
 const VANDAL_REP_SHIELD := 8
+## As três regras da casa. Nenhum número aqui é enfeite: cada fator é consumido no
+## lugar onde o jogo já media aquela grandeza — a etiqueta sai por `_piece_price`, a
+## conta por `_daily_upkeep`, a rua por `_vandal_chance` e `_invasion_chance`, e o que a
+## vida paga na reencarnação por `_aura_gain`. O modo de risco muda o **limiar** do
+## sorteio, nunca o sorteio: a mesma semente continua sacando a mesma sequência, só bate
+## em paredes diferentes. O Calçada é identidade pura (1.0 em tudo), então nenhuma medida
+## antiga muda de valor enquanto ninguém escolhe outra regra.
+const DIFFICULTIES := [
+	{
+		"id": "calcada",
+		"name": "Calçada",
+		"note": "A loja como sempre foi medida: conta cheia, etiqueta cheia, rua no ritmo de sempre.",
+		"price": 1.0,
+		"upkeep": 1.0,
+		"risk": 1.0,
+		"aura": 1.0,
+	},
+	{
+		"id": "juro_alto",
+		"name": "Juro Alto",
+		"note": "A casa cobra mais, o freguês paga menos e o beco bate duas vezes: a aura vem depois do risco.",
+		"price": 0.9,
+		"upkeep": 1.3,
+		"risk": 1.5,
+		"aura": 1.6,
+	},
+	{
+		"id": "poco_sem_fundo",
+		"name": "Poço Sem Fundo",
+		"note": "Etiqueta curta, conta quase dobrada, rua sempre à porta — e o dobro e meio de aura para quem atravessa.",
+		"price": 0.8,
+		"upkeep": 1.8,
+		"risk": 2.0,
+		"aura": 2.5,
+	},
+]
+## Quantos dias de balcão na regra mais dura valem o selo da casa.
+const HARDEST_LIFE_DAYS := 10
 ## Os nomes que a casa enxerga quando a ronda segura um braço no ar. Ninguém aqui é
 ## freguês de casa: vândalo sorteado é gente de fora do elenco, e por isso vai para
 ## a cela sem levar vínculo junto.
@@ -694,6 +738,8 @@ var prestige_box: VBoxContainer
 var prestige_label: Label
 var prestige_perk_buttons: Array = []
 var prestige_button: Button
+var difficulty_button: Button
+var difficulty_label: Label
 var adult_toggle_button: Button
 var save_file_dialog: FileDialog
 var hard_reset_dialog: ConfirmationDialog
@@ -3518,6 +3564,18 @@ func _build_ui() -> void:
 	prestige_button.add_theme_font_size_override("font_size", 15)
 	prestige_button.pressed.connect(_reincarnate)
 	prestige_box.add_child(prestige_button)
+	# A regra da casa mora ao lado de quem a paga: o painel que mostra a aura é o mesmo
+	# que escolhe a dificuldade que multiplicou essa aura.
+	difficulty_label = Label.new()
+	difficulty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	difficulty_label.add_theme_font_size_override("font_size", 13)
+	difficulty_label.add_theme_color_override("font_color", Color(0.86, 0.82, 0.96))
+	prestige_box.add_child(difficulty_label)
+	difficulty_button = Button.new()
+	difficulty_button.custom_minimum_size = Vector2(320, 42)
+	difficulty_button.add_theme_font_size_override("font_size", 14)
+	difficulty_button.pressed.connect(_cycle_difficulty)
+	prestige_box.add_child(difficulty_button)
 
 	reception_box.add_child(_make_section_title("BOLETIM DO MERCADO", Color(1.0, 0.86, 0.45)))
 	reception_box.add_child(_make_section_hint("A loja reage ao que você compra e vende: estoque encalhado derruba o preço, demanda em alta empurra para cima."))
@@ -5490,9 +5548,11 @@ func _register_sold_piece(tier: int) -> void:
 	legendary_sold += 1
 	_progress_commission("legendary", 1)
 
-## Etiqueta da peça: preço base do catálogo multiplicado pelo nível de qualidade.
+## Etiqueta da peça: preço base do catálogo, nível de qualidade e a regra da casa. É o
+## único lugar onde o preço nasce, então vitrine, balcão e margem estimada escalam
+## juntas — e no Calçada o fator é 1.0, o que deixa toda medida antiga de pé.
 func _piece_price(item: Dictionary, tier: int) -> float:
-	return float(item["price"]) * float(Quality.tier(tier)["mult"])
+	return float(item["price"]) * float(Quality.tier(tier)["mult"]) * _difficulty_price_factor()
 
 ## Olha a peça que sairia sem tirar da prateleira. Serve para a fila decidir o que
 ## cabe no bolso antes de a venda consumir o estoque.
@@ -5833,6 +5893,9 @@ func _on_customer_tick() -> void:
 		reaction_label.text = ""
 	if ticks % 20 == 0:
 		shop_day += 1
+		# O caderno de regra marca o dia no modo que a loja efetivamente morou: é ele, e
+		# não o botão batido na hora da reencarnação, que decide o multiplicador de aura.
+		difficulty_days[difficulty] = int(difficulty_days.get(difficulty, 0)) + 1
 		_show_stage_emotion(stage_seller_body, "sono")
 		Economy.advance_day(economy_state)
 		_roll_weather()
@@ -7500,6 +7563,8 @@ func _save_game() -> void:
 	config.set_value("game", "quality_stock", quality_stock)
 	config.set_value("game", "shelf_batches", shelf_batches)
 	config.set_value("game", "cold_storage_level", cold_storage_level)
+	config.set_value("game", "difficulty", difficulty)
+	config.set_value("game", "difficulty_days", difficulty_days)
 	config.set_value("game", "economy_state", economy_state)
 	config.set_value("game", "active_buffs", active_buffs)
 	config.set_value("game", "stolen_tier", stolen_tier)
@@ -7864,6 +7929,19 @@ func _load_game() -> void:
 						"day": day,
 					})
 			shelf_batches[str(product_id)] = kept
+	# A regra da casa é escolha, não conta: id fora da tabela (save adulterado, ou modo
+	# que deixou de existir) volta ao Calçada, e dia de modo fantasma some do caderno.
+	# Save antigo não tem as chaves e acorda no Calçada com o caderno vazio.
+	var saved_difficulty := str(config.get_value("game", "difficulty", difficulty))
+	difficulty = str(_difficulty_row(saved_difficulty)["id"])
+	var saved_days = config.get_value("game", "difficulty_days", {})
+	difficulty_days = {}
+	if saved_days is Dictionary:
+		for id in (saved_days as Dictionary).keys():
+			var dia := maxi(0, int((saved_days as Dictionary)[id]))
+			if dia <= 0 or str(_difficulty_row(str(id))["id"]) != str(id):
+				continue
+			difficulty_days[str(id)] = dia
 	var legacy_premium = config.get_value("game", "premium_stock", {})
 	if legacy_premium is Dictionary:
 		for legacy_name in legacy_premium.keys():
@@ -8359,6 +8437,7 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "library_master", "name": "Bibliotecária do Submundo (Biblioteca Nv.3)", "condition": library_upgrade_level >= 3, "gold": 80, "rep": 4, "pose": "book"},
 		{"id": "sanctum_keeper", "name": "Guardiã das Relíquias (Santuário Nv.3)", "condition": sanctum_upgrade_level >= 3, "gold": 90, "rep": 5, "pose": "relic"},
 		{"id": "salt_shelf", "name": "Sal na prateleira (Depósito de sal Nv.3)", "condition": cold_storage_level >= 3, "gold": 70, "rep": 4},
+		{"id": "poco_atravessado", "name": "Poço Sem Fundo por %d dias de balcão" % HARDEST_LIFE_DAYS, "condition": int(difficulty_days.get("poco_sem_fundo", 0)) >= HARDEST_LIFE_DAYS, "gold": 90, "rep": 5},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
 		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"},
 		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
@@ -8606,8 +8685,9 @@ func _daily_upkeep() -> int:
 		+ Staff.total_wage(staff_hired) + CELL_FOOD * prisoners.size() \
 		- SERVANT_UPKEEP_RELIEF * servants.size()
 	## Conta de casa bem administrada encolhe 8% por marcha, e a conta é o que
-	## segura o império: por isso a trilha mexe nela e não na receita.
-	return maxi(1, int(round(float(bill) * (1.0 - 0.08 * float(house_rank)) * (0.9 if _has_spec("house", "livro") else 1.0))))
+	## segura o império: por isso a trilha mexe nela e não na receita. A regra da casa
+	## multiplica o mesmo número — sob Juro Alto e Poço o aluguel chega maior.
+	return maxi(1, int(round(float(bill) * (1.0 - 0.08 * float(house_rank)) * (0.9 if _has_spec("house", "livro") else 1.0) * _difficulty_upkeep_factor())))
 
 ## A virada de dia cobra a conta. Pagar em dia usa o que sobrou de caixa para
 ## escavar a dívida; não pagar não perdoa — o faltante entra no vermelho da casa.
@@ -9139,7 +9219,7 @@ func _show_ending(ending: Dictionary = {}, ruined := false) -> void:
 	# paga. A ruína é o momento em que ela diz que não paga nada.
 	var prestige_note := Label.new()
 	prestige_note.text = "Esta vida não deixou aura: reabrir as portas recomeça do zero com o que a loja aprendeu, e o que ela aprendeu não enche caixa." if ruined \
-		else "Esta vida vale %d de aura na reencarnação. A recepção mostra o que fica e o que volta a zero." % Prestige.aura_for(business_score())
+		else "Esta vida vale %d de aura na reencarnação. A recepção mostra o que fica e o que volta a zero." % _aura_gain(business_score())
 	prestige_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	prestige_note.add_theme_font_size_override("font_size", 13)
 	prestige_note.add_theme_color_override("font_color", Color(1.0, 0.62, 0.55) if ruined else Color(0.85, 0.7, 1.0))
@@ -9482,12 +9562,18 @@ func _prestige_text() -> String:
 func _prestige_button_text() -> String:
 	if not game_completed:
 		return "Reencarnar o balcão (trancado: falta o império)"
-	return "Reencarnar o balcão: esta vida vale +%d de aura" % Prestige.aura_for(business_score())
+	return "Reencarnar o balcão: esta vida vale +%d de aura" % _aura_gain(business_score())
 
 ## O painel do prestígio desenhado. A meta é medida em pontuação, e pontuação muda
 ## a cada venda, por isso isto roda em todo refresco e não só no tique do mundo.
 func _refresh_prestige() -> void:
 	prestige_label.text = _prestige_text()
+	# A regra da casa é painel do prestígio porque é o prestígio que ela paga: o texto
+	# mostra os fatores e os dias morados em cada um, para o bônus ter proveniência.
+	if is_instance_valid(difficulty_label):
+		difficulty_label.text = _difficulty_summary()
+	if is_instance_valid(difficulty_button):
+		difficulty_button.text = "🏠 Regra da casa: %s ▶" % str(_difficulty_row()["name"])
 	var aura_open := game_completed or prestige_runs > 0 or prestige_aura > 0
 	for i in range(Prestige.PERKS.size()):
 		if i >= prestige_perk_buttons.size():
@@ -9551,6 +9637,93 @@ func _buy_perk(index: int) -> void:
 	_save_game()
 	_refresh_ui()
 
+## A linha da tabela que a casa segue hoje. Id desconhecido — save adulterado, ou modo
+## que saiu da lista — cai no Calçada: a loja nunca acorda sem regra.
+func _difficulty_row(id: String = "") -> Dictionary:
+	var wanted := id if id != "" else difficulty
+	for row in DIFFICULTIES:
+		if str(row["id"]) == wanted:
+			return row
+	return DIFFICULTIES[0]
+
+
+## Etiqueta: o freguês paga a regra da casa, não o preço de tabela. Consumido em
+## `_piece_price`, que é onde vitrine, balcão e fila já mediam a mesma peça.
+func _difficulty_price_factor() -> float:
+	return float(_difficulty_row()["price"])
+
+
+## Conta da casa: sob regra dura o aluguel do inferno pesa mais.
+func _difficulty_upkeep_factor() -> float:
+	return float(_difficulty_row()["upkeep"])
+
+
+## Pressão da rua: o limiar é que muda, nunca o sorteio.
+func _difficulty_risk_factor() -> float:
+	return float(_difficulty_row()["risk"])
+
+
+## Dias de balcão já vividos sob alguma regra nesta vida.
+func _difficulty_days_total() -> int:
+	var total := 0
+	for id in difficulty_days:
+		total += maxi(0, int(difficulty_days[id]))
+	return total
+
+
+## O pagamento da regra: a média dos dias efetivamente morados em cada modo. Quem passa
+## a vida inteira no Poço leva o multiplicador inteiro; quem troca de regra no meio do
+## caminho leva a fração que de fato viveu — é o dia na prateleira que prova a regra, não
+## o botão batido na hora de reencarnar. Vida sem dia virado ainda não morou nada, então
+## paga a regra do momento.
+func _difficulty_aura_factor() -> float:
+	var total := _difficulty_days_total()
+	if total <= 0:
+		return float(_difficulty_row()["aura"])
+	var peso := 0.0
+	for row in DIFFICULTIES:
+		peso += float(row["aura"]) * float(maxi(0, int(difficulty_days.get(str(row["id"]), 0))))
+	return peso / float(total)
+
+
+## Aura que a vida de hoje paga: o número de sempre da tabela, escalado pela regra
+## vivida. Um único lugar para o cofre, o botão e o final lerem.
+func _aura_gain(score: int) -> int:
+	return maxi(1, int(round(float(Prestige.aura_for(score)) * _difficulty_aura_factor())))
+
+
+## O ciclista de regra da casa. Trocar vale desde a próxima batida de fila — e custa a
+## diluição do bônus, porque o dia já vivido em outra regra continua no caderno.
+func _cycle_difficulty() -> void:
+	var index := 0
+	for i in range(DIFFICULTIES.size()):
+		if str(DIFFICULTIES[i]["id"]) == difficulty:
+			index = i
+			break
+	difficulty = str(DIFFICULTIES[(index + 1) % DIFFICULTIES.size()]["id"])
+	last_event = "Regra da casa: %s. %s" % [_difficulty_row()["name"], _difficulty_row()["note"]]
+	_show_feedback("🏠 Regra: %s" % _difficulty_row()["name"], Color(0.86, 0.92, 1.0))
+	audio.play("click")
+	_save_game()
+	_refresh_ui()
+
+
+## O painel da regra: o nome, o que cada alavanca faz de verdade e os dias morados em
+## cada uma — sem ler o caderno de dias a loja não teria como provar o bônus.
+func _difficulty_summary() -> String:
+	var row := _difficulty_row()
+	var parts: Array[String] = []
+	for id in difficulty_days:
+		var dias := maxi(0, int(difficulty_days[id]))
+		if dias <= 0:
+			continue
+		parts.append("%s %d" % [str(_difficulty_row(str(id))["name"]), dias])
+	var caderno := " • dias morados: %s" % ", ".join(parts) if not parts.is_empty() else " • nenhum dia de balcão nesta regra ainda"
+	return "REGRA DA CASA: %s — etiqueta ×%.2f, conta ×%.2f, rua ×%.2f, aura ×%.2f%s\n%s" % [
+		str(row["name"]), float(row["price"]), float(row["upkeep"]), float(row["risk"]),
+		_difficulty_aura_factor(), caderno, str(row["note"])]
+
+
 ## Trocar a vida é o prestígio em si: o caixa, a prateleira e a campanha voltam ao
 ## zero, e o que a loja aprendeu — povo, álbum, lembranças, dotes e conquistas —
 ## atravessa com a chefe.
@@ -9558,7 +9731,7 @@ func _reincarnate() -> void:
 	if not game_completed:
 		return
 	var score := business_score()
-	var gain := Prestige.aura_for(score)
+	var gain := _aura_gain(score)
 	var temporada := Prestige.season(prestige_runs)
 	_bank_season()
 	prestige_runs += 1
@@ -9690,6 +9863,9 @@ func _reset_run() -> void:
 	quality_stock.clear()
 	shelf_batches.clear()
 	cold_storage_level = 0
+	# O caderno de regra é da vida: a escolha da próxima vida continua a mesma, mas os
+	# dias morados voltam ao zero junto com o caixa — senão a aura herdaria dias alheios.
+	difficulty_days.clear()
 	for item in products:
 		var held := int(_starting_shelf.get(str(item["id"]), 0))
 		item["stock"] = held
@@ -9898,10 +10074,12 @@ func _clean_house_turn() -> String:
 func _cell_capacity() -> int:
 	return sanctum_upgrade_level
 
-## Chance de o beco testar a loja numa virada: o barro chama, a fama afasta.
+## Chance de o beco testar a loja numa virada: o barro chama, a fama afasta, e a regra da
+## casa decide o tamanho da parede. Só o limiar muda — o sorteio continua o mesmo.
 func _vandal_chance() -> int:
-	return clampi(int(round(float(mess) * VANDAL_CHANCE_PER_MESS)) \
-		+ maxi(0, VANDAL_REP_SHIELD - reputation), 0, 40)
+	var base := int(round(float(mess) * VANDAL_CHANCE_PER_MESS)) \
+		+ maxi(0, VANDAL_REP_SHIELD - reputation)
+	return clampi(int(round(float(base) * _difficulty_risk_factor())), 0, 40)
 
 ## A guilda leva o preso embora e paga a escolta: é o único destino de quem é pego
 ## antes de a casa ter cela, e é por isso que a cela existe.
@@ -10002,8 +10180,9 @@ func _vicar_panel_line() -> String:
 ## Chance de a rua testar a porta numa virada: o alvo é o placar que a vitrine mostra,
 ## o escudo é a resposta dada ao vigário e o sino da campanha.
 func _invasion_chance() -> int:
-	return Invasions.invasion_chance(business_score(), tithe_stance, tithe_until, shop_day,
+	var base := Invasions.invasion_chance(business_score(), tithe_stance, tithe_until, shop_day,
 		vicar_refusals, _defense_snapshot())
+	return clampi(int(round(float(base) * _difficulty_risk_factor())), 0, 100)
 
 ## A visita que o calendário da loja já permite, com o poder escalado pelos carimbos de
 ## porta segurada. Vazio quer dizer "loja nova demais para ter alvo na porta".
