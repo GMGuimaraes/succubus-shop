@@ -40,7 +40,8 @@ extends SceneTree
 ## dicionário, nível 12) vira 3 entradas legítimas postas hoje, Nv.3, e a primeira virada
 ## depois dele não apodrece nada; sem a chave no arquivo a estante acorda com 0 peças
 ## registradas e o estoque intacto. Conquista *Sal na prateleira* acende no Nv.3, e o painel
-## fecha com 87 definições (a do #74, *Poço Sem Fundo por 10 dias de balcão*, entrou depois
+## fecha com 89 definições (a do #74, *Poço Sem Fundo por 10 dias de balcão*, e o par do
+## #75, *Quem deve, paga* e *Tinta vermelha no livro*, entraram depois
 ## desta leitura). Se qualquer linha dessas mover um número entre o modo ligado e o
 ## desligado, ou se a etiqueta mudar com o depósito comprado, a despensa voltou a cortar
 ## progressão.

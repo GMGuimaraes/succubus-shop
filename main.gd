@@ -155,6 +155,16 @@ var prisoners: Array[Dictionary] = []
 var banned_regulars: Array[String] = []
 ## Frascos de sangue colhidos na cela nesta vida, só para a conquista contar.
 var blood_harvested: int = 0
+## O livro de fiado desta vida. Degrau zero = gaveta fechada, e com a gaveta fechada
+## nenhuma conta de antes se move. A nota é `id do freguês -> quanto deve, dia do
+## prazo e dias de atraso`, e a cobrança roda na virada, junto com casa e filiais.
+var credit_rank: int = 0
+var credit_book: Dictionary = {}
+## Contadores da vida que as conquistas lêem: nota quitada, nota riscada e o ouro que
+## a casa emprestou e nunca viu voltar.
+var credit_paid: int = 0
+var credit_written: int = 0
+var credit_lost_gold: int = 0
 ## Conserva da casa: cada visita pisa barro, a vassoura custa ouro, e a etiqueta
 ## despenca no salão imundo. Os números são a única novidade; todos caem em
 ## fórmulas que o jogo já usava (paciência de fila, multiplicador de preço, conta
@@ -221,6 +231,25 @@ const DIFFICULTIES := [
 ]
 ## Quantos dias de balcão na regra mais dura valem o selo da casa.
 const HARDEST_LIFE_DAYS := 10
+## O livro de fiado, em três degraus — e o degrau zero é a loja de sempre, com o
+## livro na gaveta e nenhuma medida antiga se movendo. Cada fator aqui é consumido no
+## lugar onde o jogo já media a grandeza: a nota nasce do preço que o balcão acabou de
+## calcular (`_shelf_price`), a cobrança roda na mesma virada que cobra filial e casa,
+## e a porta de abrir é ouro + fama, igual ao depósito de sal. Zero quer dizer livro
+## na gaveta: a venda que o bolso não paga continua perdida, exatamente como as sondas
+## antigas medem.
+const CREDIT_TIERS := [
+	{"rank": 0, "cost": 0, "rep": 0, "limit": 0, "seats": 0, "due": 0},
+	{"rank": 1, "cost": 150, "rep": 8, "limit": 90, "seats": 3, "due": 6},
+	{"rank": 2, "cost": 380, "rep": 20, "limit": 180, "seats": 5, "due": 8},
+	{"rank": 3, "cost": 720, "rep": 35, "limit": 320, "seats": 8, "due": 12},
+]
+## Juro sobre a nota que a casa teve de esperar. É pequeno de propósito: fiado bom é
+## o que volta, não o que castiga.
+const CREDIT_INTEREST := 0.15
+## Dias de atraso antes de a casa riscar a nota: o ouro vai embora, a reputação também
+## um pouco, e o vínculo do devedor desce um degrau.
+const CREDIT_WRITEOFF_DAYS := 3
 ## Os nomes que a casa enxerga quando a ronda segura um braço no ar. Ninguém aqui é
 ## freguês de casa: vândalo sorteado é gente de fora do elenco, e por isso vai para
 ## a cela sem levar vínculo junto.
@@ -717,6 +746,8 @@ var spec_labels: Array = []
 var spec_state_labels: Array = []
 var spec_buttons: Array = []
 var pack_button: Button
+var credit_button: Button
+var credit_label: Label
 var card_gallery_labels: Array = []
 var board_label: Label
 var score_button: Button
@@ -3767,6 +3798,25 @@ func _build_ui() -> void:
 		staff_row.add_child(staff_button)
 		staff_buttons.append(staff_button)
 
+	reception_box.add_child(_make_section_title("O LIVRO DE FIADO", Color(0.95, 0.80, 0.55)))
+	reception_box.add_child(_make_section_hint("Fiado é nome, não moeda: a casa só anota para quem já é freguês de casa, e o ouro da venda fica na rua até a cobrança — que pode não voltar. Cada degrau abre teto, páginas e prazo; a nota riscada no terceiro dia de atraso custa reputação e vínculo, e a conta da casa chega igualmente na virada."))
+	var credit_card := _make_sector_card(Color(0.08, 0.05, 0.045, 0.94), Color(0.86, 0.66, 0.34, 0.95))
+	reception_box.add_child(credit_card)
+	var credit_hrow := HBoxContainer.new()
+	credit_hrow.add_theme_constant_override("separation", 12)
+	credit_card.add_child(credit_hrow)
+	credit_label = Label.new()
+	credit_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	credit_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	credit_label.add_theme_font_size_override("font_size", 13)
+	credit_label.add_theme_color_override("font_color", Color(0.92, 0.82, 0.62))
+	credit_hrow.add_child(credit_label)
+	credit_button = Button.new()
+	credit_button.custom_minimum_size = Vector2(190, 44)
+	credit_button.add_theme_font_size_override("font_size", 14)
+	credit_button.pressed.connect(_buy_credit_rank)
+	credit_hrow.add_child(credit_button)
+
 	reception_box.add_child(_make_section_title("A PORTA DA CASA", Color(0.62, 0.86, 1.0)))
 	reception_box.add_child(_make_section_hint("Loja que dá lucro tem alvo na porta. Cada visita é resolvida com a mão que a casa já tem: a ronda da folha, os servos do salão, os batedores do cadastro, o santuário reformado e a Administração. O vigário passa na frente para cobrar — dízimo, suborno ou porta na cara dele, e as três respostas têm preço."))
 	defense_label = Label.new()
@@ -5970,10 +6020,16 @@ func _on_customer_tick() -> void:
 				spoil_line += " e %d saiu(ram) do fundo da estante pela porta." % int(spoil["lost"])
 			else:
 				spoil_line += "."
-		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line + spoil_line
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s" % [
+		# O livro de fiado vira junto com a prateleira: atraso é dia morado, não sorteio,
+		# e a nota riscada dói na conta uma única vez por virada.
+		var credit_line := _age_credit_book()
+		var credit_report := (" " + credit_line) if credit_line != "" else ""
+		var credit_event := ("\n📖 " + credit_line) if credit_line != "" else ""
+		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line + spoil_line + credit_report
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s%s" % [
 			shop_day, Economy.report(economy_state, products, Ingredients.DATA), _weather_line(), bill_line,
-			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line, rival_line]
+			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line, rival_line,
+			credit_event]
 		# A manhã também afina a faixa: alarme novo, vigário na porta ou ruína velha
 		# mudam o tom da mesma gravação antes de a chefe abrir o balcão.
 		_apply_situation_music()
@@ -6051,6 +6107,16 @@ func _on_customer_tick() -> void:
 		_animate_customer_arrival(profile)
 		var preferred_index: int = _product_index(str(profile["favorite"]))
 		current_customer_budget = _visit_budget(profile)
+		# Quem deve à casa paga antes de comprar: o bolso que a visita trouxe é o
+		# mesmo que quita a nota, e o que sobra é o que ele leva hoje. Quitar não dá
+		# direito a uma nota nova no mesmo balcão — senão a casa giraria o próprio
+		# ouro e chamaria isso de freguês fiel.
+		var credit_note: Dictionary = _settle_credit_note(str(profile.get("regular_id", "")))
+		var credit_settled := not credit_note.is_empty()
+		if credit_settled:
+			current_customer_budget = maxi(0, current_customer_budget - int(credit_note["purse"]))
+		var credit_lending := false
+		var credit_choice := -1
 		current_customer_patience = maxi(1, int(round(float(int(profile.get("patience", 2)) + logistics_rank + Sanctum.patience_bonus(active_buffs) + distraction_pending) / world_speed())) - _fury_patience_loss() - _mess_patience_loss())
 		distraction_pending = 0
 		var seduction_used := false
@@ -6093,25 +6159,54 @@ func _on_customer_tick() -> void:
 					if _shelf_price(affordable_index) <= current_customer_budget:
 						affordable.append(affordable_index)
 			else:
-				last_event = "%s não conseguiu pagar nenhum item e saiu %s: “Volto quando meu bolso parar de chorar.”" % [profile["name"], "com pressa" if current_customer_patience <= 1 else "frustrado"]
-				disappointed_customers += 1
-				reputation = maxi(0, reputation - 1)
-				_set_customer_status("CLIENTE: saiu sem comprar")
-				if is_instance_valid(customer_emotion_label):
-					customer_emotion_label.text = "😤 frustração"
-				_play_customer_reaction("broke")
-				# O charme não bastou, e ela faz de conta que era teste de balcão.
-				_show_stage_emotion(stage_seller_body, "vergonha")
-				_check_achievements()
-				_save_game()
-				_refresh_ui()
-				return
-		var chosen_index: int = affordable[randi() % affordable.size()] if not affordable.is_empty() else available[randi() % available.size()]
-		if preferred_index >= 0 and available.has(preferred_index) and randi() % 100 < 70:
-			chosen_index = preferred_index
-			# Ele viu o que queria do outro lado do salão e aponta antes de pedir.
-			_show_stage_emotion(stage_customer, "aponta")
-			if not seduction_used and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 + sanctum_upgrade_level * 3 and (preferred_index == chosen_index or current_customer_patience <= 1):
+				var fiado_index := _cheapest_index(available)
+				var fiado_valor := 0 if fiado_index < 0 else _shelf_price(fiado_index)
+				if not credit_settled and _can_lend(str(profile.get("regular_id", "")), fiado_valor):
+					# O bolso não chega, mas o nome chega: a casa anota no livro e a
+					# peça sai. O ouro fica na rua até a virada cobrar — e é isso que
+					# faz o fiado doer quando a conta da casa chega antes do pagamento.
+					credit_lending = true
+					credit_choice = fiado_index
+				else:
+					last_event = "%s não conseguiu pagar nenhum item e saiu %s: “Volto quando meu bolso parar de chorar.”" % [profile["name"], "com pressa" if current_customer_patience <= 1 else "frustrado"]
+					disappointed_customers += 1
+					reputation = maxi(0, reputation - 1)
+					_set_customer_status("CLIENTE: saiu sem comprar")
+					if is_instance_valid(customer_emotion_label):
+						customer_emotion_label.text = "😤 frustração"
+					_play_customer_reaction("broke")
+					# O charme não bastou, e ela faz de conta que era teste de balcão.
+					_show_stage_emotion(stage_seller_body, "vergonha")
+					_check_achievements()
+					_save_game()
+					_refresh_ui()
+					return
+		# A segunda porta do fiado é o pedido pessoal: quem veio pela peça que a casa
+		# tem na estante, e não chega na etiqueta dela, hoje levaria outra e o pedido
+		# continuaria por fazer. No livro ele leva a que pediu, a casa marca a
+		# encomenda concluída e recebe amanhã — com o risco da riscada. Degrau zero não
+		# empresta, então nenhuma visita de loja nova passa por aqui.
+		if not credit_lending and not credit_settled and not seduction_used \
+				and not affordable.is_empty() and bool(profile.get("personal_request", false)):
+			if preferred_index >= 0 and available.has(preferred_index) and not affordable.has(preferred_index):
+				var pedido_valor := _shelf_price(preferred_index)
+				if _can_lend(str(profile.get("regular_id", "")), pedido_valor):
+					# O fiado aqui não é um presente nem um desconto: é o mesmo preço
+					# honesto do balcão, cobrado um dia depois. O que a casa troca é o
+					# dia, e o risco passa a ser seu — a riscada mora na virada.
+					credit_lending = true
+					credit_choice = preferred_index
+		var chosen_index: int = credit_choice if credit_lending else (affordable[randi() % affordable.size()] if not affordable.is_empty() else available[randi() % available.size()])
+		if preferred_index >= 0 and available.has(preferred_index) and not credit_lending and randi() % 100 < 70:
+			# O dedo aponta a vitrine, mas quem decide a compra é o bolso. Este `if` trocava
+			# o escolhido pela favorita sem consultar `affordable`, e a loja recebia o preço
+			# cheio de quem tinha menos da metade no bolso — medido: 143 de ouro na mão de 60.
+			var leva_a_favorita := affordable.has(preferred_index)
+			if leva_a_favorita:
+				chosen_index = preferred_index
+				# Ele viu o que queria do outro lado do salão e aponta antes de pedir.
+				_show_stage_emotion(stage_customer, "aponta")
+			if not seduction_used and charm_rank > 0 and randi() % 100 < 8 + charm_rank * 5 + sanctum_upgrade_level * 3 and (leva_a_favorita or current_customer_patience <= 1):
 				seduction_used = true
 				seduction_attempts += 1
 				seduction_successes += 1
@@ -6163,13 +6258,45 @@ func _on_customer_tick() -> void:
 			sale_price += request_bonus
 			var completed_id := str(profile["regular_id"])
 			regular_orders_completed[completed_id] = int(regular_orders_completed.get(completed_id, 0)) + 1
-			last_event = "PEDIDO ESPECIAL concluído para %s! +%d ouro e +10 XP. %s" % [profile["name"], request_bonus, profile["line"]]
+			if credit_lending:
+				# No fiado o pedido sai concluído e o prêmio vai na nota junto com a
+				# peça: a casa anota o preço honesto e cobra na virada.
+				last_event = "PEDIDO ESPECIAL concluído para %s no fiado: o prêmio de %d ouro entra na nota, e a casa cobra na virada. +10 XP. %s" % [profile["name"], request_bonus, profile["line"]]
+			else:
+				last_event = "PEDIDO ESPECIAL concluído para %s! +%d ouro e +10 XP. %s" % [profile["name"], request_bonus, profile["line"]]
 			_add_xp(10)
 			headline_locked = true
 			reputation += 1 + (1 if seduction_used else 0)
-		# A peça saiu da prateleira, o dinheiro entra no caixa. Até aqui só o
-		# pedido especial pagava: a venda comum levava o item e devovia XP.
-		gold += sale_price
+		# A peça saiu da prateleira. No balcão de sempre o dinheiro entra no caixa; no
+		# fiado ele entra no livro, e o caixa fica esperando a virada — a mesma virada
+		# em que a casa cobra conta e filial. É aí que o crédito dói: emprestar é fechar
+		# o dia com a conta pronta e o ouro na rua.
+		if credit_lending:
+			# O livro anota o preço honesto da peça, não a etiqueta de vitrine: a casa
+			# empresta o ouro de hoje e cobra amanhã o que cobraria no balcão — inclusive
+			# o prêmio do pedido pessoal. O que muda é o dia, nunca o valor. E o teto do
+			# degrau é teto da nota: fiado acima do que a casa aceita ter na rua não é
+			# crédito, é aposta.
+			var fiado_devido := mini(sale_price, _credit_limit())
+			_lend_note(str(profile.get("regular_id", "")), str(profile["name"]), str(item["name"]), fiado_devido)
+			var nota := "📖 %s levou %s (%s) no fiado: %d de ouro anotados no livro, prazo no dia %d. %s" % [
+				profile["name"], item["name"], quality_name, fiado_devido,
+				shop_day + _credit_due_days(), str(profile["line"])
+			]
+			# Quem veio pelo pedido e levou no fiado tem dois motivos para ler: a encomenda
+			# saiu feita e a casa anotou o prêmio junto. A nota é a manchete, o pedido fica
+			# na linha de cima — sem isso o balcão emprestava sem avisar do favor.
+			if fulfilled_personal_request:
+				nota = "%s\n%s" % [str(last_event), nota]
+			last_event = nota
+			# A nota é o recibo do ouro que saiu pela porta: vira manchete trancada, e
+			# nenhuma festa de balcão (degrau de freguês, faixa da reforma) pode apagá-la
+			# no mesmo turno em que ela foi escrita.
+			headline_locked = true
+		else:
+			gold += sale_price
+		if credit_settled:
+			last_event = "%s\n%s" % [str(credit_note["line"]), last_event]
 		customers_served += 1
 		_add_mess(MESS_PER_VISIT)
 		if profile.has("regular_id"):
@@ -6183,7 +6310,11 @@ func _on_customer_tick() -> void:
 			if new_tier > old_tier:
 				var tier_lines: Array = regular_data.get("tier_up", [])
 				var tier_line := str(tier_lines[new_tier - 1]) if tier_lines.size() >= new_tier else "Este freguês agora confia mais na sua loja."
-				last_event = "%s agora é %s! %s" % [regular_data.get("short", regular_data.get("name", "Freguês")), Regulars.TIER_NAMES[new_tier], tier_line]
+				var escada := "%s agora é %s! %s" % [regular_data.get("short", regular_data.get("name", "Freguês")), Regulars.TIER_NAMES[new_tier], tier_line]
+				# O degrau novo é a notícia maior, mas não apaga o recibo do balcão: num
+				# balcão de fiado o pedido sobe de degrau justamente na visita em que a
+				# nota é escrita, e perder a nota aqui é o ouro emprestado sumir do mural.
+				last_event = escada if not headline_locked else "%s\n%s" % [escada, str(last_event)]
 				headline_locked = true
 			if preferred_index == chosen_index and new_bond >= 3 and not regular_story_completed.has(regular_id):
 				var story_progress := int(regular_story_progress.get(regular_id, 0)) + 1
@@ -6194,12 +6325,14 @@ func _on_customer_tick() -> void:
 					gold += story_reward
 					reputation += 2
 					_add_xp(30)
-					last_event = "CAPÍTULO CONCLUÍDO: a história de %s avança! Recompensa: %d ouro, +30 XP e +2 reputação." % [regular_data.get("short", regular_data.get("name", "Freguês")), story_reward]
+					var capitulo := "CAPÍTULO CONCLUÍDO: a história de %s avança! Recompensa: %d ouro, +30 XP e +2 reputação." % [regular_data.get("short", regular_data.get("name", "Freguês")), story_reward]
+					last_event = capitulo if not headline_locked else "%s\n%s" % [capitulo, str(last_event)]
 					headline_locked = true
 				else:
 					last_event += "\nMissão pessoal: %d/3 compras favoritas." % story_progress
 			var romance_tip := _romance_tip(regular_id)
-			if romance_tip > 0:
+			# quem leva no fiado não deixa gorjeta no mesmo turno: a dívida é a gorjeta.
+			if romance_tip > 0 and not credit_lending:
 				gold += romance_tip
 				daily_gold_earned += romance_tip
 				last_event += "\n%s deixa uma gorjeta de coração sobre o balcão: +%d ouro." % [
@@ -6229,10 +6362,16 @@ func _on_customer_tick() -> void:
 				last_event = last_event + "\n" + faction_msg if headline_locked else faction_msg
 			elif faction_bonus > 0:
 				last_event += "\nBônus de facção (%s): +%d ouro." % [Factions.find(faction_id).get("short", faction_id), faction_bonus]
-		daily_gold_earned += sale_price
+		if not credit_lending:
+			daily_gold_earned += sale_price
 		_add_xp(12)
 		_progress_contracts("customers", 1)
-		_progress_contracts("gold", sale_price)
+		# A meta de ouro do dia é o que entrou no caixa. No fiado a peça saiu, o cliente
+		# saiu satisfeito e o ouro saiu pela porta — a conta dele é do livro, e só entra
+		# no balanço na virada em que a casa recebe. Somar a etiqueta aqui era o dia
+		# bater cheio com a gaveta vazia.
+		if not credit_lending:
+			_progress_contracts("gold", sale_price)
 		_add_affection(1 + charm_rank + sanctum_upgrade_level + (1 if _has_spec("charm", "coracao") else 0))
 		_set_customer_status("CLIENTE: %s" % profile["name"])
 		_set_seller_mood("happy")
@@ -7050,6 +7189,17 @@ func _refresh_ui() -> void:
 				" • %d furtos barrados pela ronda." % theft_blocked if staff_hired.has("ronda") else "",
 				_servants_line()
 			]
+	if is_instance_valid(credit_label):
+		credit_label.text = _credit_summary()
+	if is_instance_valid(credit_button):
+		var credit_next := _credit_next_row()
+		if credit_next.is_empty():
+			credit_button.text = "📖 Livro no degrau máximo"
+			credit_button.disabled = true
+		else:
+			credit_button.text = "📖 Abrir o fiado — degrau %d (%d)" % [
+				int(credit_next["rank"]), int(credit_next["cost"])]
+			credit_button.disabled = false
 	for i in range(Staff.DATA.size()):
 		var seat: Dictionary = Staff.DATA[i]
 		var seat_id := str(seat["id"])
@@ -7565,6 +7715,11 @@ func _save_game() -> void:
 	config.set_value("game", "cold_storage_level", cold_storage_level)
 	config.set_value("game", "difficulty", difficulty)
 	config.set_value("game", "difficulty_days", difficulty_days)
+	config.set_value("game", "credit_rank", credit_rank)
+	config.set_value("game", "credit_book", credit_book)
+	config.set_value("game", "credit_paid", credit_paid)
+	config.set_value("game", "credit_written", credit_written)
+	config.set_value("game", "credit_lost_gold", credit_lost_gold)
 	config.set_value("game", "economy_state", economy_state)
 	config.set_value("game", "active_buffs", active_buffs)
 	config.set_value("game", "stolen_tier", stolen_tier)
@@ -7942,6 +8097,33 @@ func _load_game() -> void:
 			if dia <= 0 or str(_difficulty_row(str(id))["id"]) != str(id):
 				continue
 			difficulty_days[str(id)] = dia
+	# O livro de fiado volta como estava, mas sem nota impossível: deve quem a casa
+	# conhece, deve ouro de verdade e vence num dia que ainda existe. Payload lixo
+	# (id fantasma, owed 0, prazo negativo) é riscado na entrada, não cobrado para sempre.
+	credit_rank = clampi(int(config.get_value("game", "credit_rank", credit_rank)), 0, CREDIT_TIERS.size() - 1)
+	credit_paid = maxi(0, int(config.get_value("game", "credit_paid", credit_paid)))
+	credit_written = maxi(0, int(config.get_value("game", "credit_written", credit_written)))
+	credit_lost_gold = maxi(0, int(config.get_value("game", "credit_lost_gold", credit_lost_gold)))
+	var saved_book = config.get_value("game", "credit_book", {})
+	credit_book = {}
+	if saved_book is Dictionary:
+		for debtor_id in (saved_book as Dictionary).keys():
+			var id := str(debtor_id)
+			var raw = (saved_book as Dictionary)[debtor_id]
+			if id.is_empty() or Regulars.find(id).is_empty() or not (raw is Dictionary):
+				continue
+			var entry: Dictionary = raw
+			var owed := int(entry.get("owed", 0))
+			var due_day := int(entry.get("due_day", 0))
+			if owed <= 0 or due_day <= 0:
+				continue
+			credit_book[id] = {
+				"name": str(entry.get("name", Regulars.find(id).get("short", "O devedor"))),
+				"item": str(entry.get("item", "uma peça do balcão")),
+				"owed": owed,
+				"due_day": due_day,
+				"late": clampi(int(entry.get("late", 0)), 0, CREDIT_WRITEOFF_DAYS - 1),
+			}
 	var legacy_premium = config.get_value("game", "premium_stock", {})
 	if legacy_premium is Dictionary:
 		for legacy_name in legacy_premium.keys():
@@ -8438,6 +8620,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "sanctum_keeper", "name": "Guardiã das Relíquias (Santuário Nv.3)", "condition": sanctum_upgrade_level >= 3, "gold": 90, "rep": 5, "pose": "relic"},
 		{"id": "salt_shelf", "name": "Sal na prateleira (Depósito de sal Nv.3)", "condition": cold_storage_level >= 3, "gold": 70, "rep": 4},
 		{"id": "poco_atravessado", "name": "Poço Sem Fundo por %d dias de balcão" % HARDEST_LIFE_DAYS, "condition": int(difficulty_days.get("poco_sem_fundo", 0)) >= HARDEST_LIFE_DAYS, "gold": 90, "rep": 5},
+		{"id": "credit_paid_five", "name": "Quem deve, paga (5 notas quitadas no balcão)", "condition": credit_paid >= 5, "gold": 75, "rep": 4},
+		{"id": "credit_red_ink", "name": "Tinta vermelha no livro (3 notas riscadas)", "condition": credit_written >= 3, "gold": 50, "rep": 0},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
 		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"},
 		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
@@ -8517,7 +8701,7 @@ func _grant_pack(free: bool) -> void:
 	var price := Cards.pack_price(packs_opened, card_counts)
 	if not free:
 		if gold < price:
-			last_event = "O pacote custa %d ouro. A loja não aprova fiado nem para nostalgia." % price
+			last_event = "O pacote custa %d ouro. Fiado é para mercadoria, não para nostalgia." % price
 			_refresh_ui()
 			return
 		gold -= price
@@ -8719,6 +8903,199 @@ func _pay_upkeep() -> String:
 ## As filiais trabalham na virada: cada uma paga o lucro do dia ou cobra o
 ## conserto. O saldo entra no caixa, e o que o caixa não cobre vira dívida — é
 ## exatamente assim que a expansão afunda quem mediu mal a própria conta.
+## ── O livro de fiado ────────────────────────────────────────────────────────────
+## Nenhum sorteio mora aqui embaixo. A nota nasce do preço que o balcão acabou de
+## calcular, a quitação depende do bolso que a visita já tinha sorteado, e o atraso
+## depende do dia que virava de qualquer jeito. Com o degrau zero a gaveta fica
+## fechada: `_can_lend()` devolve false e a venda perdida continua perdida exatamente
+## como as sondas antigas mediram.
+
+## A etiqueta mais barata da prateleira: é a que a casa aceita no fiado, porque é a
+## que o devedor tem mais chance de pagar. Empate fica com a que veio primeiro.
+func _cheapest_index(candidates: Array[int]) -> int:
+	var best := -1
+	var best_price := 0
+	for candidate in candidates:
+		var price := _shelf_price(candidate)
+		if best < 0 or price < best_price:
+			best = candidate
+			best_price = price
+	return best
+
+
+func _credit_row() -> Dictionary:
+	return CREDIT_TIERS[clampi(credit_rank, 0, CREDIT_TIERS.size() - 1)]
+
+
+func _credit_next_row() -> Dictionary:
+	if credit_rank >= CREDIT_TIERS.size() - 1:
+		return {}
+	return CREDIT_TIERS[credit_rank + 1]
+
+
+func _credit_limit() -> int:
+	return int(_credit_row()["limit"])
+
+
+func _credit_seats() -> int:
+	return int(_credit_row()["seats"])
+
+
+func _credit_due_days() -> int:
+	return int(_credit_row()["due"])
+
+
+## Fiado é nome, não moeda: só entra no livro quem já é freguês de casa (tem vínculo
+## onde a cobrança pode bater), a etiqueta caiba no teto do degrau e sobre página no
+## livro. Uma nota por freguês — a casa não empresta duas vezes para o mesmo nome.
+func _can_lend(regular_id: String, price: int) -> bool:
+	if credit_rank <= 0 or regular_id.is_empty():
+		return false
+	if price > _credit_limit():
+		return false
+	if credit_book.has(regular_id):
+		return false
+	return credit_book.size() < _credit_seats()
+
+
+func _lend_note(regular_id: String, debtor: String, item_name: String, price: int) -> void:
+	credit_book[regular_id] = {
+		"name": debtor,
+		"item": item_name,
+		"owed": price,
+		"due_day": shop_day + _credit_due_days(),
+		"late": 0,
+	}
+
+
+## O devedor voltou ao balcão com o bolso na mão: paga primeiro a casa, e o que sobra
+## é o que ele leva hoje. É por isso que quitar pode custar a venda do dia — o preço
+## honesto de quem emprestou. Sem nota aberta, a visita segue o balcão de sempre.
+func _settle_credit_note(regular_id: String) -> Dictionary:
+	if regular_id.is_empty() or not credit_book.has(regular_id):
+		return {}
+	var note: Dictionary = credit_book[regular_id]
+	var owed := int(note.get("owed", 0))
+	if owed > current_customer_budget:
+		return {}
+	var late := int(note.get("late", 0))
+	var interest := int(round(float(owed) * CREDIT_INTEREST)) if late > 0 else 0
+	var purse := owed + interest
+	gold += purse
+	# O ouro da nota é caixa do dia em que chega, não do dia em que a peça saiu. Sem
+	# esta linha o fiado saía do balanço duas vezes: a etiqueta contava como ganha na
+	# venda e o pagamento, quando vinha, não aparecia em lugar nenhum.
+	daily_gold_earned += purse
+	_progress_contracts("gold", purse)
+	credit_paid += 1
+	credit_book.erase(regular_id)
+	reputation += 1
+	regular_bonds[regular_id] = int(regular_bonds.get(regular_id, 0)) + 1
+	_add_xp(4)
+	var tail := " (juro de %d por ter atrasado %d dia(s))" % [interest, late] if interest > 0 else ""
+	return {
+		"purse": purse,
+		"line": "📖 %s quitou %d de fiado no balcão%s." % [str(note.get("name", "O devedor")), purse, tail],
+	}
+
+
+## A virada só envelhece o livro: quem não voltou ao balcão entra em atraso, e no
+## terceiro dia de atraso a casa risca a nota. O ouro não volta, a reputação paga o
+## prejuízo junto, e o vínculo do devedor desce um degrau — a praça inteira aprende o
+## nome de quem não paga.
+func _age_credit_book() -> String:
+	if credit_book.is_empty():
+		return ""
+	var lines: Array[String] = []
+	var riscadas: Array[String] = []
+	for id in credit_book:
+		var note: Dictionary = credit_book[id]
+		if shop_day <= int(note.get("due_day", shop_day)):
+			continue
+		note["late"] = int(note.get("late", 0)) + 1
+		if int(note["late"]) < CREDIT_WRITEOFF_DAYS:
+			continue
+		var debtor_id := str(id)
+		var owed := int(note.get("owed", 0))
+		credit_written += 1
+		credit_lost_gold += owed
+		reputation = maxi(0, reputation - 2)
+		regular_bonds[debtor_id] = maxi(0, int(regular_bonds.get(debtor_id, 0)) - 1)
+		lines.append("a casa riscou a nota de %s: %d de ouro que não voltam" % [
+			str(note.get("name", "O devedor")), owed])
+		riscadas.append(debtor_id)
+	for id in riscadas:
+		credit_book.erase(str(id))
+	if lines.is_empty():
+		return ""
+	audio.play("sad")
+	return "FIADO: %s • %d nota(s) no livro, %d de ouro na rua." % [
+		"; ".join(lines), credit_book.size(), _credit_on_street()]
+
+
+func _credit_on_street() -> int:
+	var total := 0
+	for id in credit_book:
+		total += int((credit_book[id] as Dictionary).get("owed", 0))
+	return total
+
+
+## Abrir o livro é decisão de caixa e de fama: a casa só empresta para quem já a
+## conhece, e o degrau seguinte custa o preço inteiro, sem desconto de entusiasmo.
+func _buy_credit_rank() -> void:
+	var next_row := _credit_next_row()
+	if next_row.is_empty():
+		last_event = "O livro já está no último degrau: %d notas de até %d, prazo de %d dias." % [
+			_credit_seats(), _credit_limit(), _credit_due_days()]
+		_show_feedback("📖 O livro está aberto até a última página.", Color(0.90, 0.82, 0.60))
+		_refresh_ui()
+		return
+	if reputation < int(next_row["rep"]):
+		last_event = "Abrir o fiado até o degrau %d pede %d de fama; a casa tem %d. Fiado é nome, não moeda." % [
+			int(next_row["rank"]), int(next_row["rep"]), reputation]
+		_show_feedback("✕ Falta fama para emprestar.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	var cost := int(next_row["cost"])
+	if gold < cost:
+		last_event = "O livro de fiado custa %d de ouro, e o caixa tem %d. Quem deve com a mão vazia não cobra." % [
+			cost, gold]
+		_show_feedback("✕ Falta ouro para abrir o livro.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	gold -= cost
+	credit_rank = int(next_row["rank"])
+	reputation += 1
+	_add_xp(12)
+	last_event = "📖 Livro de fiado no degrau %d: notas de até %d, %d lugares na rua e %d dias de prazo (−%d de ouro)." % [
+		credit_rank, _credit_limit(), _credit_seats(), _credit_due_days(), cost]
+	_show_feedback("✦ Fiado liberado no balcão.", Color(0.90, 0.82, 0.60))
+	audio.play("coin")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+
+func _credit_summary() -> String:
+	if credit_rank <= 0:
+		return "O livro está na gaveta: quem não tem com que pagar sai da loja sem a peça, como sempre saiu. Abrir o caderno custa %d de ouro e pede %d de fama." % [
+			int(CREDIT_TIERS[1]["cost"]), int(CREDIT_TIERS[1]["rep"])]
+	var head := "DEGRAU %d • nota de até %d • %d de %d lugares ocupados • %d de ouro na rua • prazo %d dias • %d quitada(s), %d riscada(s) (%d de prejuízo)." % [
+		credit_rank, _credit_limit(), credit_book.size(), _credit_seats(),
+		_credit_on_street(), _credit_due_days(), credit_paid, credit_written, credit_lost_gold]
+	var notas: Array[String] = []
+	for id in credit_book:
+		var note: Dictionary = credit_book[id]
+		var atraso := int(note.get("late", 0))
+		notas.append(" • %s deve %d (vence dia %d%s)" % [
+			str(note.get("name", "O devedor")), int(note.get("owed", 0)), int(note.get("due_day", 0)),
+			", %d dia(s) de atraso" % atraso if atraso > 0 else "",
+		])
+	if not notas.is_empty():
+		head += "\n" + "\n".join(notas)
+	return head
+
+
 func _collect_branches() -> String:
 	if branches.is_empty():
 		return ""
@@ -9866,6 +10243,13 @@ func _reset_run() -> void:
 	# O caderno de regra é da vida: a escolha da próxima vida continua a mesma, mas os
 	# dias morados voltam ao zero junto com o caixa — senão a aura herdaria dias alheios.
 	difficulty_days.clear()
+	# Fiado é desta vida e deste balcão: reencarnar apaga as notas da rua, o degrau do
+	# caderno e as duas contagens. Quem começou do zero não herda cobrança de outra chefe.
+	credit_rank = 0
+	credit_book.clear()
+	credit_paid = 0
+	credit_written = 0
+	credit_lost_gold = 0
 	for item in products:
 		var held := int(_starting_shelf.get(str(item["id"]), 0))
 		item["stock"] = held
@@ -10518,8 +10902,14 @@ func _apply_progress_decor() -> void:
 	# A faixa sobe sozinha, mas quem avisa é a chefe: ninguém pode descobrir o
 	# salão novo por acidente no meio de uma venda.
 	if band > antes and not quiet:
-		last_event = tr("A casa virou %s: %s") % [
+		var anuncio := tr("A casa virou %s: %s") % [
 			tr(PROGRESS_BAND_NAMES[band]), tr(PROGRESS_BAND_GIFTS[band])]
+		# A faixa nova é a notícia maior, mas não apaga o que o balcão acabou de dizer:
+		# quem levou no fiado, quem pagou o capítulo, quem levou a encomenda. Perder essa
+		# linha no meio de uma reforma é o jogador fazer a conta da casa sem ler o
+		# recibo. A obra entra por cima, o recibo fica embaixo.
+		var recibo := str(last_event)
+		last_event = anuncio if recibo.is_empty() else "%s\n%s" % [anuncio, recibo]
 		_show_stage_emotion(stage_seller_body, "felicidade")
 
 ## A obra em si, desenhada na camada entre o fundo pintado e o elenco: poeira no ar,
