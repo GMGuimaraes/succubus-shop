@@ -394,11 +394,19 @@ var library_upgrade_level: int = 0
 var sanctum_upgrade_level: int = 0
 var library_upgrade_button: Button
 var sanctum_upgrade_button: Button
+var cold_storage_button: Button
 var sector_action_button: Button
 var queue_distractions: int = 0
 var ingredient_stock: Dictionary = STARTING_PANTRY.duplicate()
 ## Estoque de peças por qualidade: { id_do_produto: [torto, honesto, refinado, prima, mitico] }
 var quality_stock: Dictionary = {}
+## Idade de cada peça que vence: { id_do_produto: [{tier, day}] }, da mais antiga
+## para a mais nova. Sem registro a peça entra como recém-posta — save antigo nunca
+## acorda com a despensa virada.
+var shelf_batches: Dictionary = {}
+## Depósito de sal (0..3): cada nível soma uma validade inteira ao relógio da
+## prateleira. Não muda preço nem sorte — muda só o prazo.
+var cold_storage_level: int = 0
 ## Mercado reativo: { "ingredient": {id: calor}, "product": {id: calor} }
 var economy_state: Dictionary = Economy.fresh_state()
 ## Rituais ativos do santuário: { id_do_ritual: segundos_de_mundo_restantes }
@@ -449,16 +457,16 @@ const PRODUCT_ICONS := ["🧪", "🦆", "💧", "📦", "✨", "🐟", "🌀", "
 var _starting_shelf: Dictionary = {}
 
 var products: Array = [
-	{"id": "dano_emocional", "name": "Poção de Dano Emocional", "cost": 8, "price": 15, "stock": 1, "ingredients": {"essencia": 1}, "desc": "Lembra você daquela mensagem que mandou em 2018."},
+	{"id": "dano_emocional", "name": "Poção de Dano Emocional", "cost": 8, "price": 15, "stock": 1, "validade": 6, "ingredients": {"essencia": 1}, "desc": "Lembra você daquela mensagem que mandou em 2018."},
 	{"id": "pato_amaldicoado", "name": "Pato Amaldiçoado Premium", "cost": 10, "price": 24, "stock": 1, "ingredients": {"pena": 1}, "desc": "Ele não faz nada. Mas julga suas decisões."},
-	{"id": "lagrimas_jogador", "name": "Lágrimas de Jogador Derrotado", "cost": 12, "price": 30, "stock": 1, "ingredients": {"sal": 1}, "desc": "Ingrediente raro. Salgado. Muito salgado."},
+	{"id": "lagrimas_jogador", "name": "Lágrimas de Jogador Derrotado", "cost": 12, "price": 30, "stock": 1, "validade": 14, "ingredients": {"sal": 1}, "desc": "Ingrediente raro. Salgado. Muito salgado."},
 	{"id": "caixa_misteriosa", "name": "Caixa Misteriosa Vazia", "cost": 5, "price": 12, "stock": 1, "ingredients": {"vazio": 1}, "desc": "A surpresa é perceber que você pagou por uma caixa."},
-	{"id": "confianca_instantanea", "name": "Poção de Confiança Instantânea", "cost": 9, "price": 22, "stock": 1, "ingredients": {"essencia": 1, "tinta": 1}, "desc": "Funciona até alguém pedir para você explicar."},
-	{"id": "elixir_memoria", "name": "Elixir de Memória de Peixe", "cost": 18, "price": 48, "stock": 0, "required_level": 3, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Você esquece por que comprou. E compra de novo."},
-	{"id": "incenso_teleporte", "name": "Incenso de Teletransporte Barato", "cost": 26, "price": 68, "stock": 0, "required_level": 5, "ingredients": {"po_lunar": 1, "tinta": 1}, "desc": "Leva você a três metros dali. Às vezes quatro."},
+	{"id": "confianca_instantanea", "name": "Poção de Confiança Instantânea", "cost": 9, "price": 22, "stock": 1, "validade": 4, "ingredients": {"essencia": 1, "tinta": 1}, "desc": "Funciona até alguém pedir para você explicar."},
+	{"id": "elixir_memoria", "name": "Elixir de Memória de Peixe", "cost": 18, "price": 48, "stock": 0, "required_level": 3, "validade": 8, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Você esquece por que comprou. E compra de novo."},
+	{"id": "incenso_teleporte", "name": "Incenso de Teletransporte Barato", "cost": 26, "price": 68, "stock": 0, "required_level": 5, "validade": 5, "ingredients": {"po_lunar": 1, "tinta": 1}, "desc": "Leva você a três metros dali. Às vezes quatro."},
 	{"id": "cristal_credito", "name": "Cristal de Crédito Cósmico", "cost": 42, "price": 115, "stock": 0, "required_level": 8, "ingredients": {"vazio": 1, "tinta": 2}, "desc": "Converte promessas vagas em dívidas muito concretas."},
 	{"id": "pergaminho_procrastinacao", "name": "Pergaminho de Procrastinação Certificada", "cost": 55, "price": 150, "stock": 0, "required_level": 10, "ingredients": {"tinta": 2, "essencia": 1}, "desc": "Adia tarefas importantes com selo ISO de preguiça."},
-	{"id": "frasco_motivacao", "name": "Frasco de Motivação de Segunda-feira", "cost": 70, "price": 195, "stock": 0, "required_level": 12, "ingredients": {"po_lunar": 2, "sal": 1}, "desc": "Efeito dura até o primeiro e-mail."},
+	{"id": "frasco_motivacao", "name": "Frasco de Motivação de Segunda-feira", "cost": 70, "price": 195, "stock": 0, "required_level": 12, "validade": 3, "ingredients": {"po_lunar": 2, "sal": 1}, "desc": "Efeito dura até o primeiro e-mail."},
 	{"id": "adaga_charme", "name": "Adaga de Charme Duvidoso", "cost": 30, "price": 95, "stock": 0, "required_level": 2, "ingredients": {"pena": 1, "tinta": 1}, "desc": "Brilha quando alguém promete pagar amanhã."},
 	{"id": "martelo_faisca", "name": "Martelo de Faísca Dramática", "cost": 45, "price": 140, "stock": 0, "required_level": 4, "ingredients": {"sal": 1, "po_lunar": 1}, "desc": "Cada golpe produz uma faísca e uma opinião não solicitada."
 		}
@@ -3401,6 +3409,10 @@ func _build_ui() -> void:
 	forge_mastery_label.add_theme_font_size_override("font_size", 13)
 	forge_mastery_label.add_theme_color_override("font_color", Color(1.0, 0.80, 0.55))
 	forge_box.add_child(forge_mastery_label)
+	cold_storage_button = Button.new()
+	cold_storage_button.custom_minimum_size = Vector2(820, 36)
+	cold_storage_button.pressed.connect(_buy_cold_storage)
+	forge_box.add_child(cold_storage_button)
 
 	for i in range(products.size()):
 		var card := PanelContainer.new()
@@ -5278,6 +5290,152 @@ func _add_piece(index: int, tier: int) -> void:
 	item["stock"] = int(item["stock"]) + 1
 	var stock := _quality_for(str(item["id"]))
 	stock[tier] = int(stock[tier]) + 1
+	if _shelf_life(index) > 0:
+		_batches_for(str(item["id"])).append({"tier": tier, "day": shop_day})
+
+## Quantos dias de balcão a peça aguenta antes de começar a virar. Zero quer dizer
+## "não vence": lâmina, pergaminho e caixa vazia não apodrecem. O depósito de sal
+## soma uma validade inteira por nível, então o prazo cresce sem mexer em preço.
+func _shelf_life(index: int) -> int:
+	var days := int(products[index].get("validade", 0))
+	if days <= 0:
+		return 0
+	return days * (1 + cold_storage_level)
+
+func _batches_for(product_id: String) -> Array:
+	var stored = shelf_batches.get(product_id, null)
+	if stored is Array:
+		return stored
+	var fresh: Array = []
+	shelf_batches[product_id] = fresh
+	return fresh
+
+## A prateleira e o registro de idade têm de bater antes de a virada cobrar: peça
+## que chegou por save antigo, migração ou carga avulso entra como recém-posta no
+## degrau dela, e sobra de registro sem peça correspondente é podada. Sem isso uma
+## peça órfã apodrecia sozinha, uma peça real nunca estragava, ou — pior —
+## a virada re-escrevia o estoque e derrubava o nível de quem só estava guardado.
+func _reconcile_batches(index: int) -> void:
+	var product_id := str(products[index]["id"])
+	var life := _shelf_life(index)
+	var batches := _batches_for(product_id)
+	if life <= 0:
+		batches.clear()
+		return
+	var counts := _quality_for(product_id)
+	var tracked := Quality.empty_stock()
+	for batch in batches:
+		var tier := clampi(int(batch["tier"]), 0, Quality.size() - 1)
+		batch["tier"] = tier
+		tracked[tier] = int(tracked[tier]) + 1
+	for tier in range(Quality.size()):
+		var missing := int(counts[tier]) - int(tracked[tier])
+		for _added in range(maxi(0, missing)):
+			batches.append({"tier": tier, "day": shop_day})
+		var extra := int(tracked[tier]) - int(counts[tier])
+		for _cut in range(maxi(0, extra)):
+			for position in range(batches.size()):
+				if int(batches[position]["tier"]) == tier:
+					batches.remove_at(position)
+					break
+
+## Vence é descer um degrau, não sumir: a peça mais antiga da prateleira perde uma
+## casa de qualidade, e a que já está no fundo sai pela porta. Sem sorteio nenhum,
+## porque a mesma semente tem de fechar o mesmo estoque. Devolve quanto virou e
+## quanto se perdeu para o balanço da manhã poder contar.
+func _age_shelf() -> Dictionary:
+	var turned := 0
+	var lost := 0
+	for index in range(products.size()):
+		var life := _shelf_life(index)
+		if life <= 0:
+			continue
+		var product_id := str(products[index]["id"])
+		_reconcile_batches(index)
+		var batches := _batches_for(product_id)
+		var kept: Array = []
+		for batch in batches:
+			if shop_day - int(batch["day"]) < life:
+				kept.append(batch)
+				continue
+			turned += 1
+			var tier := int(batch["tier"])
+			if tier <= 0:
+				lost += 1
+				continue
+			batch["tier"] = tier - 1
+			batch["day"] = shop_day
+			kept.append(batch)
+		batches.assign(kept)
+		var counts := _quality_for(product_id)
+		for tier in range(Quality.size()):
+			counts[tier] = 0
+		for batch in batches:
+			var tier := int(batch["tier"])
+			counts[tier] = int(counts[tier]) + 1
+		products[index]["stock"] = Quality.total(counts)
+	return {"turned": turned, "lost": lost}
+
+## Quantos dias faltam para a peça mais antiga da prateleira começar a virar.
+func _shelf_countdown(index: int) -> int:
+	var life := _shelf_life(index)
+	if life <= 0:
+		return 0
+	var product_id := str(products[index]["id"])
+	var batches := _batches_for(product_id)
+	if batches.is_empty():
+		return life
+	var oldest := shop_day
+	for batch in batches:
+		oldest = mini(oldest, int(batch["day"]))
+	return clampi(life - (shop_day - oldest), 0, life)
+
+## A linha de prazo que a forja mostra embaixo da peça. Prateleira vazia não vence
+## nada, e o que não tem validade ganha o ∞ para a lista ter leitura igual.
+func _shelf_marker(index: int) -> String:
+	var life := _shelf_life(index)
+	if life <= 0:
+		return "∞ Não vence"
+	if int(products[index]["stock"]) <= 0:
+		return "⏳ %d dias de prazo • nada vencendo na prateleira vazia" % life
+	var dias := _shelf_countdown(index)
+	if dias <= 1:
+		return "⏳ Vira HOJE: a peça mais antiga desce um degrau"
+	return "⏳ Vence em %d dias de balcão" % dias
+
+## O depósito de sal é compra de vida, como a biblioteca e o santuário: cada nível
+## soma uma validade inteira ao relógio da prateleira. Não mexe em preço, sorte nem
+## porta — só no prazo, que é justamente o que a ruína de quem esquece a poção
+## na estante cobra.
+func _cold_storage_cost() -> int:
+	return 120 + cold_storage_level * 180
+
+func _buy_cold_storage() -> void:
+	if cold_storage_level >= 3:
+		last_event = "Três baús de sal é o que a casa guarda. Mais que isso, poção velha vira história de balcão."
+		audio.play("click")
+		_refresh_ui()
+		return
+	var cost := _cold_storage_cost()
+	if gold < cost:
+		last_event = "Depósito de sal Nv.%d custa %d ouro. O sal é barato; a porta com chave, não." % [
+			cold_storage_level + 1, cost]
+		audio.play("sad")
+		_refresh_ui()
+		return
+	gold -= cost
+	cold_storage_level += 1
+	reputation += 1
+	_add_xp(10)
+	if cold_storage_level == 1:
+		last_event = "Primeiro baú de sal no fundo da forja: toda mercadoria perecível agora tem o dobro de prazo na prateleira."
+	elif cold_storage_level == 2:
+		last_event = "Segundo baú: a despensa respira três validades antes de a primeira peça descer de degrau."
+	else:
+		last_event = "Depósito cheio. A chefe tranca a porta e joga a chave no bolso: “Agora o que vence aqui é porque eu deixei.”"
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
 
 ## O diabrete contratado não tira poção do chapéu: ele revira a despensa e usa a
 ## primeira matéria-prima que encontra. Sem estoque ele reclama e não produz,
@@ -5301,8 +5459,26 @@ func _imp_work() -> void:
 func _take_piece(index: int, mode: int) -> int:
 	var item: Dictionary = products[index]
 	item["stock"] = maxi(0, int(item["stock"]) - 1)
-	var stock := _quality_for(str(item["id"]))
+	var product_id := str(item["id"])
+	var stock := _quality_for(product_id)
 	var tier := Quality.take(stock, mode)
+	if tier >= 0 and _shelf_life(index) > 0:
+		# Saiu pela porta, sai também da idade: a mais antiga daquele degrau, que é
+		# justamente a que o balcão empurra primeiro. A ordem do registro não garante
+		# idade — peça que desceu de degrau na virada mantém o lugar que tinha na lista
+		# e reescreve o dia — então quem manda é o dia, não a posição.
+		var batches := _batches_for(product_id)
+		var pick := -1
+		var oldest := 0
+		for position in range(batches.size()):
+			if int(batches[position]["tier"]) != tier:
+				continue
+			var day := int(batches[position]["day"])
+			if pick < 0 or day < oldest:
+				pick = position
+				oldest = day
+		if pick >= 0:
+			batches.remove_at(pick)
 	return 1 if tier < 0 else tier
 
 ## Peça que sai pela porta é peça entregue: só ela conta para a etapa Lendária da
@@ -5720,7 +5896,18 @@ func _on_customer_tick() -> void:
 		# A placa que acendeu hoje entra no balanço: a loja lê o rombo antes de a
 		# primeira batida pegar menos corpo na calçada.
 		var rival_line := _rival_opening_line()
-		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line
+		# A despensa vira depois de todos os sorteios da manhã: estrago de prazo não
+		# consome sorte, senão a mesma semente mudaria de vândalo só porque havia
+		# poção velha na prateleira.
+		var spoil := _age_shelf()
+		var spoil_line := ""
+		if int(spoil["turned"]) > 0:
+			spoil_line = " A prateleira virou: %d peça(s) desceu(ram) de qualidade" % int(spoil["turned"])
+			if int(spoil["lost"]) > 0:
+				spoil_line += " e %d saiu(ram) do fundo da estante pela porta." % int(spoil["lost"])
+			else:
+				spoil_line += "."
+		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line + spoil_line
 		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s" % [
 			shop_day, Economy.report(economy_state, products, Ingredients.DATA), _weather_line(), bill_line,
 			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line, rival_line]
@@ -6536,6 +6723,9 @@ func _refresh_ui() -> void:
 		var sanctum_cost := 90 + sanctum_upgrade_level * 120
 		sanctum_upgrade_button.text = "Santuário Nv.%d • Upgrade %d ouro" % [sanctum_upgrade_level, sanctum_cost] if sanctum_upgrade_level < 5 else "Santuário Nv.5 • Máximo"
 		sanctum_upgrade_button.disabled = sanctum_upgrade_level >= 5 or gold < sanctum_cost
+	if is_instance_valid(cold_storage_button):
+		cold_storage_button.text = "❄ Depósito de sal Nv.%d • %d ouro" % [cold_storage_level, _cold_storage_cost()] if cold_storage_level < 3 else "❄ Depósito de sal Nv.3 • Máximo"
+		cold_storage_button.disabled = cold_storage_level >= 3 or gold < _cold_storage_cost()
 	if is_instance_valid(sector_action_button):
 		sector_action_button.text = "Consultar grimório vivo" if current_sector == "library" else "Harmonizar relíquia" if current_sector == "sanctum" else "Interagir com o cenário"
 		sector_action_button.disabled = current_sector != "library" and current_sector != "sanctum"
@@ -6645,7 +6835,7 @@ func _refresh_ui() -> void:
 		var shelf := _shelf_price(i)
 		if unlocked:
 			var margin := _estimated_margin(item)
-			product_labels[i].text = "%s%s %s\nEstoque: %d  •  Vitrine: %d ouro\nPeças: %s" % [item["name"], demand_marker, heat_marker, item["stock"], shelf, Quality.summary(quality)]
+			product_labels[i].text = "%s%s %s\nEstoque: %d  •  Vitrine: %d ouro\nPeças: %s\n%s" % [item["name"], demand_marker, heat_marker, item["stock"], shelf, Quality.summary(quality), _shelf_marker(i)]
 			product_margin_labels[i].text = "Margem estimada: %s%d ouro" % ["+" if margin >= 0 else "−", abs(margin)]
 			product_margin_labels[i].add_theme_color_override("font_color", Color(0.65, 1.0, 0.72) if margin >= 0 else Color(1.0, 0.55, 0.55))
 		else:
@@ -7308,6 +7498,8 @@ func _save_game() -> void:
 	config.set_value("game", "house_rank", house_rank)
 	config.set_value("game", "ingredient_stock", ingredient_stock)
 	config.set_value("game", "quality_stock", quality_stock)
+	config.set_value("game", "shelf_batches", shelf_batches)
+	config.set_value("game", "cold_storage_level", cold_storage_level)
 	config.set_value("game", "economy_state", economy_state)
 	config.set_value("game", "active_buffs", active_buffs)
 	config.set_value("game", "stolen_tier", stolen_tier)
@@ -7650,6 +7842,28 @@ func _load_game() -> void:
 				for i in range(mini(saved_counts.size(), counts.size())):
 					counts[i] = maxi(0, int(saved_counts[i]))
 			quality_stock[str(product_id)] = counts
+	cold_storage_level = clampi(int(config.get_value("game", "cold_storage_level", cold_storage_level)), 0, 3)
+	# A idade da prateleira vem depois do `shop_day` e do registro de qualidade: peça
+	# sem dia registrado, ou com dia no futuro, entra como recém-posta. Save antigo
+	# acorda com a despensa fresca, não com ela virada.
+	var saved_batches = config.get_value("game", "shelf_batches", {})
+	shelf_batches = {}
+	if saved_batches is Dictionary:
+		for product_id in (saved_batches as Dictionary).keys():
+			var kept: Array = []
+			var saved_list = (saved_batches as Dictionary)[product_id]
+			if saved_list is Array:
+				for entry in saved_list:
+					if not (entry is Dictionary):
+						continue
+					var day := int((entry as Dictionary).get("day", shop_day))
+					if day > shop_day or day < 1:
+						day = shop_day
+					kept.append({
+						"tier": clampi(int((entry as Dictionary).get("tier", 1)), 0, Quality.size() - 1),
+						"day": day,
+					})
+			shelf_batches[str(product_id)] = kept
 	var legacy_premium = config.get_value("game", "premium_stock", {})
 	if legacy_premium is Dictionary:
 		for legacy_name in legacy_premium.keys():
@@ -8144,6 +8358,7 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "catalyst_touch", "name": "Toque de Catalisador (peça rara na forja)", "condition": catalyst_crafted >= 1, "gold": 60, "rep": 3, "pose": "relic"},
 		{"id": "library_master", "name": "Bibliotecária do Submundo (Biblioteca Nv.3)", "condition": library_upgrade_level >= 3, "gold": 80, "rep": 4, "pose": "book"},
 		{"id": "sanctum_keeper", "name": "Guardiã das Relíquias (Santuário Nv.3)", "condition": sanctum_upgrade_level >= 3, "gold": 90, "rep": 5, "pose": "relic"},
+		{"id": "salt_shelf", "name": "Sal na prateleira (Depósito de sal Nv.3)", "condition": cold_storage_level >= 3, "gold": 70, "rep": 4},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
 		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"},
 		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
@@ -9473,6 +9688,8 @@ func _reset_run() -> void:
 	catalyst_enabled = false
 	economy_state = Economy.fresh_state()
 	quality_stock.clear()
+	shelf_batches.clear()
+	cold_storage_level = 0
 	for item in products:
 		var held := int(_starting_shelf.get(str(item["id"]), 0))
 		item["stock"] = held
