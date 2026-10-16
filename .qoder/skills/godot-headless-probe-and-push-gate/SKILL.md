@@ -29,6 +29,12 @@ Executar na ordem. Pular passo nao e acelerar, e estragar.
 Antes de assumir a versao do motor, conferir `"$GODOT" --version`; o usuario atualiza o
 Godot e o numero muda.
 
+Esta skill tem copia rastreada no repo em
+`.qoder/skills/godot-headless-probe-and-push-gate/SKILL.md`. O arquivo que carrega e o de
+`C:/Users/gmore/.qoder/skills/`; o do repo e o que as outras sessoes e pessoas leem. Toda
+edicao aqui precisa ser espelhada la e commitada, senao o portao passa a existir em duas
+versoes que dao respostas diferentes.
+
 ## Passo 0 - registrar o hash do save real
 
 Sempre antes de qualquer comando que instantiate o jogo.
@@ -126,6 +132,19 @@ o PNG de volta com a ferramenta Read. Um probe sem saida legivel nao prova nada.
   registrada, pedir um idioma ausente devolve aquela unica tabela (medido: locale `de`
   acordou em ingles). O idioma original precisa de tabela identidade (chave -> chave), senao
   voltar ao portugues continua lendo ingles.
+- **O idioma e da pessoa, nao da partida, e por isso sobrevive ao `_reset_run()`.**
+  `_pick_locale()` (main.gd) grava `locale` + `locale_confirmed` em
+  `Locales.SETTINGS_PATH` = `user://locale_settings.cfg`; `_load_person_settings()` le o
+  arquivo no `_ready()`, e o comentario no codigo diz que a preferencia mora fora do save de
+  proposito. Uma rodada anterior que passou pelo seletor de idioma deixa o proximo probe em
+  ingles, e ai a assercao em portugues sobre `.text` le ausencia sem regressao alguma no
+  jogo: medido, o selo "FORMA DEMONÍACA" virou "AUSENTE (esperado presente)" em
+  `tools/probes/filtro.gd`. O jogo chama `tr()` antes de escrever o `.text` (painel de
+  furia, botoes de setor), entao o alvo e o rotulo. Fixar no helper da sonda, logo apos os
+  fotogramas de `_ready()` e antes de `_reset_run()`:
+  `g.locale = Locales.DEFAULT`, `g.locale_confirmed = true`,
+  `TranslationServer.set_locale(Locales.DEFAULT)`. Na duvida, imprimir `game.locale` antes
+  de afirmar regressao de texto.
 - **Modal auto-aberto em `_ready()` cega a sonda.** Uma janela que para o `world_timer` e
   so fecha por clique tranca qualquer probe headless (e screenshots ficam escurecidos pela
   camada dim). Guardar o auto-open com `DisplayServer.get_name() != "headless"` e chamar
