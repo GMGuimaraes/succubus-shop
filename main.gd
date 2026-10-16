@@ -314,8 +314,20 @@ var locale: String = Locales.DEFAULT
 var locale_confirmed: bool = false
 var menu_layer: Control
 var menu_start_mode: bool = false
+## A tela aberta dentro do menu. `root` é a única que fecha com ESC; as outras voltam
+## para a raiz, como em jogo moderno.
+var menu_screen: String = "root"
 var menu_language_buttons: Array[Button] = []
 var menu_status_label: Label
+var menu_volume_label: Label
+## Onde a tela atual é montada dentro da moldura.
+var menu_box: VBoxContainer
+var menu_button: Button
+## Janela e desenho são da pessoa que joga, não da vida: moram no mesmo arquivo do
+## idioma e sobrevivem a reencarnar e a apagar o progresso.
+var window_mode: int = DisplayServer.WINDOW_MODE_WINDOWED
+var ui_scale: float = 1.0
+var vsync_mode: int = DisplayServer.VSYNC_ENABLED
 ## O arquivo de preferências respondeu? Se sim, ele manda sobre o save: o save é a conta
 ## da loja, e a loja pode ser exportada para outra máquina sem arrastar o idioma dela.
 var _locale_from_settings: bool = false
@@ -956,11 +968,9 @@ var music_player: AudioStreamPlayer
 var music_base_db: float = -13.0
 const GameAudio = preload("res://audio.gd")
 var audio: Node
-var mute_button: Button
 var toast_label: Label
 var toast_tween: Tween
 var market_panel: VBoxContainer
-var market_toggle_button: Button
 var sensual_tween: Tween
 ## Índice usado em "portrait" nos perfis e em regulars.gd. Ordem fixa:
 ## 0 aventureiro, 1 maga/mago, 2 gótico, 3 bárbaro, 4 ladina, 5 clérigo,
@@ -1088,7 +1098,8 @@ func _ready() -> void:
 	steam.boot(_achievement_ids())
 	steam.connect("leaderboard_ready", _on_leaderboard_ready)
 	Locales.register()
-	_load_locale_settings()
+	_load_person_settings()
+	_apply_player_settings()
 	_load_game()
 	TranslationServer.set_locale(locale)
 	_mark_day_start()
@@ -1275,13 +1286,27 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if key == null or not key.pressed or key.echo or key.keycode != KEY_ESCAPE:
 		return
 	if is_instance_valid(menu_layer):
-		_close_menu()
+		# Dois toques, dois papéis: o ESC primeiro desfaz a submenu e só depois fecha o
+		# menu. Quem está dentro de "Opções" quer voltar, não sair da loja.
+		if menu_start_mode or menu_screen == "root":
+			_close_menu()
+		else:
+			_show_menu_screen("root")
 	else:
 		_open_menu(false)
 	get_viewport().set_input_as_handled()
 
 func _open_menu(start_mode: bool) -> void:
 	menu_start_mode = start_mode
+	menu_screen = "idioma" if start_mode else "root"
+	_build_menu_layer()
+	_sync_clock()
+
+## Navegar dentro do menu é redesenhar a mesma janela, não abrir outra: o relógio continua
+## parado porque continua havendo uma janela na tela, e é `_sync_clock()` que garante isso
+## em vez de cada tela decidir por conta.
+func _show_menu_screen(screen: String) -> void:
+	menu_screen = screen
 	_build_menu_layer()
 	_sync_clock()
 
@@ -1293,7 +1318,7 @@ func _close_menu() -> void:
 		# Fechar o seletor sem escolher também é resposta: a loja fica no idioma que já
 		# tinha, e o seletor não volta a cada abertura do jogo.
 		locale_confirmed = true
-		_save_locale_settings()
+		_save_person_settings()
 	_save_game()
 	_sync_clock()
 
@@ -1303,10 +1328,12 @@ func _free_menu_layer() -> void:
 	menu_layer = null
 	menu_language_buttons.clear()
 	menu_status_label = null
+	menu_volume_label = null
+	menu_box = null
 
-## A janela em si: título, nota de cobertura por idioma, um botão por língua e a saída.
-## Os textos são literais em português porque o catálogo traduz o rótulo pronto — é por
-## isso que dar mais idioma ao jogo não pede tocar nesta função.
+## A moldura: fundo escuro, painel, título fixo e uma caixa rolável onde a tela atual é
+## montada. Os textos são literais em português porque o catálogo traduz o rótulo pronto —
+## é por isso que dar mais idioma ao jogo não pede tocar em nenhuma destas funções.
 func _build_menu_layer() -> void:
 	_free_menu_layer()
 	var dim := ColorRect.new()
@@ -1333,67 +1360,284 @@ func _build_menu_layer() -> void:
 	panel.add_theme_stylebox_override("panel", panel_style)
 	center.add_child(panel)
 
-	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(560, 0)
-	box.add_theme_constant_override("separation", 10)
-	panel.add_child(box)
+	var frame := VBoxContainer.new()
+	frame.custom_minimum_size = Vector2(560, 0)
+	frame.add_theme_constant_override("separation", 10)
+	panel.add_child(frame)
 
 	var title := Label.new()
-	title.text = "ESCOLHA O IDIOMA" if menu_start_mode else "MENU"
+	title.text = _menu_title()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", Color(0.85, 0.62, 1.0))
-	box.add_child(title)
+	frame.add_child(title)
 
+	# A conquista são umas cinquenta linhas; sem rolagem a tela ficaria maior que a loja.
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(520, 420)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	frame.add_child(scroll)
+
+	menu_box = VBoxContainer.new()
+	menu_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	menu_box.add_theme_constant_override("separation", 8)
+	scroll.add_child(menu_box)
+
+	match menu_screen:
+		"opcoes":
+			_menu_screen_opcoes()
+		"save":
+			_menu_screen_save()
+		"conquistas":
+			_menu_screen_conquistas()
+		"creditos":
+			_menu_screen_creditos()
+		"idioma":
+			_menu_screen_idioma()
+		_:
+			_menu_screen_root()
+
+func _menu_title() -> String:
 	if menu_start_mode:
-		var note := Label.new()
-		note.text = "O jogo abre em português, sua língua de origem. Trocar de idioma não muda nenhuma conta da loja: nem a porta, nem o bolso, nem o placar."
-		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		note.add_theme_font_size_override("font_size", 13)
-		note.add_theme_color_override("font_color", Color(0.78, 0.72, 0.86))
-		box.add_child(note)
+		return "ESCOLHA O IDIOMA"
+	match menu_screen:
+		"opcoes":
+			return "OPÇÕES"
+		"save":
+			return "SALVAR E CARREGAR"
+		"conquistas":
+			return "CONQUISTAS"
+		"creditos":
+			return "CRÉDITOS"
+		"idioma":
+			return "IDIOMA"
+	return "MENU"
 
-	var header := Label.new()
-	header.text = "Idioma"
-	header.add_theme_font_size_override("font_size", 16)
-	header.add_theme_color_override("font_color", Color(0.78, 0.62, 0.92))
-	box.add_child(header)
+func _menu_button(text: String, callback: Callable, height: int = 44) -> void:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(0, height)
+	button.pressed.connect(callback)
+	menu_box.add_child(button)
 
+func _menu_note(text: String, color := Color(0.78, 0.72, 0.86), size := 13) -> void:
+	var note := Label.new()
+	note.text = text
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.add_theme_font_size_override("font_size", size)
+	note.add_theme_color_override("font_color", color)
+	menu_box.add_child(note)
+
+func _menu_back_button() -> void:
+	_menu_button("← Voltar ao menu", _show_menu_screen.bind("root"))
+
+## Raiz: tudo que a loja tinha espalhado pelo topo e nas abas cabe agora aqui, e o que é
+## conta da pessoa (som, tela, escala) está uma camada abaixo, nunca na frente do balcão.
+func _menu_screen_root() -> void:
+	_menu_note("O balcão continua aqui. Este é o menu da loja — o mesmo que o ESC abre.",
+			Color(0.72, 0.66, 0.8), 13)
+	_menu_button("Continuar a loja", _close_menu, 48)
+	_menu_button("⚙ Opções", _show_menu_screen.bind("opcoes"))
+	_menu_button("💾 Salvar e carregar", _show_menu_screen.bind("save"))
+	_menu_button(tr("🏆 Conquistas (%d/%d)") % [unlocked_achievements.size(), _achievement_definitions().size()],
+			_show_menu_screen.bind("conquistas"))
+	_menu_button("✨ Créditos", _show_menu_screen.bind("creditos"))
+	_menu_button("🌐 Idioma", _show_menu_screen.bind("idioma"))
+	_menu_button("🐞 Relatar um problema", _show_bug_report_dialog, 40)
+	_menu_note("Fechar menu (ESC)", Color(0.62, 0.56, 0.74), 12)
+
+func _menu_screen_idioma() -> void:
+	if menu_start_mode:
+		_menu_note("O jogo abre em português, sua língua de origem. Trocar de idioma não muda nenhuma conta da loja: nem a porta, nem o bolso, nem o placar.")
 	for supported in Locales.SUPPORTED:
 		var id := str(supported["id"])
 		var button := Button.new()
 		button.text = _locale_button_text(id)
 		button.custom_minimum_size = Vector2(0, 44)
 		button.pressed.connect(_pick_locale.bind(id))
-		box.add_child(button)
+		menu_box.add_child(button)
 		menu_language_buttons.append(button)
+	if menu_start_mode:
+		_menu_button("Entrar na loja", _close_menu, 48)
+	else:
+		_menu_note("A prosa montada durante a partida — falas de cliente, balanço da virada, eventos — ainda sai no idioma original.",
+				Color(0.72, 0.66, 0.8), 12)
+		_menu_back_button()
 
-	var enter := Button.new()
-	enter.text = "Entrar na loja" if menu_start_mode else "Continuar a loja"
-	enter.custom_minimum_size = Vector2(240, 46)
-	enter.pressed.connect(_close_menu)
-	box.add_child(enter)
+func _menu_screen_opcoes() -> void:
+	var volume_row := HBoxContainer.new()
+	volume_row.add_theme_constant_override("separation", 12)
+	menu_box.add_child(volume_row)
+	menu_volume_label = Label.new()
+	menu_volume_label.text = _menu_volume_text()
+	menu_volume_label.custom_minimum_size = Vector2(150, 42)
+	menu_volume_label.add_theme_color_override("font_color", Color(0.85, 0.78, 0.95))
+	volume_row.add_child(menu_volume_label)
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.value = audio.volume
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.custom_minimum_size = Vector2(0, 42)
+	slider.value_changed.connect(_menu_volume_changed)
+	volume_row.add_child(slider)
 
-	if not menu_start_mode:
-		var save_button := Button.new()
-		save_button.text = "Salvar agora"
-		save_button.custom_minimum_size = Vector2(240, 40)
-		save_button.pressed.connect(_menu_save_now)
-		box.add_child(save_button)
+	_menu_button("🔥 Cenas sensuais: LIBERADAS" if adult_content_enabled else "🌸 Cenas sensuais: CONTIDAS",
+			_menu_toggle_adult)
+	_menu_button("🔇 Som: DESLIGADO" if audio.muted else "🔊 Som: LIGADO", _menu_toggle_mute)
+	_menu_button("Ocultar o painel da loja" if is_instance_valid(market_panel) and market_panel.visible
+			else "Mostrar o painel da loja", _menu_toggle_market)
+	_menu_button("Balanço do dia: automático" if day_auto_ok else "Balanço do dia: pede OK",
+			_menu_toggle_day_auto)
+	_menu_button(_menu_window_mode_label(), _cycle_window_mode)
+	_menu_button(_menu_scale_label(), _cycle_ui_scale)
+	_menu_button(_menu_vsync_label(), _cycle_vsync)
+	_menu_note("Nada aqui é conta da loja: som, tela e o tom das cenas são preferência de quem joga. Dotes, servos e o resto da administração ficam na Biblioteca e no Santuário.",
+			Color(0.66, 0.6, 0.76), 12)
+	_menu_back_button()
 
-		menu_status_label = Label.new()
-		menu_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		menu_status_label.add_theme_font_size_override("font_size", 13)
-		menu_status_label.add_theme_color_override("font_color", Color(0.62, 1.0, 0.72))
-		box.add_child(menu_status_label)
+## O tom das cenas é a preferência mais sensível do menu, e por isso ela mora embaixo de
+## um toque de distância do balcão, nunca no meio da fila: ligar e desligar troca a voz da
+## loja, os dotes e as poses, mas não mexe em caixa, reputação nem freguês atendido.
+func _menu_toggle_adult() -> void:
+	_toggle_adult_content()
+	_show_menu_screen("opcoes")
 
-		var hint := Label.new()
-		hint.text = "Fechar menu (ESC)"
-		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		hint.add_theme_font_size_override("font_size", 12)
-		hint.add_theme_color_override("font_color", Color(0.62, 0.56, 0.74))
-		box.add_child(hint)
+func _menu_screen_save() -> void:
+	_menu_button("Salvar agora", _menu_save_now)
+	menu_status_label = Label.new()
+	menu_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	menu_status_label.add_theme_font_size_override("font_size", 13)
+	menu_status_label.add_theme_color_override("font_color", Color(0.62, 1.0, 0.72))
+	menu_box.add_child(menu_status_label)
+	_menu_note(tr("Save da vida: dia %d, nível %d, %d de ouro.") % [shop_day, player_level, gold],
+			Color(0.72, 0.66, 0.8), 12)
+	_menu_button("Exportar save para arquivo", _show_save_dialog.bind(true), 40)
+	_menu_button("Importar save de arquivo", _show_save_dialog.bind(false), 40)
+	_menu_button("Carregar o último save do disco", _reload_from_disk, 40)
+	_menu_button("Apagar todo o progresso", _confirm_full_reset, 40)
+	_menu_note("Importar e apagar reabrem a loja: nada é escrito sem a janela de confirmação aparecer antes.",
+			Color(0.66, 0.6, 0.76), 12)
+	_menu_back_button()
+
+func _menu_screen_conquistas() -> void:
+	var definitions := _achievement_definitions()
+	_menu_note(tr("Desbloqueadas: %d de %d.") % [unlocked_achievements.size(), definitions.size()],
+			Color(0.85, 0.78, 0.95), 15)
+	var shown := 0
+	for achievement in definitions:
+		if unlocked_achievements.has(str(achievement["id"])):
+			shown += 1
+			_menu_note(tr("✓ %s  (+%d ouro, +%d fama)") % [str(achievement["name"]),
+					int(achievement["gold"]), int(achievement["rep"])], Color(0.72, 0.95, 0.8), 13)
+	if shown == 0:
+		_menu_note("Nenhuma ainda. A primeira chega com o primeiro atendimento do dia.",
+				Color(0.66, 0.6, 0.76), 13)
+	else:
+		_menu_note(tr("Trancadas neste balcão: %d — os nomes ficam escondidos para não estragar a surpresa.")
+				% (definitions.size() - shown), Color(0.66, 0.6, 0.76), 12)
+	_menu_back_button()
+
+func _menu_screen_creditos() -> void:
+	_menu_note("SUCCUBUS SHOP", Color(1.0, 0.67, 0.88), 20)
+	_menu_note("Concepção, código, escrita e arte: GMGuimaraes.", Color(0.85, 0.78, 0.95), 14)
+	var engine_version := str(Engine.get_version_info().get("string", "4"))
+	_menu_note("Motor: Godot %s (gl_compatibility)." % engine_version, Color(0.85, 0.78, 0.95), 14)
+	_menu_note("Trilha e efeitos gravados no próprio projeto; retratos e poses desenhados para a loja, sem arte explícita.",
+			Color(0.78, 0.72, 0.86), 13)
+	_menu_note("As IAs que revisaram este repositório no mesmo ritmo das madrugadas: Claude, ChatGPT, Copilot e Manus.",
+			Color(0.72, 0.66, 0.8), 13)
+	_menu_note(tr("Obrigado por jogar — e por relatar o que quebrou."), Color(0.85, 0.62, 1.0), 14)
+	_menu_back_button()
+
+func _menu_volume_text() -> String:
+	return tr("Volume: %d%%") % int(round(audio.volume * 100.0))
+
+## Arrastar a barra não pode redesenhar a tela: o slider sumiria debaixo do dedo a cada
+## passo. Só a legenda atrás dele se atualiza.
+func _menu_volume_changed(value: float) -> void:
+	audio.set_volume(value)
+	if is_instance_valid(menu_volume_label):
+		menu_volume_label.text = _menu_volume_text()
+
+func _menu_toggle_mute() -> void:
+	audio.toggle_muted()
+	_apply_music_settings()
+	_show_menu_screen("opcoes")
+
+func _menu_toggle_market() -> void:
+	_toggle_market_panel()
+	_show_menu_screen("opcoes")
+
+func _menu_toggle_day_auto() -> void:
+	_on_day_auto_ok_toggled(not day_auto_ok)
+	_show_menu_screen("opcoes")
+
+const WINDOW_MODES: Array[int] = [
+	DisplayServer.WINDOW_MODE_WINDOWED,
+	DisplayServer.WINDOW_MODE_MAXIMIZED,
+	DisplayServer.WINDOW_MODE_FULLSCREEN,
+]
+const UI_SCALES: Array[float] = [1.0, 1.25, 1.5, 0.85]
+const VSYNC_MODES: Array[int] = [
+	DisplayServer.VSYNC_ENABLED,
+	DisplayServer.VSYNC_ADAPTIVE,
+	DisplayServer.VSYNC_DISABLED,
+]
+
+## Cada rótulo entra inteiro na tabela, e não como "Tela: %s" com a palavra solta
+## costurada depois: "Janela" traduzida sozinha seria um termo de menu órfão, e o
+## genêro e a ordem das palavras mudam de idioma para idioma.
+func _menu_window_mode_label() -> String:
+	if window_mode == DisplayServer.WINDOW_MODE_MAXIMIZED:
+		return tr("Tela: Maximizada")
+	if window_mode == DisplayServer.WINDOW_MODE_FULLSCREEN:
+		return tr("Tela: Tela cheia")
+	return tr("Tela: Janela")
+
+func _menu_scale_label() -> String:
+	return tr("Escala da interface: %d%%") % int(round(ui_scale * 100.0))
+
+func _menu_vsync_label() -> String:
+	if vsync_mode == DisplayServer.VSYNC_DISABLED:
+		return tr("Sincronismo vertical: Desligado")
+	if vsync_mode == DisplayServer.VSYNC_ADAPTIVE:
+		return tr("Sincronismo vertical: Adaptativo")
+	return tr("Sincronismo vertical: Ligado")
+
+func _cycle_window_mode() -> void:
+	window_mode = WINDOW_MODES[(WINDOW_MODES.find(window_mode) + 1) % WINDOW_MODES.size()]
+	_apply_player_settings()
+	_save_person_settings()
+	_show_menu_screen("opcoes")
+
+func _cycle_ui_scale() -> void:
+	ui_scale = UI_SCALES[(UI_SCALES.find(ui_scale) + 1) % UI_SCALES.size()]
+	_apply_player_settings()
+	_save_person_settings()
+	_show_menu_screen("opcoes")
+
+func _cycle_vsync() -> void:
+	vsync_mode = VSYNC_MODES[(VSYNC_MODES.find(vsync_mode) + 1) % VSYNC_MODES.size()]
+	_apply_player_settings()
+	_save_person_settings()
+	_show_menu_screen("opcoes")
+
+## As três trocas de janela são do sistema, não da loja: em headless elas apenas são
+## aceitas e ignoradas, e a sonda lê o valor guardado, não o pixel na tela. Aplicar não
+## grava em disco — o boot aplica o que já está gravado sem reescrever o arquivo.
+func _apply_player_settings() -> void:
+	DisplayServer.window_set_mode(window_mode)
+	var window := get_window()
+	if is_instance_valid(window):
+		window.content_scale_factor = ui_scale
+	DisplayServer.window_set_vsync_mode(vsync_mode)
+
+## Voltar ao disco sem apagar a conta: a cena reinicia e lê o que está gravado.
+func _reload_from_disk() -> void:
+	audio.play("click")
+	get_tree().reload_current_scene()
 
 func _locale_button_text(id: String) -> String:
 	var line := Locales.display_name(id)
@@ -1421,7 +1665,7 @@ func _pick_locale(id: String) -> void:
 	locale = id
 	locale_confirmed = true
 	TranslationServer.set_locale(locale)
-	_save_locale_settings()
+	_save_person_settings()
 	_save_game()
 	_build_menu_layer()
 	_sync_clock()
@@ -1429,23 +1673,33 @@ func _pick_locale(id: String) -> void:
 	audio.play("click")
 
 ## A preferência mora fora do save de propósito: reencarnar, resetar a vida e até apagar
-## o progresso são contas da loja, e o idioma é da pessoa que joga.
-func _save_locale_settings() -> void:
+## o progresso são contas da loja, e o idioma e a tela são da pessoa que joga. Um arquivo
+## só, lido antes de escrito: salvar o idioma sem ler apagava a seção da tela, e vice-versa.
+func _save_person_settings() -> void:
 	var config := ConfigFile.new()
+	config.load(Locales.SETTINGS_PATH)
 	config.set_value("locale", "language", locale)
 	config.set_value("locale", "confirmed", locale_confirmed)
+	config.set_value("display", "window_mode", window_mode)
+	config.set_value("display", "ui_scale", ui_scale)
+	config.set_value("display", "vsync_mode", vsync_mode)
 	config.save(Locales.SETTINGS_PATH)
 
-func _load_locale_settings() -> void:
+func _load_person_settings() -> void:
 	var config := ConfigFile.new()
 	if config.load(Locales.SETTINGS_PATH) != OK:
 		return
 	var saved := str(config.get_value("locale", "language", ""))
-	if not Locales.knows(saved):
-		return
-	locale = saved
-	locale_confirmed = bool(config.get_value("locale", "confirmed", false))
-	_locale_from_settings = true
+	if Locales.knows(saved):
+		locale = saved
+		locale_confirmed = bool(config.get_value("locale", "confirmed", false))
+		_locale_from_settings = true
+	if WINDOW_MODES.has(int(config.get_value("display", "window_mode", window_mode))):
+		window_mode = int(config.get_value("display", "window_mode", window_mode))
+	if UI_SCALES.has(float(config.get_value("display", "ui_scale", ui_scale))):
+		ui_scale = float(config.get_value("display", "ui_scale", ui_scale))
+	if VSYNC_MODES.has(int(config.get_value("display", "vsync_mode", vsync_mode))):
+		vsync_mode = int(config.get_value("display", "vsync_mode", vsync_mode))
 
 func _refresh_timed_ui() -> void:
 	var elapsed := _world_seconds_since_tick()
@@ -2775,18 +3029,14 @@ func _build_ui() -> void:
 	title.add_theme_color_override("font_color", Color(1.0, 0.67, 0.88))
 	header.add_child(title)
 
-	market_toggle_button = Button.new()
-	market_toggle_button.text = "☰ Ocultar"
-	market_toggle_button.custom_minimum_size = Vector2(104, 42)
-	market_toggle_button.pressed.connect(_toggle_market_panel)
-	header.add_child(market_toggle_button)
-
-	var bug_report_button := Button.new()
-	bug_report_button.text = "🐞 Relatar"
-	bug_report_button.custom_minimum_size = Vector2(100, 42)
-	bug_report_button.tooltip_text = "Revisar um relatório com os logs recentes antes de enviá-lo ao GitHub."
-	bug_report_button.pressed.connect(_show_bug_report_dialog)
-	header.add_child(bug_report_button)
+	# O ☰ é o mesmo menu do ESC, e é a porta de entrada de tudo que antes estava
+	# espalhado pelo topo: som, volume, ocultar o painel, salvar, relatar bug.
+	menu_button = Button.new()
+	menu_button.text = "☰"
+	menu_button.tooltip_text = tr("Menu (ESC)")
+	menu_button.custom_minimum_size = Vector2(52, 42)
+	menu_button.pressed.connect(_open_menu.bind(false))
+	header.add_child(menu_button)
 
 	reception_button = Button.new()
 	reception_button.text = "Recepção"
@@ -2817,21 +3067,6 @@ func _build_ui() -> void:
 	expedition_button.custom_minimum_size = Vector2(126, 42)
 	expedition_button.pressed.connect(_set_sector.bind("expedition"))
 	header.add_child(expedition_button)
-
-	mute_button = Button.new()
-	mute_button.custom_minimum_size = Vector2(54, 42)
-	mute_button.tooltip_text = "Ligar/desligar o som"
-	mute_button.pressed.connect(func() -> void: audio.toggle_muted())
-	header.add_child(mute_button)
-	var volume_slider := HSlider.new()
-	volume_slider.min_value = 0.0
-	volume_slider.max_value = 1.0
-	volume_slider.step = 0.05
-	volume_slider.value = audio.volume
-	volume_slider.custom_minimum_size = Vector2(90, 42)
-	volume_slider.tooltip_text = "Volume"
-	volume_slider.value_changed.connect(func(v: float) -> void: audio.set_volume(v))
-	header.add_child(volume_slider)
 
 	var stats := FlowContainer.new()
 	stats.add_theme_constant_override("h_separation", 24)
@@ -4109,8 +4344,6 @@ func _toggle_market_panel() -> void:
 	if not is_instance_valid(market_panel):
 		return
 	market_panel.visible = not market_panel.visible
-	if is_instance_valid(market_toggle_button):
-		market_toggle_button.text = "☰ Ocultar" if market_panel.visible else "☰ Abrir"
 	audio.play("click")
 	_show_feedback("Mercado expandido." if market_panel.visible else "Recepção em foco.", Color(0.78, 0.95, 1.0))
 
@@ -4204,8 +4437,6 @@ func _set_sector(sector: String) -> void:
 		sector_title_label.text = "RECEPÇÃO • MERCADO E BALCÃO" if is_reception else "FORJA & OFICINA" if is_forge else "BIBLIOTECA ARCANA" if is_library else "EXPEDIÇÕES & RARIDADES" if is_expedition else "SANTUÁRIO DE ARTEFATOS"
 	if is_instance_valid(sector_hint_label):
 		sector_hint_label.text = "Compre ingredientes e venda itens no balcão. Os clientes chegam sozinhos para negociar." if is_reception else "Aqui apenas se fabrica: o ferreiro transforma ingredientes e ouro em mercadorias." if is_forge else "Aperfeiçoe talentos e adiante receitas presas ao nível." if is_library else "Nem tudo tem fornecedor. Mande o batedor buscar e torça pelo caminho de volta." if is_expedition else "Relíquias carregadas de magia aguardam uma negociação cuidadosa."
-	if is_instance_valid(market_toggle_button):
-		market_toggle_button.text = "☰ Ocultar" if is_instance_valid(market_panel) and market_panel.visible else "☰ Abrir"
 	# A trilha segue a sala e a rua: a mesma gravação, afinada pelo setor, pela visita
 	# que acabou de bater na porta e pela conta que a casa deve.
 	_apply_situation_music()
@@ -4314,8 +4545,6 @@ func _setup_background_music() -> void:
 	_apply_situation_music()
 
 func _apply_music_settings() -> void:
-	if is_instance_valid(mute_button):
-		mute_button.text = "🔇" if audio.muted else "🔊"
 	if is_instance_valid(music_player):
 		music_player.stream_paused = audio.muted
 		music_player.volume_db = music_base_db + linear_to_db(maxf(audio.volume, 0.0001))
