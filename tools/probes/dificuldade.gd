@@ -13,9 +13,10 @@ extends SceneTree
 ## ponderada dos dias morados; (5) `_reincarnate()` deposita no cofre a aura multiplicada;
 ## (6) o painel e o botão lêem regra, fatores e dias; (7) as duas chaves atravessam o
 ## arquivo, id fantasma e dia negativo são sumidos, save antigo acorda no Calçada com o
-## caderno vazio; (8) o selo do Poço acende no décimo dia, não no nono, e a lista fecha com
-## 91 definições (o par do livro de fiado, #75, e o par da bancada de ensaios, #76,
-## entraram depois desta leitura; a sonda lê o tamanho real da lista, não este número).
+## caderno vazio; (8) o selo do Poço acende no décimo dia, não no nono, e a lista fechava com
+## 91 definições nesta leitura (o par do livro de fiado, #75, o par da bancada de ensaios,
+## #76, e o par do salão das capas finas, #78, entraram depois; a sonda lê o tamanho real da
+## lista, não este número, e hoje ela fecha em 93).
 ##
 ## Armadilha medida nesta sonda: `business_score()` soma 1200 pontos quando o império está
 ## fechado, então a pontuação tem de ser lida DEPOIS de ligar `game_completed`. Medindo
@@ -47,7 +48,7 @@ extends SceneTree
 ## poco_sem_fundo: 7}, ouro 3210 e aura ×2.167; payload lixo (id fantasma, dia −4, dia 0)
 ## sobra só em {juro_alto: 6} e acorda no Calçada; sem as chaves no arquivo a loja abre no
 ## Calçada com caderno vazio e aura ×1.00. O selo *Poço Sem Fundo por 10 dias de balcão* não
-## acende no nono dia e acende no décimo, e o painel fecha com 91 definições. Se qualquer
+## acende no nono dia e acende no décimo, e o painel fecha com 93 definições. Se qualquer
 ## linha do Calçada se mover, a regra nova virou regressão nas contas de sempre; se a aura
 ## pagar dia não morado, ela virou enfeite de botão.
 

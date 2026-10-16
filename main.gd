@@ -177,6 +177,15 @@ var lab_mix: Dictionary = {}
 var lab_hints: Array[String] = []
 var lab_discovered: Array[String] = []
 var lab_flops: int = 0
+## O salão das capas finas desta vida. O cordão de veludo é um degrau comprado na
+## recepção: com ele guardado na gaveta (`vip_rank == 0`) nenhuma visita é sorteada como
+## capa fina, nenhum número de balcão se move e nenhum sorteio extra é consumido. Cada
+## degrau traz mais visitas que pagam mais, exigem o topo da barra de qualidade e devolvem
+## gorjeta — e quando a estante não tem o degrau que elas aceitam, elas vão embora falando.
+var vip_rank: int = 0
+var vip_served: int = 0
+var vip_refusals: int = 0
+var vip_tips_gold: int = 0
 ## Conserva da casa: cada visita pisa barro, a vassoura custa ouro, e a etiqueta
 ## despenca no salão imundo. Os números são a única novidade; todos caem em
 ## fórmulas que o jogo já usava (paciência de fila, multiplicador de preço, conta
@@ -283,6 +292,20 @@ const LAB_DISCOVERY_XP := 12
 ## vez, na mesma ordem da escada de leitura. Segue o desconto da biblioteca (#biblioteca)
 ## porque é a mesma estante falando, só que do lado da bancada.
 const LAB_HINT_COST := 60
+## Os três cordões do salão. `chance` é a fatia das visitas que chegam de capa fina,
+## `budget` multiplica o bolso do perfil, `standard` é o degrau mínimo da barra de
+## qualidade que a visita aceita levar (0 aceita tudo, 2 é Refinado, 3 Obra-prima, 4
+## Mítico) e `tip` é a gorjeta sobre o preço de tabela da peça. O cordão não compra
+## respeito: servir mal é fama que vai embora junto com a visita.
+const VIP_TIERS := [
+	{"rank": 0, "cost": 0, "rep": 0, "chance": 0, "budget": 1.0, "standard": 0, "tip": 0.0},
+	{"rank": 1, "cost": 220, "rep": 10, "chance": 8, "budget": 2.0, "standard": 2, "tip": 0.15},
+	{"rank": 2, "cost": 520, "rep": 24, "chance": 14, "budget": 2.6, "standard": 3, "tip": 0.22},
+	{"rank": 3, "cost": 1100, "rep": 45, "chance": 22, "budget": 3.4, "standard": 4, "tip": 0.30},
+]
+## Uma capa fina tem tempo próprio: ela não disputa o último degrau da fila correndo, e
+## por isso espera um tique a mais que o perfil sorteado.
+const VIP_PATIENCE_BONUS := 1
 ## Os nomes que a casa enxerga quando a ronda segura um braço no ar. Ninguém aqui é
 ## freguês de casa: vândalo sorteado é gente de fora do elenco, e por isso vai para
 ## a cela sem levar vínculo junto.
@@ -786,6 +809,8 @@ var lab_add_buttons: Array = []
 var lab_clear_button: Button
 var lab_fire_button: Button
 var lab_hint_button: Button
+var vip_label: Label
+var vip_button: Button
 var card_gallery_labels: Array = []
 var board_label: Label
 var score_button: Button
@@ -3901,6 +3926,25 @@ func _build_ui() -> void:
 	credit_button.pressed.connect(_buy_credit_rank)
 	credit_hrow.add_child(credit_button)
 
+	reception_box.add_child(_make_section_title("O SALÃO DAS CAPAS FINAS", Color(0.82, 0.70, 0.96)))
+	reception_box.add_child(_make_section_hint("Cordão de veludo é escada de três degraus: cada degrau traz mais visitas de capa fina, com bolso maior, tempo próprio e a exigência de levar o topo da barra de qualidade. Quando a estante não tem o degrau que elas aceitam, elas devolvem a peça na prateleira e a fama paga a fofoca — a recusa não queima estoque e não cobra sorteio."))
+	var vip_card := _make_sector_card(Color(0.055, 0.045, 0.075, 0.94), Color(0.62, 0.50, 0.86, 0.95))
+	reception_box.add_child(vip_card)
+	var vip_hrow := HBoxContainer.new()
+	vip_hrow.add_theme_constant_override("separation", 12)
+	vip_card.add_child(vip_hrow)
+	vip_label = Label.new()
+	vip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vip_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vip_label.add_theme_font_size_override("font_size", 13)
+	vip_label.add_theme_color_override("font_color", Color(0.88, 0.82, 0.96))
+	vip_hrow.add_child(vip_label)
+	vip_button = Button.new()
+	vip_button.custom_minimum_size = Vector2(190, 44)
+	vip_button.add_theme_font_size_override("font_size", 14)
+	vip_button.pressed.connect(_buy_vip_rank)
+	vip_hrow.add_child(vip_button)
+
 	reception_box.add_child(_make_section_title("A PORTA DA CASA", Color(0.62, 0.86, 1.0)))
 	reception_box.add_child(_make_section_hint("Loja que dá lucro tem alvo na porta. Cada visita é resolvida com a mão que a casa já tem: a ronda da folha, os servos do salão, os batedores do cadastro, o santuário reformado e a Administração. O vigário passa na frente para cobrar — dízimo, suborno ou porta na cara dele, e as três respostas têm preço."))
 	defense_label = Label.new()
@@ -6288,7 +6332,7 @@ const CUSTOMER_PROFILES: Array[Dictionary] = [
 func _draw_visitor_profile() -> Dictionary:
 	var profile: Dictionary = CUSTOMER_PROFILES[randi() % CUSTOMER_PROFILES.size()]
 	if randi() % 100 >= 35:
-		return profile
+		return _maybe_vip(profile)
 	var regular: Dictionary = _pick_regular()
 	var regular_id := str(regular["id"])
 	var bond := int(regular_bonds.get(regular_id, 0))
@@ -6296,7 +6340,7 @@ func _draw_visitor_profile() -> Dictionary:
 	var lines_by_tier: Array = regular["lines"][tier]
 	var personal_request := tier >= 1 and randi() % 100 < 35
 	var regular_line := str(regular["request"]) if personal_request else str(lines_by_tier[randi() % lines_by_tier.size()])
-	return {
+	return _maybe_vip({
 		"name": regular["name"],
 		"favorite": str(regular["favorite"]),
 		"line": regular_line,
@@ -6307,7 +6351,7 @@ func _draw_visitor_profile() -> Dictionary:
 		"faction": str(regular.get("faction", "aventureiros")),
 		"budget": 60 + tier * 30,
 		"patience": 2 + (1 if tier >= 2 else 0),
-	}
+	})
 
 func _on_customer_tick() -> void:
 	ticks += 1
@@ -6575,6 +6619,30 @@ func _on_customer_tick() -> void:
 					credit_lending = true
 					credit_choice = preferred_index
 		var chosen_index: int = credit_choice if credit_lending else (affordable[randi() % affordable.size()] if not affordable.is_empty() else available[randi() % available.size()])
+		# A capa fina não compra peça de degrau baixo: ela examina o topo da barra daquele
+		# produto e, se a estante não tem o que ela aceita, devolve no lugar e sai falando.
+		# A recusa não queima unidade nenhuma e não consome um sorteio — o preço é o balcão
+		# perder a venda e a fama perder o ponto.
+		if bool(profile.get("vip", false)):
+			var exigencia := _vip_standard()
+			var topo := _best_tier_for(chosen_index)
+			if topo < exigencia:
+				vip_refusals += 1
+				disappointed_customers += 1
+				day_walkouts += 1
+				reputation = maxi(0, reputation - 1)
+				_set_customer_status("CLIENTE: saiu sem comprar")
+				if is_instance_valid(customer_emotion_label):
+					customer_emotion_label.text = "🙄 desprezo"
+				last_event = "🎩 %s examina o topo da barra de %s, encontra %s e devolve no lugar: uma capa fina não compra degrau baixo. A casa perde a venda e a fofoca vai junto (−1 de fama)." % [
+					str(profile["name"]), str(products[chosen_index]["name"]),
+					str(Quality.tier(maxi(0, topo))["name"])]
+				_show_stage_emotion(stage_customer, "nojo")
+				_play_customer_reaction("broke")
+				_check_achievements()
+				_save_game()
+				_refresh_ui()
+				return
 		if preferred_index >= 0 and available.has(preferred_index) and not credit_lending and randi() % 100 < 70:
 			# O dedo aponta a vitrine, mas quem decide a compra é o bolso. Este `if` trocava
 			# o escolhido pela favorita sem consultar `affordable`, e a loja recebia o preço
@@ -6592,7 +6660,9 @@ func _on_customer_tick() -> void:
 				reputation += _reputation_seduction_bonus()
 
 		var item: Dictionary = products[chosen_index]
-		var piece_tier := _take_piece(chosen_index, Quality.WORST)
+		# Quem entra pelo cordão escolhe pelo topo da barra: sai a melhor peça do produto,
+		# não a mais velha do degrau — e a exigência de cima já garantiu que ela existe.
+		var piece_tier := _take_piece(chosen_index, Quality.BEST if bool(profile.get("vip", false)) else Quality.WORST)
 		var quality_name := str(Quality.tier(piece_tier)["name"])
 		_register_sold_piece(piece_tier)
 		if piece_tier == 0:
@@ -6719,6 +6789,19 @@ func _on_customer_tick() -> void:
 			_offer_romance(regular_id, new_bond)
 			_check_regular_acts(regular_id)
 			_offer_servant(regular_id)
+		# A capa fina fecha a conta com gorjeta sobre a tabela e um ponto de fama para a
+		# casa — o convite puxa convite. No fiado ela sai servida, mas a gorjeta fica para
+		# amanhã: dívida é a gorjeta de quem leva o ouro da loja na mão.
+		if bool(profile.get("vip", false)):
+			vip_served += 1
+			reputation += 1
+			if not credit_lending:
+				var gorjeta := maxi(4, int(round(float(base_label) * float(_vip_row(vip_rank)["tip"]))))
+				gold += gorjeta
+				daily_gold_earned += gorjeta
+				vip_tips_gold += gorjeta
+				last_event += "\n🎩 A capa fina deixa %d de ouro de gorjeta no balcão e leva %s — o topo da barra que a estante tinha." % [
+					gorjeta, str(Quality.tier(piece_tier)["name"])]
 		if not faction_id.is_empty():
 			var old_standing := int(faction_standing.get(faction_id, 0))
 			var old_faction_tier := Factions.tier_for(old_standing)
@@ -7603,6 +7686,17 @@ func _refresh_ui() -> void:
 			credit_button.text = "📖 Abrir o fiado — degrau %d (%d)" % [
 				int(credit_next["rank"]), int(credit_next["cost"])]
 			credit_button.disabled = false
+	if is_instance_valid(vip_label):
+		vip_label.text = _vip_summary()
+	if is_instance_valid(vip_button):
+		var vip_next := _vip_next_row()
+		if vip_next.is_empty():
+			vip_button.text = "🎩 Salão no degrau máximo"
+			vip_button.disabled = true
+		else:
+			vip_button.text = "🎩 Estender o cordão — degrau %d (%d)" % [
+				int(vip_next["rank"]), int(vip_next["cost"])]
+			vip_button.disabled = false
 	for i in range(Staff.DATA.size()):
 		var seat: Dictionary = Staff.DATA[i]
 		var seat_id := str(seat["id"])
@@ -8158,6 +8252,10 @@ func _save_game() -> void:
 	config.set_value("game", "lab_hints", lab_hints)
 	config.set_value("game", "lab_discovered", lab_discovered)
 	config.set_value("game", "lab_flops", lab_flops)
+	config.set_value("game", "vip_rank", vip_rank)
+	config.set_value("game", "vip_served", vip_served)
+	config.set_value("game", "vip_refusals", vip_refusals)
+	config.set_value("game", "vip_tips_gold", vip_tips_gold)
 	config.set_value("game", "queue_distractions", queue_distractions)
 	config.set_value("game", "products", products)
 	# O que a forja ainda não terminou é dinheiro do jogador em andamento: perder
@@ -8630,6 +8728,10 @@ func _load_game() -> void:
 	lab_hints = _lab_ids_from_file(config.get_value("game", "lab_hints", []))
 	lab_discovered = _lab_ids_from_file(config.get_value("game", "lab_discovered", []))
 	lab_flops = maxi(0, int(config.get_value("game", "lab_flops", lab_flops)))
+	vip_rank = clampi(int(config.get_value("game", "vip_rank", vip_rank)), 0, VIP_TIERS.size() - 1)
+	vip_served = maxi(0, int(config.get_value("game", "vip_served", vip_served)))
+	vip_refusals = maxi(0, int(config.get_value("game", "vip_refusals", vip_refusals)))
+	vip_tips_gold = maxi(0, int(config.get_value("game", "vip_tips_gold", vip_tips_gold)))
 	queue_distractions = int(config.get_value("game", "queue_distractions", queue_distractions))
 	ticks = maxi(0, int(config.get_value("game", "ticks", ticks)))
 	catalyst_enabled = bool(config.get_value("game", "catalyst_enabled", catalyst_enabled))
@@ -9069,6 +9171,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "credit_red_ink", "name": "Tinta vermelha no livro (3 notas riscadas)", "condition": credit_written >= 3, "gold": 50, "rep": 0},
 		{"id": "lab_first_spark", "name": "Primeira faísca na bancada (receita travada descoberta por ensaio)", "condition": lab_discovered.size() >= 1, "gold": 60, "rep": 3, "pose": "book"},
 		{"id": "lab_full_bench", "name": "A bancada venceu o nível (%d receitas travadas arrancadas por ensaio)" % _lab_targets_total(), "condition": lab_discovered.size() >= _lab_targets_total(), "gold": 300, "rep": 12, "pose": "aplausos"},
+		{"id": "vip_first_robe", "name": "Capa fina no balcão (1 visita do salão servida com o topo da barra)", "condition": vip_served >= 1, "gold": 40, "rep": 2, "pose": "ousadia"},
+		{"id": "vip_full_salon", "name": "Salão de capas (10 visitas do salão servidas)", "condition": vip_served >= 10, "gold": 220, "rep": 8, "pose": "vitoria"},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
 		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"},
 		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
@@ -9541,6 +9645,100 @@ func _credit_summary() -> String:
 	if not notas.is_empty():
 		head += "\n" + "\n".join(notas)
 	return head
+
+
+## ── O SALÃO DAS CAPAS FINAS ──────────────────────────────────────────────────────
+## A fileira de trás do balcão: quem entra pelo cordão de veludo traz bolso maior, escolhe
+## pelo topo da barra de qualidade e deixa gorjeta. Quem não paga nada disso é a visita com
+## o cordão guardado — degrau zero devolve o perfil sorteado intacto e não consome um
+## sorteio a mais, porque salão fechado tem de medir exatamente o balcão de sempre.
+
+func _vip_row(rank: int) -> Dictionary:
+	return VIP_TIERS[clampi(rank, 0, VIP_TIERS.size() - 1)]
+
+
+func _vip_next_row() -> Dictionary:
+	if vip_rank >= VIP_TIERS.size() - 1:
+		return {}
+	return VIP_TIERS[vip_rank + 1]
+
+
+func _vip_standard() -> int:
+	return int(_vip_row(vip_rank)["standard"])
+
+
+func _vip_chance() -> int:
+	return int(_vip_row(vip_rank)["chance"])
+
+
+## Carimba a visita sorteada como capa fina: bolso, tempo de espera e o flag que o balcão
+## lê para exigir o topo da barra.
+func _maybe_vip(profile: Dictionary) -> Dictionary:
+	if vip_rank <= 0:
+		return profile
+	if randi() % 100 >= _vip_chance():
+		return profile
+	var stamped := profile.duplicate(true)
+	stamped["vip"] = true
+	stamped["budget"] = int(round(float(int(stamped.get("budget", 60))) * float(_vip_row(vip_rank)["budget"])))
+	stamped["patience"] = int(stamped.get("patience", 2)) + VIP_PATIENCE_BONUS
+	return stamped
+
+
+## O topo real da estante daquele produto: o maior degrau com peça em estoque, ou -1 se a
+## prateleira está vazia. Lê registro, não sorteia e não tira peça nenhuma.
+func _best_tier_for(index: int) -> int:
+	if index < 0 or index >= products.size():
+		return -1
+	var stock := _quality_for(str(products[index]["id"]))
+	for tier in range(Quality.size() - 1, -1, -1):
+		if int(stock[tier]) > 0:
+			return tier
+	return -1
+
+
+func _buy_vip_rank() -> void:
+	var next_row := _vip_next_row()
+	if next_row.is_empty():
+		last_event = "O salão tem três cordões, e o terceiro já está estendido: %d%% das visitas chegam de capa e exigem %s no topo da barra." % [
+			_vip_chance(), str(Quality.tier(_vip_standard())["name"])]
+		_show_feedback("🎩 O cordão já está no último degrau.", Color(0.86, 0.78, 0.95))
+		_refresh_ui()
+		return
+	if reputation < int(next_row["rep"]):
+		last_event = "Estender o cordão até o degrau %d pede %d de fama; a casa tem %d. Capa fina entra por convite, não por caixa." % [
+			int(next_row["rank"]), int(next_row["rep"]), reputation]
+		_show_feedback("✕ Falta fama para o salão.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	var cost := int(next_row["cost"])
+	if gold < cost:
+		last_event = "O cordão de veludo custa %d de ouro, e o caixa tem %d. Salão sem moeda é salão sem espelho." % [cost, gold]
+		_show_feedback("✕ Falta ouro para o salão.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	gold -= cost
+	vip_rank = int(next_row["rank"])
+	reputation += 1
+	_add_xp(12)
+	last_event = "🎩 Salão das capas finas no degrau %d: %d%% das visitas chegam de capa, bolso ×%.1f e a barra exige %s no topo (−%d de ouro)." % [
+		vip_rank, _vip_chance(), float(_vip_row(vip_rank)["budget"]),
+		str(Quality.tier(_vip_standard())["name"]), cost]
+	_show_feedback("✦ O cordão de veludo está estendido.", Color(0.86, 0.78, 0.95))
+	audio.play("coin")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+
+func _vip_summary() -> String:
+	if vip_rank <= 0:
+		return "O cordão de veludo está enrolado na gaveta: nenhuma visita chega de capa fina, e o balcão atende como sempre atendeu. O primeiro cordão custa %d de ouro e pede %d de fama." % [
+			int(VIP_TIERS[1]["cost"]), int(VIP_TIERS[1]["rep"])]
+	return "DEGRAU %d • %d%% das visitas de capa fina • bolso ×%.1f • exige %s no topo da barra • gorjeta de %.0f%% sobre a tabela • %d servida(s), %d recusada(s), %d de ouro em gorjeta." % [
+		vip_rank, _vip_chance(), float(_vip_row(vip_rank)["budget"]),
+		str(Quality.tier(_vip_standard())["name"]), float(_vip_row(vip_rank)["tip"]) * 100.0,
+		vip_served, vip_refusals, vip_tips_gold]
 
 
 func _collect_branches() -> String:
@@ -10661,6 +10859,10 @@ func _reset_run() -> void:
 	lab_hints.clear()
 	lab_discovered.clear()
 	lab_flops = 0
+	vip_rank = 0
+	vip_served = 0
+	vip_refusals = 0
+	vip_tips_gold = 0
 	daily_quest_index = 0
 	daily_quest_progress = 0
 	daily_quest_claimed = false
