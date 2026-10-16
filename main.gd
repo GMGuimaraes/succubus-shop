@@ -300,6 +300,9 @@ var world_speed_options: Array[float] = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
 var world_speed_index: int = 1
 var world_timer: Timer
 var offline_dialog: AcceptDialog
+## Diferencia o `visibility_changed` que abre a janela do que a fecha; ver
+## `_close_offline_report()`.
+var offline_report_shown: bool = false
 var _offline_elapsed_seconds: float = 0.0
 var _offline_branch_fraction: float = 0.0
 ## Idioma e menu do ESC. A língua é preferência da pessoa, não da vida: ela não é
@@ -311,7 +314,6 @@ var locale: String = Locales.DEFAULT
 var locale_confirmed: bool = false
 var menu_layer: Control
 var menu_start_mode: bool = false
-var menu_was_running: bool = false
 var menu_language_buttons: Array[Button] = []
 var menu_status_label: Label
 ## O arquivo de preferências respondeu? Se sim, ele manda sobre o save: o save é a conta
@@ -1212,19 +1214,58 @@ func _apply_offline_progress() -> void:
 		offline_dialog.title = "Resumo do período offline"
 		offline_dialog.dialog_text = last_event + "\n\nO farm offline é limitado a 12 horas e não avança clientes, eventos aleatórios do salão ou dias de loja."
 		offline_dialog.confirmed.connect(_close_offline_report)
+		# O botão OK é um jeito de fechar a janela; ESC, o X da janela e hide() são outros.
+		# Preso só ao `confirmed`, o relógio ficava parado para sempre em qualquer um desses
+		# caminhos — loja congelada com um freguês plantado no balcão.
+		offline_dialog.visibility_changed.connect(_close_offline_report)
 		add_child(offline_dialog)
-		world_timer.stop()
+		offline_report_shown = false
+		# Depois do popup, não antes: com a janela ainda escondida o `_sync_clock()`
+		# não a veria e a rua continuaria andando atrás do resumo.
 		offline_dialog.popup_centered(Vector2i(720, 320))
+		offline_report_shown = true
+		_sync_clock()
 
+## O resumo fecha por quatro caminhos: o OK, que emite `confirmed` com a janela ainda na
+## tela, e o ESC, o X e um hide(), que só escondem o Window. Preso só ao `confirmed`, o
+## relógio ficava parado para sempre nos outros três — loja congelada com um freguês
+## plantado no balcão. A marca `offline_report_shown` separa o visibility_changed da
+## abertura do do fechamento; sem ela a janela se fecharia no frame em que nasce.
 func _close_offline_report() -> void:
-	if is_instance_valid(offline_dialog):
-		offline_dialog.queue_free()
+	if offline_dialog == null:
+		return
+	if offline_dialog.visible and not offline_report_shown:
+		return
+	offline_dialog.queue_free()
 	offline_dialog = null
-	if is_instance_valid(world_timer) and not is_instance_valid(day_layer) \
-			and not is_instance_valid(origin_layer) and not is_instance_valid(ending_layer):
-		world_timer.start()
+	offline_report_shown = false
+	_sync_clock()
 
 # ── Idioma e menu do ESC ──
+
+## Toda janela que segura a rua parada neste instante. VISÍVEL é a palavra-chave: o
+## painel do final é escondido e reusado em vez de liberado, e um nó escondido na árvore
+## não tem o direito de fechar a loja. O painel do final também não está na lista porque
+## ele nunca parou a rua — no modo livre o dia continua correndo atrás dele.
+func _modal_holds_clock() -> bool:
+	if offline_dialog != null and offline_dialog.visible:
+		return true
+	for layer in [day_layer, origin_layer, menu_layer]:
+		if is_instance_valid(layer) and layer.visible:
+			return true
+	return false
+
+## O relógio obedece a uma frase só: anda enquanto nenhuma janela estiver na tela. Cada
+## janela decidia isso sozinha, do seu próprio jeito, sem saber das outras — era assim
+## que a loja acordava parada para sempre.
+func _sync_clock() -> void:
+	if not is_instance_valid(world_timer):
+		return
+	if _modal_holds_clock():
+		if not world_timer.is_stopped():
+			world_timer.stop()
+	elif world_timer.is_stopped():
+		world_timer.start()
 
 ## ESC abre e fecha o menu, como em jogo moderno, e a janela para a rua: enquanto a
 ## chefe está no menu, nenhum cliente bate na porta. O diálogo de escolha de idioma da
@@ -1239,21 +1280,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_open_menu(false)
 	get_viewport().set_input_as_handled()
 
-## Toda janela que já parou o relógio por conta própria. O menu por cima delas não pode
-## prometer "retomar" o que estava parado antes de elas existirem.
-func _overlay_blocks_clock() -> bool:
-	return is_instance_valid(day_layer) or is_instance_valid(origin_layer) \
-			or is_instance_valid(ending_layer)
-
 func _open_menu(start_mode: bool) -> void:
 	menu_start_mode = start_mode
-	# A foto do relógio só é tirada quando não há janela aberta: com o balanço do dia na
-	# tela o timer já está parado, e "retomar" acordaria a rua ao fechar o menu.
-	if not is_instance_valid(menu_layer):
-		menu_was_running = is_instance_valid(world_timer) and not world_timer.is_stopped()
 	_build_menu_layer()
-	if is_instance_valid(world_timer):
-		world_timer.stop()
+	_sync_clock()
 
 func _close_menu() -> void:
 	var was_start := menu_start_mode
@@ -1265,8 +1295,7 @@ func _close_menu() -> void:
 		locale_confirmed = true
 		_save_locale_settings()
 	_save_game()
-	if menu_was_running and is_instance_valid(world_timer) and not _overlay_blocks_clock():
-		world_timer.start()
+	_sync_clock()
 
 func _free_menu_layer() -> void:
 	if is_instance_valid(menu_layer):
@@ -1395,8 +1424,7 @@ func _pick_locale(id: String) -> void:
 	_save_locale_settings()
 	_save_game()
 	_build_menu_layer()
-	if is_instance_valid(world_timer):
-		world_timer.stop()
+	_sync_clock()
 	_refresh_ui()
 	audio.play("click")
 
@@ -8637,7 +8665,7 @@ func _show_origin(scene: Dictionary) -> void:
 	close_button.custom_minimum_size = Vector2(240, 46)
 	close_button.pressed.connect(_close_origin)
 	box.add_child(close_button)
-	world_timer.stop()
+	_sync_clock()
 	audio.play("rare")
 	_refresh_ui()
 
@@ -8647,10 +8675,7 @@ func _close_origin() -> void:
 	if is_instance_valid(origin_layer):
 		origin_layer.queue_free()
 	origin_layer = null
-	# Duas janelas na mesma manhã: o balanço do dia e a lembrança seguram o relógio,
-	# e quem fecha uma não tem o direito de reabrir a loja por cima da outra.
-	if not is_instance_valid(day_layer) and not is_instance_valid(ending_layer):
-		world_timer.start()
+	_sync_clock()
 	audio.play("click")
 	# O botão de relembrar abre o quadro sem prêmio: a cena já foi paga no dia em
 	# que a loja a descobriu.
@@ -8765,7 +8790,7 @@ func _show_day_report(balance: Dictionary) -> void:
 	close_button.pressed.connect(_close_day_report)
 	box.add_child(close_button)
 
-	world_timer.stop()
+	_sync_clock()
 	audio.play("coin" if net >= 0 else "sad", true)
 	_refresh_ui()
 	if day_auto_ok:
@@ -8803,9 +8828,7 @@ func _close_day_report() -> void:
 		day_layer.queue_free()
 	day_layer = null
 	_day_countdown_label = null
-	if is_instance_valid(origin_layer) or is_instance_valid(ending_layer):
-		return
-	world_timer.start()
+	_sync_clock()
 	audio.play("click", true)
 
 ## Painel das memórias: o que a loja já contou de si e o que ainda está trancado
