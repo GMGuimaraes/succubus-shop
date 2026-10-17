@@ -74,7 +74,7 @@ A camada `commerce.gd` separa catálogo/entitlements da lógica do jogo e a inte
 
 - **Doze produtos no catálogo atual**, com receitas presas ao nível que a biblioteca adianta por ouro.
 - **Clientes com personalidade**, falas próprias e preferências por produtos.
-- **Economia de loja** com ouro, reputação, estoque, custos de fabricação, propaganda e produção automática.
+- **Economia de loja** com ouro, reputação, estoque, custos de fabricação, propaganda e **fabricação e expedição em tempo de mundo**: você inicia, o relógio termina. Não há produção que rode sem um clique seu — automação de verdade continua na lista de etapas futuras.
 - **Eventos raros** com consequências positivas ou negativas.
 - **Progressão de RPG**: vendas, fabricação e eventos rendem experiência; subir de nível concede ouro, reputação e pontos de talento.
 - **Cinco trilhas de talentos**, cada uma com até cinco níveis: Alquimia reduz custos e melhora a qualidade, Comércio aumenta receita e barateia receitas, Carisma acelera a afinidade e salva visitas, Logística encurta expedições e abre a segunda vaga de batedor, e **Administração da Casa** emagrece a conta diária da loja 8% por nível (numa casa grande, 230 de ouro por virada caem para 138), corta 1% do dia ruim de cada filial a partir do nível 2 e, no nível máximo, sobe o teto da dívida de 240 para 300. Vinte e cinco degraus para um ponto por nível: a quinta trilha é o que faz o ponto de talento valer escolha. Talento é da vida — reencerrar ou reabrir depois da ruína zera os cinco ramos.
@@ -163,7 +163,7 @@ A visão é construir uma experiência de longa duração, com sistemas que se a
 
 ### Meta de experiência
 
-A meta é que cada temporada ofereça decisões comerciais e narrativas diferentes: composição de aventureiros por missão, defesa rara da loja, risco de vandalismo e furto, limpeza que afeta a reputação e servidores com papéis econômicos próprios. Prestígio, eventos de campanha e melhorias visuais graduais devem sustentar muitas temporadas sem transformar falhas em regressão pesada. Esses sistemas ainda precisam ser implementados e testados; não fazem parte da captura acima.
+A meta é que cada temporada ofereça decisões comerciais e narrativas diferentes: composição de aventureiros por missão, defesa rara da loja, risco de vandalismo e furto, limpeza que afeta a reputação e servidores com papéis econômicos próprios. Prestígio, eventos de campanha e melhorias visuais graduais devem sustentar muitas temporadas sem transformar falhas em regressão pesada. Esses sistemas **já estão no jogo e medidos por sonda**: composição de aventureiros por missão com taxa de sucesso, vandalismo e furto com ronda e cela, sujeira que pesa na reputação, servos com papel econômico próprio, prestígio com aura e placar por temporada, campanha com eventos e a loja mudando de cara em degraus. O que ainda não existe é o catálogo real de conquistas na Steam, salas novas além das cinco atuais e automação de produção.
 
 A prioridade é implementar sistemas em etapas pequenas, testáveis e compatíveis com os saves anteriores.
 
