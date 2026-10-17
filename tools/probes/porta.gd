@@ -418,5 +418,3 @@ func _shelf(game) -> int:
 	for item in game.products:
 		total += int(item["stock"])
 	return total
-
-

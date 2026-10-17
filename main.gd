@@ -706,6 +706,9 @@ var shelf_batches: Dictionary = {}
 var cold_storage_level: int = 0
 ## Mercado reativo: { "ingredient": {id: calor}, "product": {id: calor} }
 var economy_state: Dictionary = Economy.fresh_state()
+var auto_buy_mission_loot: bool = true
+var loot_buyback_percent: int = 45
+var retail_price_percent: int = 100
 ## Rituais ativos do santuário: { id_do_ritual: segundos_de_mundo_restantes }
 var active_buffs: Dictionary = {}
 var total_ingredients_bought: int = 0
@@ -919,6 +922,9 @@ var ingredient_sell_buttons: Array = []
 var recipe_labels: Array = []
 var recipe_buttons: Array = []
 var market_label: Label
+var loot_buyback_option: OptionButton
+var retail_price_option: OptionButton
+var auto_buy_loot_check: CheckButton
 var ritual_label: Label
 var ritual_labels: Array = []
 var ritual_buttons: Array = []
@@ -1211,6 +1217,12 @@ const STAGE_PROP_SLOTS := 8
 const STAGE_ROOM_WALK := {
 	"res://assets/shop_scene.png": Vector2(0.20, 0.42),
 }
+## Profundidade de circulação dos transeuntes por sala. Na biblioteca, a faixa
+## atravessa a profundidade do livro aberto: visitantes ao fundo ficam ocultos,
+## enquanto os que caminham perto da câmera são desenhados à frente dele.
+const STAGE_ROOM_WALK_DEPTHS := {
+	"res://assets/library_room_scene.png": Vector2(0.05, 0.68),
+}
 ## O caminho da porta até o balcão, em (fração da largura, profundidade do chão),
 ## sem contar o próprio balcão. É a trilha que decide o que o visitante passa por
 ## trás: ela recua para o fundo ao cruzar o móvel pintado e volta para a frente da
@@ -1356,6 +1368,9 @@ const STAGE_ARRIVE_SECONDS := 2.8
 const STAGE_ARRIVE_TICK_FRACTION := 0.62
 const OFFLINE_FARM_MAX_SECONDS := 12.0 * 60.0 * 60.0
 const OFFLINE_FARM_BRANCH_PERIOD := 60.0 * 60.0
+const LOOT_BUYBACK_RATES: Array[int] = [35, 45, 55]
+const RETAIL_PRICE_RATES: Array[int] = [85, 100, 115, 130]
+const MAX_RESALE_STOCK_PER_PRODUCT := 25
 const OFFLINE_REPORT_MIN_SECONDS := 60.0
 ## A chegada acompanha o intervalo do relógio do mundo para terminar antes da
 ## próxima visita; o ciclo de sprites e o passo aceleram juntos.
@@ -2311,10 +2326,16 @@ func _spawn_stage_walker() -> void:
 	# quem entrar sem repetir alguém.
 	if _stage_walkers.size() >= mini(STAGE_CROWD_BODIES.size() - 1, STAGE_MAX_WALKERS):
 		return
+	# Evitar que transeuntes nasçam enquanto um cliente do turno está chegando
+	# — isso causa aparições visuais repetidas pela mesma trilha.
+	if _customer_walk_tween != null and _customer_walk_tween.is_valid():
+		return
 	var crowd := _free_crowd_index()
 	if crowd < 0:
 		return
-	var depth := randf_range(0.05, 0.30)
+	var depth_range: Vector2 = STAGE_ROOM_WALK_DEPTHS.get(
+		_room_layout_key(), Vector2(0.05, 0.30))
+	var depth := randf_range(depth_range.x, depth_range.y)
 	var lane := _lane_at(depth)
 	var walker := _make_stage_poses(crowd, STAGE_FIGURE_HEIGHT)
 	var figure_scale: float = lane["scale"]
@@ -2329,7 +2350,7 @@ func _spawn_stage_walker() -> void:
 	var half_body := walker.size * 0.5
 	var floor_y: float = lane["floor_y"]
 	var to_the_right := randi() % 2 == 0
-	var span: Vector2 = STAGE_ROOM_WALK.get(_stage_room, Vector2(0.0, 1.0))
+	var span: Vector2 = STAGE_ROOM_WALK.get(_room_layout_key(), Vector2(0.0, 1.0))
 	var turns := (to_the_right and span.y < 0.99) or ((not to_the_right) and span.x > 0.01)
 	# Onde o piso vai de uma borda à outra a figura entra e sai pela beirada da
 	# tela. Onde o balcão ocupa o resto da sala ela nasce na ponta do piso andável,
@@ -2514,10 +2535,17 @@ func _host_enters_room() -> void:
 func _stage_customer_arrives(portrait_index: int) -> void:
 	if not is_instance_valid(stage_customer) or stage_layer.size.x <= 0:
 		return
+	var body := absi(portrait_index) % STAGE_CROWD_BODIES.size()
+	if (
+		stage_customer.visible
+		and int(stage_customer.get_meta("crowd", -1)) == body
+		and _customer_walk_tween != null
+		and _customer_walk_tween.is_valid()
+	):
+		return
 	if _customer_walk_tween != null and _customer_walk_tween.is_valid():
 		_customer_walk_tween.kill()
 	_customer_walk_tween = null
-	var body := absi(portrait_index) % STAGE_CROWD_BODIES.size()
 	_dress_stage_poses(stage_customer, body, _lane_height(2))
 	# O corpo do freguês do turno é dele. Se um transeunte já o vestia, o
 	# transeunte se apaga: dois do mesmo rosto na tela pareciam um sprite só
@@ -2538,6 +2566,7 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 	stage_customer.modulate = Color(1.0, 0.95, 0.98, 0.0)
 	stage_customer.rotation_degrees = 0.0
 	stage_customer.pivot_offset = stage_customer.size / 2.0
+	stage_customer.set_meta("crowd", body)
 	stage_customer.set_meta("walk_frames", _stage_crowd_frames(body).size())
 	stage_customer.visible = true
 	var path := _room_path()
@@ -2574,11 +2603,17 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 ## frente. Sala sem chegada escrita entra pela porta antiga.
 func _room_path() -> Array[Vector2]:
 	var path: Array[Vector2] = []
-	for point in STAGE_ROOM_ARRIVE.get(_stage_room, []):
-		path.append(point)
-	if path.is_empty():
-		for point in STAGE_ROOM_DOOR.get(_stage_room, []):
+	# Os pontos são marcos de um único caminho contínuo, não reinícios da animação.
+	var room_key := _room_layout_key()
+	var arrive_list: Array = STAGE_ROOM_ARRIVE.get(room_key, [])
+	if not arrive_list.is_empty():
+		for point: Vector2 in arrive_list:
 			path.append(point)
+	else:
+		var door: Array = STAGE_ROOM_DOOR.get(room_key, [])
+		if door.size() > 0:
+			path.append(door[0])
+	# fallback
 	if path.is_empty():
 		path.append(Vector2(0.0, STAGE_ENTRY_DEPTH))
 	path.append(Vector2(_room_meet().y, STAGE_FRONT_DEPTH))
@@ -2590,7 +2625,7 @@ func _room_path() -> Array[Vector2]:
 ## dentro da sala, encolhe até o ponto de fuga e some ali, porque a loja tem uma
 ## porta só e quem entra pela frente tem de sair pelo fundo.
 func _room_exit_path() -> Array[Vector2]:
-	var door: Array = STAGE_ROOM_DOOR.get(_stage_room, [Vector2(0.02, STAGE_ENTRY_DEPTH)])
+	var door: Array = STAGE_ROOM_DOOR.get(_room_layout_key(), [Vector2(0.02, STAGE_ENTRY_DEPTH)])
 	var path: Array[Vector2] = []
 	for i in range(door.size() - 1, -1, -1):
 		path.append(door[i])
@@ -2610,10 +2645,11 @@ func _place_stage_figure(node: Control, depth: float, center_x: float) -> void:
 	node.set_meta("stage_depth", depth)
 	node.z_index = _stage_z_for_depth(depth)
 	node.scale = Vector2(figure_scale, figure_scale)
-	node.position = Vector2(
-		center_x - node.size.x * 0.5,
-		float(lane["floor_y"]) - node.size.y * (1.0 + figure_scale) * 0.5
-	)
+	# O pivô central mantém o centro do corpo fixo enquanto a perspectiva escala.
+	node.pivot_offset = node.size / 2.0
+	var half_body := node.size * 0.5
+	var half_drawn := half_body * figure_scale
+	node.position = Vector2(center_x - half_body.x, float(lane["floor_y"]) - half_body.y - half_drawn.y)
 
 func _stage_z_for_depth(depth: float) -> int:
 	return roundi(inverse_lerp(0.0, STAGE_FOURTH_WALL_DEPTH, clampf(depth, 0.0, STAGE_FOURTH_WALL_DEPTH)) * 400.0)
@@ -2900,7 +2936,7 @@ func _next_served_profile() -> Dictionary:
 func _spawn_waiter(entry: Dictionary) -> void:
 	if not is_instance_valid(stage_layer) or stage_layer.size.x <= 0:
 		return
-	var spots: Array = STAGE_ROOM_QUEUE.get(_stage_room, [])
+	var spots: Array = STAGE_ROOM_QUEUE.get(_room_layout_key(), [])
 	if _stage_waiters.size() >= mini(QUEUE_SPOTS, spots.size()):
 		return
 	var profile: Dictionary = entry["profile"]
@@ -2922,7 +2958,7 @@ func _spawn_waiter(entry: Dictionary) -> void:
 func _reline_waiters() -> void:
 	if not is_instance_valid(stage_layer) or stage_layer.size.x <= 0:
 		return
-	var spots: Array = STAGE_ROOM_QUEUE.get(_stage_room, [])
+	var spots: Array = STAGE_ROOM_QUEUE.get(_room_layout_key(), [])
 	if spots.is_empty():
 		return
 	for i in range(_stage_waiters.size()):
@@ -3003,7 +3039,7 @@ func _release_to_floor(body: int, depth: float, center_x: float, served: bool) -
 	stride.tween_callback(_advance_stage_frame.bind(stroller))
 	var trip := create_tween()
 	var from := Vector2(depth, center_x)
-	var spots: Array = STAGE_ROOM_BROWSE.get(_stage_room, [])
+	var spots: Array = STAGE_ROOM_BROWSE.get(_room_layout_key(), [])
 	if served and not spots.is_empty():
 		var spot: Vector2 = spots.pick_random()
 		_stroll_leg(trip, stroller, spot.y, spot.x * stage_layer.size.x, 1.0, from)
@@ -3103,7 +3139,7 @@ func _lane_height(depth: int) -> float:
 
 ## (x da chefe, x do cliente) em fração da largura da sala atual.
 func _room_meet() -> Vector2:
-	return STAGE_ROOM_MEET.get(_stage_room, Vector2(0.505, 0.37))
+	return STAGE_ROOM_MEET.get(_room_layout_key(), Vector2(0.505, 0.37))
 
 func _layout_stage_figures() -> void:
 	if not is_instance_valid(stage_layer) or stage_layer.size.x <= 0:
@@ -3545,6 +3581,12 @@ func _draw_stage_shadows(layer: Control) -> void:
 				0.14 - foot.distance_to(lamp) / maxf(1.0, layer.size.x) * 0.10, 0.04, 0.14)))
 			layer.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
+
+func _room_layout_key(scene_path: String = "") -> String:
+	var path := scene_path if not scene_path.is_empty() else _stage_room
+	if path.begins_with("res://assets/shop_stage"):
+		return "res://assets/shop_scene.png"
+	return path
 
 func _build_ui() -> void:
 	var bg := TextureRect.new()
@@ -4028,6 +4070,41 @@ func _build_ui() -> void:
 	market_label.add_theme_font_size_override("font_size", 14)
 	market_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.62))
 	reception_box.add_child(market_label)
+	reception_box.add_child(_make_section_title("NEGOCIAÇÃO AUTOMÁTICA", Color(0.72, 0.91, 1.0)))
+	reception_box.add_child(_make_section_hint("A succubus compra espólios de missão abaixo do valor de vitrine e revende pelo preço configurado. Oferta e demanda continuam alterando os valores."))
+	auto_buy_loot_check = CheckButton.new()
+	auto_buy_loot_check.text = "Comprar automaticamente espólios dos aventureiros"
+	auto_buy_loot_check.toggled.connect(_set_auto_buy_mission_loot)
+	reception_box.add_child(auto_buy_loot_check)
+	var buyback_row := HBoxContainer.new()
+	buyback_row.add_theme_constant_override("separation", 10)
+	reception_box.add_child(buyback_row)
+	var buyback_label := Label.new()
+	buyback_label.text = "Oferta de recompra:"
+	buyback_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buyback_row.add_child(buyback_label)
+	loot_buyback_option = OptionButton.new()
+	loot_buyback_option.add_item("35% do valor")
+	loot_buyback_option.add_item("45% do valor")
+	loot_buyback_option.add_item("55% do valor")
+	for i in range(LOOT_BUYBACK_RATES.size()):
+		loot_buyback_option.set_item_id(i, LOOT_BUYBACK_RATES[i])
+	loot_buyback_option.item_selected.connect(_set_loot_buyback_policy)
+	buyback_row.add_child(loot_buyback_option)
+	var retail_row := HBoxContainer.new()
+	retail_row.add_theme_constant_override("separation", 10)
+	reception_box.add_child(retail_row)
+	var retail_label := Label.new()
+	retail_label.text = "Preço ao cliente:"
+	retail_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	retail_row.add_child(retail_label)
+	retail_price_option = OptionButton.new()
+	for i in range(RETAIL_PRICE_RATES.size()):
+		var price_rate := RETAIL_PRICE_RATES[i]
+		retail_price_option.add_item("%d%% da etiqueta" % price_rate)
+		retail_price_option.set_item_id(i, price_rate)
+	retail_price_option.item_selected.connect(_set_retail_price_policy)
+	retail_row.add_child(retail_price_option)
 	upkeep_label = Label.new()
 	upkeep_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	upkeep_label.add_theme_font_size_override("font_size", 14)
@@ -6095,7 +6172,7 @@ func _peek_tier(index: int, mode: int) -> int:
 ## Preço de vitrine de um produto: peça provável vezes o humor do mercado.
 func _shelf_price(index: int) -> int:
 	var item: Dictionary = products[index]
-	return maxi(1, int(round(_piece_price(item, _peek_tier(index, Quality.WORST)) * _market_product_factor(item))))
+	return maxi(1, int(round(_piece_price(item, _peek_tier(index, Quality.WORST)) * _market_product_factor(item) * _retail_price_factor())))
 
 ## O mercado reativo sobre a etiqueta: demanda do produto, escassez na prateleira e o
 ## produto que a rua acordou querendo hoje.
@@ -6103,6 +6180,71 @@ func _market_product_factor(item: Dictionary) -> float:
 	var product_id := str(item["id"])
 	return Economy.factor(economy_state, "product", product_id) * Economy.stock_factor(int(item["stock"])) * (
 		WEATHER_STAR_PRICE if product_id == weather_star else 1.0)
+
+func _buy_customer_mission_loot(profile: Dictionary) -> Dictionary:
+	if not auto_buy_mission_loot:
+		return {}
+	var faction := str(profile.get("faction", ""))
+	var offer_chance := 0
+	match faction:
+		"aventureiros":
+			offer_chance = 32
+		"guildas", "submundo":
+			offer_chance = 18
+		"mercadores":
+			offer_chance = 10
+		_:
+			return {}
+	if randi() % 100 >= offer_chance:
+		return {}
+	var candidates: Array[int] = []
+	for i in range(products.size()):
+		if _is_product_unlocked(products[i]) and int(products[i]["stock"]) < MAX_RESALE_STOCK_PER_PRODUCT:
+			candidates.append(i)
+	if candidates.is_empty():
+		return {}
+	var index: int = candidates.pick_random()
+	var item: Dictionary = products[index]
+	var best_tier := mini(Quality.LEGENDARY - 1, clampi(1 + player_level / 5, 1, 4))
+	var tier := randi_range(1, best_tier)
+	var market_value := _piece_price(item, tier) * _market_product_factor(item)
+	var payout := maxi(1, int(round(market_value * float(loot_buyback_percent) / 100.0)))
+	if gold < payout:
+		return {}
+	gold -= payout
+	_add_piece(index, tier)
+	Economy.bump(economy_state, "product", str(item["id"]), -0.08)
+	var line := "%s vendeu à loja %s (%s), espólio de missão, por %d ouro." % [
+		str(profile.get("name", "Aventureiro")),
+		str(item["name"]),
+		str(Quality.tier(tier)["name"]).to_lower(),
+		payout,
+	]
+	_show_feedback("Espólio comprado: %s (−%d ouro)" % [str(item["name"]), payout], Color(0.78, 0.95, 1.0))
+	_show_stage_emotion(stage_customer, "aprovacao")
+	return {"index": index, "line": line, "paid": payout}
+
+func _set_auto_buy_mission_loot(enabled: bool) -> void:
+	auto_buy_mission_loot = enabled
+	_save_game()
+	_refresh_ui()
+
+func _set_loot_buyback_policy(option_index: int) -> void:
+	if option_index < 0 or option_index >= LOOT_BUYBACK_RATES.size():
+		return
+	loot_buyback_percent = LOOT_BUYBACK_RATES[option_index]
+	_save_game()
+	_refresh_ui()
+
+func _set_retail_price_policy(option_index: int) -> void:
+	if option_index < 0 or option_index >= RETAIL_PRICE_RATES.size():
+		return
+	retail_price_percent = RETAIL_PRICE_RATES[option_index]
+	_save_game()
+	_refresh_ui()
+
+func _retail_price_factor() -> float:
+	return float(retail_price_percent) / 100.0
 
 ## Estimativa conservadora: etiqueta de uma peça Honesta no mercado de hoje,
 ## menos custo de fabricação e preço atual de reposição dos ingredientes.
@@ -6112,7 +6254,7 @@ func _estimated_margin(item: Dictionary) -> int:
 	var recipe: Dictionary = item.get("ingredients", {})
 	for ingredient_id in recipe.keys():
 		ingredient_cost += _ingredient_price(str(ingredient_id)) * int(recipe[ingredient_id])
-	return int(round(_piece_price(item, 1) * _market_product_factor(item))) - craft_cost - ingredient_cost
+	return int(round(_piece_price(item, 1) * _market_product_factor(item) * _retail_price_factor())) - craft_cost - ingredient_cost
 
 func _ingredient_price(ingredient_id: String) -> int:
 	var base := float(Ingredients.price_for_day(ingredient_id, shop_day))
@@ -6713,7 +6855,9 @@ func _draw_visitor_profile() -> Dictionary:
 
 func _on_customer_tick() -> void:
 	ticks += 1
-	_stage_customer_leaves()
+	var customer_arriving := _customer_walk_tween != null and _customer_walk_tween.is_valid()
+	if not customer_arriving:
+		_stage_customer_leaves()
 	_advance_service_queue()
 	_advance_craft_jobs(3.0)
 	Sanctum.advance(active_buffs, 3.0)
@@ -6870,6 +7014,12 @@ func _on_customer_tick() -> void:
 	if imp_hired and ticks % 3 == 0:
 		_imp_work()
 
+	# Deixa a visita anterior terminar antes de avançar outra fila ou iniciar uma
+	# nova cena. Uma troca de velocidade não pode reiniciar o trajeto pela tela.
+	if customer_arriving or (_customer_walk_tween != null and _customer_walk_tween.is_valid()):
+		_refresh_ui()
+		return
+
 	# A última rodada não é venda. Um freguês por tique entra, olha o salão, acena e
 	# volta a sair pela porta; a loja segue fabricando e expedindo enquanto isso.
 	if not epilogue_pending.is_empty():
@@ -6901,23 +7051,32 @@ func _on_customer_tick() -> void:
 		if _is_product_unlocked(products[i]) and int(products[i]["stock"]) > 0:
 			available.append(i)
 
+	var buyback: Dictionary = {}
 	if available.is_empty():
 		# Prateleira vazia também é cena: quem bate na porta é um dos fregueses,
 		# e cada um deles já tem uma reclamação escrita para este momento exato.
 		var visitor: Dictionary = _pick_regular()
+		buyback = _buy_customer_mission_loot(visitor)
 		var grumble := str(visitor.get("empty", "“Sem nada na prateleira? Eu volto... quem sabe.”"))
 		_animate_customer_arrival({
 			"name": visitor["name"],
 			"portrait": int(visitor.get("portrait", 2)),
 			"faction": str(visitor.get("faction", "mercadores"))
 		})
-		_set_customer_status("CLIENTE: foi embora")
-		_set_seller_mood("surprised")
-		last_event = "%s entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. %s Reabasteça a loja para não perder vendas." % [visitor["short"], grumble]
-		_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank + (15 if _has_spec("charm", "boca") else 0))
+		if not buyback.is_empty():
+			_set_customer_status("CLIENTE: vendeu espólio")
+			_set_seller_mood("happy")
+			last_event = "%s A loja estava sem estoque de venda, mas comprou o espólio trazido pelo cliente e reabasteceu a prateleira." % str(buyback["line"])
+			_react_to_visit("content", false)
+		else:
+			_set_customer_status("CLIENTE: foi embora")
+			_set_seller_mood("surprised")
+			last_event = "%s entrou, viu as prateleiras vazias e foi comprar em outro plano de existência. %s Reabasteça a loja para não perder vendas." % [visitor["short"], grumble]
+			_react_to_visit("disappointed", randi() % 100 < 15 * charm_rank + (15 if _has_spec("charm", "boca") else 0))
 	else:
 		_flood_service_queue()
 		var profile: Dictionary = _next_served_profile()
+		buyback = _buy_customer_mission_loot(profile)
 		current_regular_id = str(profile.get("regular_id", ""))
 		_animate_customer_arrival(profile)
 		var preferred_index: int = _product_index(str(profile["favorite"]))
@@ -7126,6 +7285,7 @@ func _on_customer_tick() -> void:
 			_add_xp(10)
 			headline_locked = true
 			reputation += 1 + (1 if seduction_used else 0)
+		sale_price = maxi(1, int(round(float(sale_price) * _retail_price_factor())))
 		# A peça saiu da prateleira. No balcão de sempre o dinheiro entra no caixa; no
 		# fiado ele entra no livro, e o caixa fica esperando a virada — a mesma virada
 		# em que a casa cobra conta e filial. É aí que o crédito dói: emprestar é fechar
@@ -7255,6 +7415,8 @@ func _on_customer_tick() -> void:
 		_set_seller_mood("happy")
 		_react_to_visit("delighted" if preferred_index == chosen_index else "content", seduction_used)
 		_set_negotiation_dialogue(profile, item, seduction_used, preferred_index == chosen_index)
+		if not buyback.is_empty():
+			last_event += "\n" + str(buyback["line"])
 
 	if affection >= 10 and affection % 10 == 0:
 		var marco := _affection_milestone_index()
@@ -7365,6 +7527,11 @@ func _trigger_random_event() -> void:
 			last_event += "\nA chefe ri: “Nossa loja é um desastre adorável. Ainda bem que você está aqui.”"
 
 func _animate_customer_arrival(profile: Dictionary) -> void:
+	# Evita iniciar uma animação de chegada duplicada / sobreposta, que causava
+	# múltiplos loops de caminhada para o mesmo cliente vindo da quarta parede.
+	if is_instance_valid(stage_customer) and stage_customer.visible and float(stage_customer.get_meta("arrive_left", 0.0)) > 0.05:
+		# Já está em processo de chegada; ignorar chamada redundante.
+		return
 	if not is_instance_valid(customer_portrait):
 		return
 	var portrait_index := int(profile.get("portrait", -1))
@@ -7852,7 +8019,9 @@ func _refresh_ui() -> void:
 			])
 		faction_label.text = "\n".join(faction_lines)
 	if is_instance_valid(progression_label):
-		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Pontos de talento: %d  •  Dia %d" % [player_level, player_xp, _xp_required(), skill_points, shop_day]
+		var shop_name := tr(PROGRESS_BAND_NAMES[_progress_band_now()])
+		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Talentos: %d  •  Dia %d  •  Loja: %s" % [
+			player_level, player_xp, _xp_required(), skill_points, shop_day, shop_name]
 	if is_instance_valid(talent_label):
 		talent_label.text = "TALENTOS • Alquimia %d/5 | Comércio %d/5 | Carisma %d/5 | Logística %d/5 | Casa %d/5" % [alchemy_rank, trade_rank, charm_rank, logistics_rank, house_rank]
 	for talent_button in [alchemy_button, trade_button, charm_button]:
@@ -7957,7 +8126,8 @@ func _refresh_ui() -> void:
 		craft_buttons[i].text = _forge_button_label(i) if already_queued else "Fabricar (%d)" % craft_cost if unlocked and missing_ingredients.is_empty() else "Faltam ingredientes" if unlocked else "Receita bloqueada"
 		craft_buttons[i].disabled = already_queued or craft_jobs.size() >= 3 or not unlocked or gold < craft_cost or not missing_ingredients.is_empty()
 		var counter_stock := int(item["stock"])
-		var counter_payout := maxi(1, int(round(float(shelf) * 0.7)))
+		var counter_tier := _peek_tier(i, Quality.WORST)
+		var counter_payout := maxi(1, int(round(_piece_price(item, counter_tier) * _market_product_factor(item) * _prestige_price_factor() * 0.7)))
 		counter_labels[i].text = "%s | Estoque: %d | Balcão leva a pior: %s | Paga %d ouro" % [item["name"], counter_stock, str(Quality.tier(_peek_tier(i, Quality.WORST))["name"]), counter_payout]
 		counter_buttons[i].text = "Vender (%d)" % counter_payout
 		counter_buttons[i].disabled = counter_stock <= 0
@@ -8488,6 +8658,18 @@ func _refresh_ui() -> void:
 			romance_button.disabled = gold < int(step_data["gold"]) \
 				or int(regular_bonds.get(romance_pending, 0)) < int(step_data["bond"])
 	adult_toggle_button.text = "Cenas sensuais: LIGADAS" if adult_content_enabled else "Cenas sensuais: DESLIGADAS"
+	if is_instance_valid(auto_buy_loot_check):
+		auto_buy_loot_check.button_pressed = auto_buy_mission_loot
+	if is_instance_valid(loot_buyback_option):
+		for option_index in range(LOOT_BUYBACK_RATES.size()):
+			if LOOT_BUYBACK_RATES[option_index] == loot_buyback_percent:
+				loot_buyback_option.select(option_index)
+				break
+	if is_instance_valid(retail_price_option):
+		for option_index in range(RETAIL_PRICE_RATES.size()):
+			if RETAIL_PRICE_RATES[option_index] == retail_price_percent:
+				retail_price_option.select(option_index)
+				break
 	if is_instance_valid(recover_theft_button):
 		recover_theft_button.text = "Rastrear: %s" % stolen_item_name if theft_recovery_available else "Rastrear item roubado"
 		recover_theft_button.disabled = not theft_recovery_available
@@ -8655,6 +8837,9 @@ func _save_game() -> void:
 	config.set_value("game", "credit_written", credit_written)
 	config.set_value("game", "credit_lost_gold", credit_lost_gold)
 	config.set_value("game", "economy_state", economy_state)
+	config.set_value("game", "auto_buy_mission_loot", auto_buy_mission_loot)
+	config.set_value("game", "loot_buyback_percent", loot_buyback_percent)
+	config.set_value("game", "retail_price_percent", retail_price_percent)
 	config.set_value("game", "active_buffs", active_buffs)
 	config.set_value("game", "stolen_tier", stolen_tier)
 	config.set_value("game", "best_quality_crafted", best_quality_crafted)
@@ -9090,6 +9275,11 @@ func _load_game() -> void:
 	best_quality_crafted = clampi(int(config.get_value("game", "best_quality_crafted", best_quality_crafted)), -1, Quality.size() - 1)
 	rituals_performed = int(config.get_value("game", "rituals_performed", rituals_performed))
 	_read_economy_state(config.get_value("game", "economy_state", {}))
+	auto_buy_mission_loot = bool(config.get_value("game", "auto_buy_mission_loot", auto_buy_mission_loot))
+	var saved_buyback_rate := int(config.get_value("game", "loot_buyback_percent", loot_buyback_percent))
+	loot_buyback_percent = saved_buyback_rate if LOOT_BUYBACK_RATES.has(saved_buyback_rate) else 45
+	var saved_retail_rate := int(config.get_value("game", "retail_price_percent", retail_price_percent))
+	retail_price_percent = saved_retail_rate if RETAIL_PRICE_RATES.has(saved_retail_rate) else 100
 	active_buffs = _read_buffs(config.get_value("game", "active_buffs", {}))
 	stolen_tier = clampi(int(config.get_value("game", "stolen_tier", stolen_tier)), 0, Quality.size() - 1)
 	_read_expeditions(config.get_value("game", "expeditions", []))
