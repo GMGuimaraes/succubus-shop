@@ -22,6 +22,7 @@ func _initialize() -> void:
 		"res://assets/forge_scene.png",
 		"res://assets/library_room_scene.png",
 		"res://assets/sanctum_room_scene.png",
+		"res://assets/expedition_hall_scene.png",
 	]
 	var worst := 0.0
 	var flagged := 0

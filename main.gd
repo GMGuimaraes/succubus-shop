@@ -409,88 +409,70 @@ const PROGRESS_BAND_SCORES: Array[int] = [0, 900, 2400, 5200, 9000]
 const PROGRESS_BAND_NAMES: Array[String] = [
 	"casa em obras", "balcão arrumado", "casa respeitada", "endereço no bairro", "império da rua",
 ]
-## A luz de cada faixa, aplicada sobre o mesmo PNG. A escada começa ABAIXO da cor
-## original de propósito: o estado pintado da arte é o meio da escada (faixa 2, "casa
-## respeitada"), não o ponto de partida. Quem abre o jogo pela primeira vez vê um salão
-## cru e sem luz acesa; quem fecha a vida no império vê a mesma pintura mais quente do
-## que ela jamais foi. Um valor por faixa, sem fórmula, para a escada poder ter degrau
-## torto onde a sensação pedir.
-##
-## O degrau 0 é medido na tela, não no papel: a 0,58 o salão continuava mobiliado e
-## aceso, e "casa em obras" tem de constranger antes de premiar. Abaixo de 0,5 o
-## painel de texto fica ilegível, e é por isso que a luz só desce até aí.
+## A luz de cada faixa, aplicada sobre a arte DA faixa. Antes da escada em arte este
+## degrau fazia o trabalho inteiro: o mesmo PNG esfriava até 0,46 para fingir obra. Agora
+## a parede crua, o balcão de cavaletes e o lustre aceso estão desenhados, então a luz
+## só segura o clima — fria e azulada no casarão vazio, quente no império — e uma escada
+## curta bastou. O valor continua um por faixa, sem fórmula, para o degrau poder ser
+## torto onde a sensação pedir, e a faixa 2 continua sendo 1,00: é a cor original da
+## arte que a loja já tinha.
 const PROGRESS_BAND_LIGHT: Array[Color] = [
-	Color(0.46, 0.46, 0.62),
-	Color(0.72, 0.72, 0.85),
+	Color(0.80, 0.82, 0.95),
+	Color(0.92, 0.90, 0.96),
 	Color(1.00, 1.00, 1.00),
-	Color(1.06, 1.03, 0.96),
-	Color(1.12, 1.07, 0.93),
+	Color(1.05, 1.03, 0.98),
+	Color(1.10, 1.06, 0.94),
 ]
-## O que cada faixa acende. É a mesma lista que a camada desenhada em código lê,
-## escrita para o painel: ninguém decora o que a chefe não consegue nomear.
+## O que cada faixa entrega. É a legenda da escada de arte (`PROGRESS_BAND_ART`), escrita
+## para o painel: ninguém decora o que a chefe não consegue nomear, e o aviso da faixa
+## precisa bater com o que mudou na tela.
 const PROGRESS_BAND_GIFTS: Array[String] = [
-	"o salão em obras: poeira no ar, massa crua na parede, lona no piso e uma lâmpada no fio",
-	"piso encerado e tapete realçado na faixa de passeio",
-	"+ cordão de velas acesas nas paredes do salão",
-	"+ caixilho dourado na moldura da tela",
-	"+ lustre aceso no teto e poeira dourada no ar",
+	"o salão cru: parede sem tinta, prancha sobre cavaletes no lugar do balcão e uma lâmpada no fio",
+	"balcão de madeira entalhada, o primeiro tapete e duas prateleiras de frascos",
+	"estantes de vitrine até o teto, letreiro de asas aceso e o balcão de honra",
+	"+ dourado nas molduras, lustre no teto e o sofá da frente",
+	"+ o teto inteiro aceso, relíquias transbordando e tapete bordado até a porta",
 ]
-## A obra da faixa 0, em fração da tela. Nada aqui desenha um cenário novo nem emoldura
-## a arte que já existe: são demãos que faltam na parede, pano no piso, prancha de
-## andaime, entulho ancorado na linha do chão e o fio da lâmpada. Os móveis cobertos de
-## lona não usam coordenada nenhuma: é a própria cor do recorte dos móveis que fica
-## lavada (ver `_apply_progress_decor`), porque a oclusão repinta o móvel POR CIMA da
-## camada e comeria qualquer pano desenhado ali.
-##
-## A gramática é escura por medida, não por gosto: a arte do salão é saturada e no
-## escuro, e o probe `tools/probes/cara.gd` mostrou que retângulo claro por cima dela lê
-## como vidro fosco de interface, não como obra. Falta é sombra.
-##
-## A geometria fica na faixa de passeio da recepção (x 0,20 a 0,42), que é o piso livre
-## da sala principal. Sala onde uma peça colide com o contorno de um móvel mostra o que
-## sobra — mesma regra do tapete e do caixilho.
-const RENOVATION_WALL_PATCHES: Array[Rect2] = [
-	Rect2(0.185, 0.055, 0.175, 0.135),
-	Rect2(0.44, 0.02, 0.135, 0.095),
-	Rect2(0.675, 0.095, 0.165, 0.115),
-	Rect2(0.30, 0.235, 0.105, 0.085),
-	Rect2(0.78, 0.275, 0.12, 0.075),
+## A escada em arte, não em tinta sobre a mesma arte. Cada faixa tem o MESMO salão
+## pintado da MESMA câmera num estado diferente: faixa 0 é o casarão cru e quase vazio,
+## faixa 4 é o império de ouro. A faixa 2 é `shop_scene.png` porque a arte que o jogo
+## já tinha sempre representou a "casa respeitada" — ela só deixou de ser o ponto de
+## partida de todo mundo.
+const PROGRESS_BAND_ART: Array[String] = [
+	"res://assets/salon_bare_scene.png",
+	"res://assets/salon_tidy_scene.png",
+	"res://assets/shop_scene.png",
+	"res://assets/salon_gilded_scene.png",
+	"res://assets/salon_empire_scene.png",
 ]
-## Pares de pé-direito do escoramento (dois por cavalete) e a altura da prancha.
-const RENOVATION_POLES: Array[float] = [0.222, 0.268, 0.352, 0.398]
-const RENOVATION_PLANK_Y := 0.455
-## A lona estendida no piso, em quatro cantos: superior esquerdo, superior direito,
-## inferior direito, inferior esquerdo. É o único claro grande da cena, e por isso é
-## chumbo, não branco.
-const RENOVATION_CLOTH: Array[Vector2] = [
-	Vector2(0.185, 0.795), Vector2(0.415, 0.772), Vector2(0.475, 0.905), Vector2(0.150, 0.928),
-]
-## Montículos de entulho, em deslocamento a partir do ponto do chão pintado: o pé
-## prende no piso da sala, não numa altura arbitrária da tela.
-const RENOVATION_RUBBLE: Array[Vector2] = [
-	Vector2(-0.375, -0.008), Vector2(-0.295, 0.012), Vector2(-0.225, -0.018),
-]
-## Balde de tinta no pé do andaime, em deslocamento do ponto do chão.
-const RENOVATION_BUCKET := Vector2(-0.185, 0.004)
-## Quantas faixas de progresso ainda mostram a obra. A lona some antes do luxo chegar,
-## senão a casa "respeitada" continuaria com o balcão tapado.
-const RENOVATION_LAST_BAND := 1
-## Sala sem entrada aqui recebe a faixa de passeio no lugar.
-const PROGRESS_RUG := {
-	"res://assets/shop_scene.png": [
-		Vector2(0.30, 0.72), Vector2(0.70, 0.72), Vector2(0.83, 1.0), Vector2(0.19, 1.0),
-	],
-	"res://assets/library_room_scene.png": [
-		Vector2(0.26, 0.78), Vector2(0.74, 0.78), Vector2(0.86, 1.0), Vector2(0.14, 1.0),
-	],
-}
-## Faixa atual e a camada que a desenha. Camada própria, acima do fundo pintado e
-## abaixo do elenco: a decoração não compete com corpo nem come o clique de ninguém.
-var _progress_band: int = 0
+## Os cinco estados são a mesma sala filmada do mesmo ponto, então chão, porta, fila,
+## vitrine e ponto de encontro são UM só jogo de coordenadas: `_apply_room_props`
+## normaliza qualquer arte da escada por esta chave.
+const SALON_GEOMETRY_KEY := "res://assets/shop_scene.png"
+
+## A arte da faixa, com degradação honesta: instalação sem o arquivo novo (fatia de
+## arte não importada, teste em máquina limpa) volta à arte cheia em vez de abrir a
+## recepção com fundo preto.
+func _salon_art(band: int) -> String:
+	var path := PROGRESS_BAND_ART[clampi(band, 0, PROGRESS_BAND_ART.size() - 1)]
+	return path if ResourceLoader.exists(path) else SALON_GEOMETRY_KEY
+
+## Toda arte da escada responde pela geometria do salão cheio. É uma função e não um
+## `if` no laço de cada tabela: as dez tabelas de sala chamam `_apply_room_props` para
+## descobrir a chave, e uma faixa esquecida ali viraria sala sem chão.
+func _room_key(scene_path: String) -> String:
+	return SALON_GEOMETRY_KEY if PROGRESS_BAND_ART.has(scene_path) else scene_path
+
+## Faixa atual do salão. É a arte que a faixa pinta, não uma camada desenhada por
+## cima da mesma arte: a escada inteira (`PROGRESS_BAND_ART`) vive nos arquivos, e a
+## única tinta que sobra é a luz de `PROGRESS_BAND_LIGHT`.
+## Começa em −1 porque NENHUMA arte foi pintada ainda: a 0 é uma faixa como as outras, e
+## abrir o jogo já em faixa 0 faria o primeiro painel dar a mão como igual — a casa
+## acorderia no salão cheio com o placar dizendo "casa em obras".
+var _progress_band: int = -1
 ## O primeiro painel da sessão não comemora: a casa pode abrir já crescida, e
 ## festa de carregamento é festa falsa.
 var _progress_quiet: bool = true
-var _progress_layer: Control
 ## Pedidos de facção já entregues (facção → quantos). É nome, não ouro: fica na
 ## conta salva depois da ruína e da reencarnação, e o privilégio do arco fechado
 ## continua valendo na vida seguinte.
@@ -1021,6 +1003,14 @@ const STAGE_ROOM_PROPS := {
 	"res://assets/forge_scene.png": [Rect2(0.0, 0.555, 0.165, 0.445), Rect2(0.77, 0.60, 0.23, 0.40), Rect2(0.655, 0.525, 0.095, 0.15)],
 	"res://assets/library_room_scene.png": [Rect2(0.225, 0.42, 0.13, 0.30), Rect2(0.0, 0.52, 0.215, 0.21), Rect2(0.78, 0.525, 0.205, 0.195)],
 	"res://assets/sanctum_room_scene.png": [Rect2(0.0, 0.53, 0.14, 0.17), Rect2(0.862, 0.53, 0.138, 0.17), Rect2(0.235, 0.515, 0.055, 0.15), Rect2(0.71, 0.505, 0.055, 0.15)],
+	## A mesa de guerra é o balcão da guilda: o tampo entra como contorno inclinado na
+	## altura da BORDA DE CIMA do tampo (não da superfície pintada), porque é a partir
+	## dali que a mesa é sólida e esconde quem está atrás.
+	"res://assets/expedition_hall_scene.png": [
+		[Vector2(0.225, 0.525), Vector2(0.70, 0.50), Vector2(0.71, 0.715), Vector2(0.205, 0.72)],
+		[Vector2(0.0, 0.30), Vector2(0.175, 0.335), Vector2(0.175, 0.60), Vector2(0.0, 0.585)],
+		[Vector2(0.665, 0.435), Vector2(0.845, 0.45), Vector2(0.845, 0.585), Vector2(0.665, 0.575)],
+	],
 }
 ## Móveis que ocupam uma faixa de profundidade do piso: mais ao fundo eles
 ## escondem a figura; mais perto da câmera, a figura passa na frente. Cada valor
@@ -1028,6 +1018,11 @@ const STAGE_ROOM_PROPS := {
 const STAGE_ROOM_PROP_DEPTHS := {
 	"res://assets/library_room_scene.png": [0.32, 0.40, 0.40],
 	"res://assets/sanctum_room_scene.png": [0.56, 0.56, 0.39, 0.39],
+	## Os três móveis da guilda têm profundidade própria: a mesa de guerra fica no meio
+	## da sala (0,50) e as duas pilhas de caixote encostam na parede do fundo (0,05 e
+	## 0,09). Sem isso o balcão pintado engoliria a fila inteira, que espera JUSTO na
+	## frente dele.
+	"res://assets/expedition_hall_scene.png": [0.50, 0.09, 0.05],
 }
 ## Quantos contornos de móvel o shader aguenta ao mesmo tempo.
 const STAGE_PROP_SLOTS := 8
@@ -1046,6 +1041,9 @@ const STAGE_ROOM_DOOR := {
 	"res://assets/forge_scene.png": [Vector2(0.02, 0.12), Vector2(0.26, 0.30)],
 	"res://assets/library_room_scene.png": [Vector2(0.98, 0.12), Vector2(0.72, 0.30)],
 	"res://assets/sanctum_room_scene.png": [Vector2(0.02, 0.10), Vector2(0.30, 0.30)],
+	## A guilda abre para a rua pelo arco da direita: é a única passagem pintada na
+	## arte, e ela leva ao beco onde o batedor some.
+	"res://assets/expedition_hall_scene.png": [Vector2(0.98, 0.12), Vector2(0.86, 0.28)],
 }
 ## Profundidade da quarta parede: abaixo de 1.0 o pé ainda pisa no chão pintado;
 ## daqui para baixo a figura entra cortada pela beirada da tela.
@@ -1059,6 +1057,9 @@ const STAGE_ROOM_ARRIVE := {
 	"res://assets/forge_scene.png": [Vector2(0.42, STAGE_FOURTH_WALL_DEPTH), Vector2(0.40, 1.00), Vector2(0.42, 0.90)],
 	"res://assets/library_room_scene.png": [Vector2(0.52, STAGE_FOURTH_WALL_DEPTH), Vector2(0.50, 1.00), Vector2(0.48, 0.90)],
 	"res://assets/sanctum_room_scene.png": [Vector2(0.46, STAGE_FOURTH_WALL_DEPTH), Vector2(0.44, 1.00), Vector2(0.46, 0.90)],
+	## O piso livre da guilda é a faixa de tábua na frente do tapete: quem chega entra
+	## pelo pé da tela no meio dela, em vez de nascer em cima da mesa de guerra.
+	"res://assets/expedition_hall_scene.png": [Vector2(0.40, STAGE_FOURTH_WALL_DEPTH), Vector2(0.42, 1.00), Vector2(0.46, 0.90)],
 }
 ## Onde a fila espera, do primeiro (mais perto do balcão) ao último degrau, na
 ## lateral do tapete: quem espera não tapa a chefe nem atravessa o salão, e o corpo
@@ -1077,6 +1078,11 @@ const STAGE_ROOM_QUEUE := {
 	"res://assets/forge_scene.png": [Vector2(0.235, 0.70), Vector2(0.215, 0.60), Vector2(0.20, 0.50), Vector2(0.19, 0.40), Vector2(0.182, 0.30), Vector2(0.175, 0.22)],
 	"res://assets/library_room_scene.png": [Vector2(0.62, 0.70), Vector2(0.65, 0.60), Vector2(0.68, 0.50), Vector2(0.71, 0.40), Vector2(0.73, 0.30), Vector2(0.75, 0.22)],
 	"res://assets/sanctum_room_scene.png": [Vector2(0.28, 0.70), Vector2(0.245, 0.60), Vector2(0.22, 0.50), Vector2(0.20, 0.40), Vector2(0.182, 0.30), Vector2(0.168, 0.22)],
+	## Na guilda a porta é à direita, então a fila sobe pela direita: o primeiro degrau
+	## encosta no canto da mesa de guerra e o último já pisa a soleira do arco. Nenhum
+	## deles cai sob as três pilhas de móvel da sala — a mesa tem profundidade 0,50 e a
+	## fila toda espera mais perto da câmera que isso.
+	"res://assets/expedition_hall_scene.png": [Vector2(0.60, 0.72), Vector2(0.66, 0.62), Vector2(0.72, 0.52), Vector2(0.78, 0.44), Vector2(0.83, 0.38), Vector2(0.87, 0.32)],
 }
 ## Quanto o chão desce por ponto de profundidade na quarta parede, em fração da
 ## altura da tela. Sem isso o corpo entraria flutuando na borda em vez de subir do
@@ -1097,6 +1103,9 @@ const STAGE_ROOM_BROWSE := {
 	"res://assets/forge_scene.png": [Vector2(0.60, 0.55), Vector2(0.20, 0.66)],
 	"res://assets/library_room_scene.png": [Vector2(0.29, 0.58), Vector2(0.87, 0.48)],
 	"res://assets/sanctum_room_scene.png": [Vector2(0.62, 0.50), Vector2(0.37, 0.60)],
+	## Quem sai satisfeito da guilda se detém diante do mapa da mesa e diante da jaula
+	## de relíquias do caixote direito — as duas vitrines que a sala tem.
+	"res://assets/expedition_hall_scene.png": [Vector2(0.30, 0.66), Vector2(0.76, 0.58)],
 }
 ## Poses que um cliente satisfeito faz parado diante de uma prateleira.
 const STAGE_BROWSE_POSES := ["curiosidade", "pensativo", "aprovacao", "aponta", "risada", "felicidade"]
@@ -1106,6 +1115,10 @@ const STAGE_ROOM_MEET := {
 	"res://assets/forge_scene.png": Vector2(0.30, 0.44),
 	"res://assets/library_room_scene.png": Vector2(0.42, 0.55),
 	"res://assets/sanctum_room_scene.png": Vector2(0.50, 0.32),
+	## A chefe de expedições recebe atrás da mesa de guerra, no centro do mapa, e o
+	## cliente do turno encosta do lado de cá: os dois x quase coincidentes são o que
+	## faz a conversa acontecer EM CIMA da mesa, como quem planeja uma estrada junto.
+	"res://assets/expedition_hall_scene.png": Vector2(0.44, 0.46),
 }
 ## Faixa de chão pintado de cada sala, em fração da altura da tela: onde o piso
 ## nasce ao fundo e onde ele chega na frente. É isto que prende o pé do elenco ao
@@ -1115,12 +1128,19 @@ const STAGE_ROOM_FLOOR := {
 	"res://assets/forge_scene.png": Vector2(0.60, 0.80),
 	"res://assets/library_room_scene.png": Vector2(0.655, 0.84),
 	"res://assets/sanctum_room_scene.png": Vector2(0.585, 0.79),
+	## O assoalho da guilda nasce atrás do tapete (0,58, na base dos caixotes) e chega
+	## até a beirada de baixo da tela: a sala é toda piso, sem escada nem vitral no
+	## caminho, e é por isso que o fundo dela é mais alto que o do salão.
+	"res://assets/expedition_hall_scene.png": Vector2(0.58, 0.85),
 }
 const STAGE_ROOM_LIGHTS := {
 	"res://assets/shop_scene.png": [Vector2(0.08, 0.22), Vector2(0.50, 0.05), Vector2(0.91, 0.18), Vector2(0.32, 0.48), Vector2(0.64, 0.42)],
 	"res://assets/forge_scene.png": [Vector2(0.52, 0.24), Vector2(0.08, 0.16), Vector2(0.91, 0.18)],
 	"res://assets/library_room_scene.png": [Vector2(0.16, 0.18), Vector2(0.82, 0.20), Vector2(0.50, 0.08)],
 	"res://assets/sanctum_room_scene.png": [Vector2(0.24, 0.20), Vector2(0.76, 0.20), Vector2(0.50, 0.08)],
+	## A guilda é acesa por tocha e não por vela: a lanterna grande do teto, as duas
+	## tochas da parede do fundo, a brasa do arco e a lâmpada que está em cima da mesa.
+	"res://assets/expedition_hall_scene.png": [Vector2(0.44, 0.09), Vector2(0.19, 0.22), Vector2(0.775, 0.22), Vector2(0.345, 0.42), Vector2(0.975, 0.17)],
 }
 ## Altura de um adulto em primeiro plano. As camadas de trás escalam em cima dela
 ## para casar com a perspectiva da arte.
@@ -1192,8 +1212,11 @@ var _stage_waiters: Array[Dictionary] = []
 var _stage_back_band: Control
 var _market_top_guard: Control
 var _stage_room: String = "res://assets/shop_scene.png"
-## Se a sala atual tem chão andável. A camada de progresso respeita a flag: sem
-## chão pintado (close-up de cena), não há tapete nem lustre onde desenhar.
+## A arte realmente em exibição: o caminho do PNG pintado no fundo e na oclusão, que é
+## uma das faixas do salão enquanto `_stage_room` é só a geometria dele.
+var _stage_art: String = "res://assets/shop_scene.png"
+## Se a sala atual tem chão andável. Close-up de cena não tem palco: o elenco fica nos
+## bastidores, e a faixa de progresso não troca a arte de uma cara grande.
 var _stage_walkable: bool = true
 var _seller_home: Vector2 = Vector2.ZERO
 var _stage_layout_key := Vector2(-1.0, -1.0)
@@ -2231,11 +2254,7 @@ func _show_stage_for_room(scene_path: String, walkable: bool) -> void:
 		if stale.is_valid():
 			stale.kill()
 	_stage_fade_tweens.clear()
-	# A decoração por faixa é desenhada na geometria da sala: mudou a sala, muda o
-	# chão, muda o tapete.
 	_stage_walkable = walkable
-	if is_instance_valid(_progress_layer):
-		_progress_layer.queue_redraw()
 	_apply_room_props(scene_path)
 	# A sala nova tem outro ponto de encontro: sem isso a chefe ficaria parada na
 	# marca da sala anterior, porque o resto do layout não mudou.
@@ -2970,12 +2989,18 @@ func _occluder_material() -> ShaderMaterial:
 	_apply_room_props(_stage_room)
 	return _stage_occluder_material
 
+## A geometria é da sala; a textura é da faixa. As cinco artes do salão são o MESMO
+## cômodo filmado do MESMO ponto, então todas respondem pela chave cheia
+## (`SALON_GEOMETRY_KEY`) nas tabelas de chão, porta, fila, vitrine e móveis; o que muda
+## de uma para outra são os pixels pintados, e esses vão para o fundo e para a oclusão.
+## Sem esta normalização, a fila da loja vazia atravessaria um balcão que ainda não existe.
 func _apply_room_props(scene_path: String) -> void:
-	_stage_room = scene_path
+	_stage_room = _room_key(scene_path)
+	_stage_art = scene_path
 	if _stage_occluder_material == null:
 		return
-	var props: Array = STAGE_ROOM_PROPS.get(scene_path, [])
-	var prop_depths: Array = STAGE_ROOM_PROP_DEPTHS.get(scene_path, [])
+	var props: Array = STAGE_ROOM_PROPS.get(_stage_room, [])
+	var prop_depths: Array = STAGE_ROOM_PROP_DEPTHS.get(_stage_room, [])
 	for i in range(STAGE_PROP_SLOTS):
 		var is_depth_sorted := i < prop_depths.size()
 		var corners := _prop_corners(props[i]) if i < props.size() and not is_depth_sorted else _blank_corners()
@@ -3305,8 +3330,10 @@ func _draw_stage_shadows(layer: Control) -> void:
 func _build_ui() -> void:
 	var bg := TextureRect.new()
 	background_layer = bg
-	# O salão abre vazio de propósito: quem preenche a loja é o elenco animado.
-	var opening_scene := "res://assets/shop_scene.png"
+	# O salão abre vazio de propósito: quem preenche a loja é o elenco animado. Vazio
+	# quer dizer NA FAIXA do placar: abrir com a arte do topo é a escada inteira perder o
+	# ponto de partida, e o primeiro painel mentir sobre o que está na tela.
+	var opening_scene := _salon_art(_progress_band_now())
 	if not ResourceLoader.exists(opening_scene) and ResourceLoader.exists("res://assets/reception_scene.png"):
 		opening_scene = "res://assets/reception_scene.png"
 	bg.texture = load(opening_scene)
@@ -3316,18 +3343,6 @@ func _build_ui() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.z_index = -1000
 	add_child(bg)
-
-	# A camada da faixa de progresso fica entre o fundo pintado e as figuras: o
-	# tapete no chão, as velas na parede e o lustre no teto são desenhados por
-	# código, sobre a arte que a casa já tinha.
-	_progress_layer = Control.new()
-	_progress_layer.name = "ProgressDecor"
-	_progress_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_progress_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_progress_layer.z_index = -900
-	_progress_layer.draw.connect(_draw_progress_decor)
-	_progress_layer.resized.connect(_progress_layer.queue_redraw)
-	add_child(_progress_layer)
 
 	ambient_particles = CPUParticles2D.new()
 	ambient_particles.amount = 32
@@ -3814,7 +3829,7 @@ func _build_ui() -> void:
 	reception_box.add_child(queue_label)
 
 	reception_box.add_child(_make_section_title("CONSERVA DA CASA E CELA", Color(0.86, 0.80, 1.0)))
-	reception_box.add_child(_make_section_hint("Barro no chão é conta, não cenário: encurta a paciência da fila, derruba a etiqueta e chama vândalo para a porta. A criada varre por salário, o servo apaixonado varre por afeto e a chefe varre em ouro. Quem é pego com a mão na prateleira pode acabar na cela do santuário — que rende sangue para a forja e prato na conta da virada. O placar da casa também acende o salão: piso encerado, velas, caixilho dourado e lustre entram no palco conforme a loja sobe de faixa."))
+	reception_box.add_child(_make_section_hint("Barro no chão é conta, não cenário: encurta a paciência da fila, derruba a etiqueta e chama vândalo para a porta. A criada varre por salário, o servo apaixonado varre por afeto e a chefe varre em ouro. Quem é pego com a mão na prateleira pode acabar na cela do santuário — que rende sangue para a forja e prato na conta da virada. O placar da casa também reformou o salão: a mesma sala existe em cinco artes, do casarão cru com prancha sobre cavaletes ao império de lustre aceso e tapete bordado até a porta."))
 	var house_card := _make_sector_card(Color(0.06, 0.05, 0.09, 0.94), Color(0.46, 0.42, 0.68, 0.95))
 	reception_box.add_child(house_card)
 	var house_row := HBoxContainer.new()
@@ -4880,8 +4895,11 @@ func _activate_sector_feature() -> void:
 ## Fundo do setor. Onde existe uma arte de sala vazia ela vira palco e o elenco
 ## anda; onde só existe o close de um rosto, o elenco fica nos bastidores, porque
 ## personagem caminhando por cima de uma cara enorme lê como fantasma.
+## A recepção é o único setor que tem ESCADA de arte: ela é a casa do jogador, e é a
+## sala que o placar reformou. Os outros setores são ofícios alugados — têm uma arte
+## só, do mesmo jeito que a guilda de expedição não cresce com o balcão.
 func _sector_scene(sector: String) -> Dictionary:
-	var room := "res://assets/shop_scene.png"
+	var room := _salon_art(_progress_band_now())
 	var close := ""
 	if sector == "forge":
 		room = "res://assets/forge_scene.png"
@@ -4892,6 +4910,8 @@ func _sector_scene(sector: String) -> Dictionary:
 	elif sector == "sanctum":
 		room = "res://assets/sanctum_room_scene.png"
 		close = "res://assets/sanctum_close_scene.png"
+	elif sector == "expedition":
+		room = "res://assets/expedition_hall_scene.png"
 	if ResourceLoader.exists(room):
 		return {"path": room, "walkable": true}
 	if not close.is_empty() and ResourceLoader.exists(close):
@@ -11960,59 +11980,51 @@ func _progress_band_now() -> int:
 			band = i
 	return band
 
-## Quanto da obra ainda está de pé numa faixa: 1.0 no canteiro, quase seca na
-## primeira reforma, 0.0 quando a casa já tem piso encerado. A lona não pode morar
-## numa loja "respeitada" — quem reformou tirou o pano, e a faixa tem de dizer isso.
-func _renovation_alpha(band: int) -> float:
-	if band > RENOVATION_LAST_BAND:
-		return 0.0
-	return 1.0 if band <= 0 else 0.45
-
-
-## Aplica a faixa: esquenta o fundo pintado do mesmo salão, lava a cor dos móveis
-## enquanto há lona, engorda a poeira do ar e, na mudança de faixa, redesenha a
-## camada. A luz e o pó acompanham a faixa em todo painel — trocar `modulate` não
-## custa nada, e é o que faz a casa abrir já em obras sem que ninguém tenha subido
-## a escada (faixa 0 nunca é "mudança"). O redraw e o aviso da chefe, esses ficam só
-## na mudança: redesenhar o salão a cada tique é redesenhar a mesma coisa.
+## Aplica a faixa: troca a ARTE do salão quando a escada vira, esquenta a luz da sala
+## inteira (fundo, recorte dos móveis e elenco juntos) e engrossa a poeira do ar. A luz
+## e o pó acompanham a faixa em todo painel — trocar `modulate` não custa nada, e é o que
+## faz a casa abrir já no estado certo sem que ninguém tenha subido a escada (faixa 0
+## nunca é "mudança"). Trocar de arte e o aviso da chefe ficam só na mudança: repintar o
+## salão a cada tique é repintar a mesma coisa.
 func _apply_progress_decor() -> void:
 	var band := _progress_band_now()
 	var antes := _progress_band
 	var quiet := _progress_quiet
 	_progress_quiet = false
-	# O mesmo PNG, um degrau mais quente e mais aceso: a casa não troca de arte,
-	# troca de luz, e é a luz que o olho lê como "essa loja cresceu". A obra começa
-	# abaixo da cor original — fria e apagada, parede sem última demão e nenhuma vela
-	# acesa — e a faixa 0 é justamente o canteiro. O aquecimento é o prêmio.
+	var luz: Color = PROGRESS_BAND_LIGHT[clampi(band, 0, PROGRESS_BAND_LIGHT.size() - 1)]
+	# A escada agora é pintada, não insinuada: cada faixa tem o próprio PNG do mesmo
+	# cômodo, e a luz só segura o clima em cima dele — fria e azulada no casarão cru,
+	# quente no império. A luz é da sala INTEIRA. O recorte dos móveis é outra camada
+	# pintada com a MESMA arte: fundo a 0,80 e balcão a 1,0 fariam o móvel flutuar por
+	# cima da parede.
 	if is_instance_valid(background_layer):
-		background_layer.modulate = PROGRESS_BAND_LIGHT[
-			clampi(band, 0, PROGRESS_BAND_LIGHT.size() - 1)]
-	# O elenco mora na sala, então a luz da sala o atinge. Sem isso o corpo entra
-	# num salão a 0,46 queimando a 1,0 e vira desenho colado por cima da foto. O
-	# matiz vai a 0,78 do degradê e não 1,0: rosto precisa continuar lendo como
-	# rosto, e o escuro da obra é mais funda atrás do que em cima de quem trabalha.
-	# Só se troca o rgb — o alfa é do fade de troca de sala.
-	if is_instance_valid(stage_layer):
-		var luz: Color = PROGRESS_BAND_LIGHT[clampi(band, 0, PROGRESS_BAND_LIGHT.size() - 1)]
-		var corpo := Color(1.0, 1.0, 1.0).lerp(luz, 0.78)
-		stage_layer.modulate = Color(corpo.r, corpo.g, corpo.b, stage_layer.modulate.a)
-	# O móvel coberto tem outra cor: os móveis voltam ao tom de tinta quando a lona
-	# sai. A lona é clara porque pega a lâmpada, mas mora num salão escuro — clara
-	# demais, ela vira o objeto mais aceso da sala e a obra some. Só se troca o
-	# matiz aqui — o alfa é do fade de troca de sala, e mexer nele seria cortar a
+		background_layer.modulate = luz
+	# Só se troca o rgb — o alfa é do fade de troca de sala, e mexer nele seria cortar a
 	# animação de outra.
 	if is_instance_valid(stage_occluder):
-		var washed := Color(1.0, 1.0, 1.0).lerp(Color(0.66, 0.68, 0.80), _renovation_alpha(band))
-		stage_occluder.modulate = Color(
-			washed.r, washed.g, washed.b, stage_occluder.modulate.a)
+		stage_occluder.modulate = Color(luz.r, luz.g, luz.b, stage_occluder.modulate.a)
+	# O elenco mora na sala, então a luz da sala o atinge — mas a 0,78 do degradê e não a
+	# 1,0: rosto precisa continuar lendo como rosto, e quem trabalha tem de ficar um
+	# degrau acima do fundo.
+	if is_instance_valid(stage_layer):
+		var corpo := Color(1.0, 1.0, 1.0).lerp(luz, 0.78)
+		stage_layer.modulate = Color(corpo.r, corpo.g, corpo.b, stage_layer.modulate.a)
 	if is_instance_valid(ambient_particles):
 		# No canteiro o ar é grosso de pó de gesso; depois, a poeira dourada do luxo.
 		ambient_particles.amount = 52 if band <= 0 else 24 + band * 12
 	if band == antes:
 		return
 	_progress_band = band
-	if is_instance_valid(_progress_layer):
-		_progress_layer.queue_redraw()
+	# A casa troca de ARTE, não de tinta: o mesmo cômodo filmado do mesmo ponto, num
+	# estado diferente da obra. A troca passa pelo fade de sala de propósito — reforma
+	# que ninguém vê não é prêmio. Sala que não é o salão (close-up de cena, forja,
+	# biblioteca, santuário, guilda) não tem escada e fica como está até o jogador
+	# voltar à recepção, onde `_sector_scene` pergunta a faixa de novo.
+	var arte := _salon_art(band)
+	if _stage_room == SALON_GEOMETRY_KEY and _stage_art != arte:
+		if is_instance_valid(background_layer):
+			background_layer.texture = load(arte)
+		_show_stage_for_room(arte, _stage_walkable)
 	# A faixa sobe sozinha, mas quem avisa é a chefe: ninguém pode descobrir o
 	# salão novo por acidente no meio de uma venda.
 	if band > antes and not quiet:
@@ -12021,240 +12033,13 @@ func _apply_progress_decor() -> void:
 		# A faixa nova é a notícia maior, mas não apaga o que o balcão acabou de dizer:
 		# quem levou no fiado, quem pagou o capítulo, quem levou a encomenda. Perder essa
 		# linha no meio de uma reforma é o jogador fazer a conta da casa sem ler o
-		# recibo. A obra entra por cima, o recibo fica embaixo.
+		# recibo. A faixa entra por cima, o recibo fica embaixo.
 		var recibo := str(last_event)
 		last_event = anuncio if recibo.is_empty() else "%s\n%s" % [anuncio, recibo]
 		_show_stage_emotion(stage_seller_body, "felicidade")
 
-## A obra em si, desenhada na camada entre o fundo pintado e o elenco: poeira no ar,
-## massa crua na parede, lona no piso, escoramento de madeira, entulho com o pé na
-## linha do chão, balde de tinta e uma única lâmpada no fio. Nenhum pixel de cenário
-## novo, nenhuma moldura, nenhuma arte duplicada — é a mesma sala, inacabada.
-func _draw_progress_works(wide: float, tall: float, ground: Vector2, alpha: float) -> void:
-	var stroke := maxf(1.0, wide * 0.0018)
-	# 1) Teto sem luz: a meia-luz da obra mora em cima, onde não há lustre nem vela
-	# acesa. São três faixas horizontais de carga decrescente, e não um gradiente — a
-	# camada só sabe retângulo, e retângulo escuro de carga baixa ninguém vê como régua.
-	for demao in range(3):
-		_progress_layer.draw_rect(Rect2(0.0, tall * float(demao) / 3.0, wide, tall / 3.0),
-			Color(0.10, 0.09, 0.16, (0.11 - float(demao) * 0.04) * alpha))
-	# 2) Parede sem última demão: onde a massa ainda não recebeu tinta é MAIS ESCURA que
-	# a parede. Cada remendo são dois retângulos deslocados, sem contorno — um traço de
-	# régua na beirada seria o suficiente para virar janela.
-	for i in RENOVATION_WALL_PATCHES.size():
-		var patch: Rect2 = RENOVATION_WALL_PATCHES[i]
-		var area := Rect2(wide * patch.position.x, tall * patch.position.y,
-			wide * patch.size.x, tall * patch.size.y)
-		_progress_layer.draw_rect(area, Color(0.10, 0.09, 0.13, 0.42 * alpha))
-		_progress_layer.draw_rect(Rect2(area.position.x + area.size.x * 0.12,
-			area.position.y + area.size.y * 0.16, area.size.x * 0.7, area.size.y * 0.62),
-			Color(0.17, 0.15, 0.20, 0.34 * alpha))
-		# A borda de baixo do remendo é a única parte clara: é onde a massa termina e a
-		# tinta começa, e sem esse degrau o retângulo escuro é só sombra de interface.
-		_progress_layer.draw_rect(Rect2(area.position.x, area.end.y - tall * 0.008,
-			area.size.x, tall * 0.008), Color(0.44, 0.41, 0.44, 0.20 * alpha))
-	# 3) Lona no piso: o pano que a obra estende para receber tinta e gesso. Fica no
-	# piso livre da frente da sala, onde o elenco passa por cima — corpo na frente do
-	# pano é o que faz o pano estar no chão e não flutuando.
-	var cloth := PackedVector2Array([])
-	for canto in RENOVATION_CLOTH.size():
-		var aqui: Vector2 = RENOVATION_CLOTH[canto]
-		cloth.append(Vector2(wide * aqui.x, tall * aqui.y))
-	_progress_layer.draw_colored_polygon(cloth, Color(0.52, 0.51, 0.58, 0.30 * alpha))
-	for vinco in range(3):
-		var t := 0.22 + float(vinco) * 0.26
-		_progress_layer.draw_line(cloth[0].lerp(cloth[1], t), cloth[3].lerp(cloth[2], t),
-			Color(0.18, 0.17, 0.22, 0.26 * alpha), stroke)
-	# 4) Escoramento: cavaletes de dois pés com prancha por cima. Os pés batem na linha
-	# do chão pintado, então o andaime pertence à sala, não à tela, e o elenco passa na
-	# frente dele porque a camada é mais funda que o palco. O pé é largo o bastante para
-	# ter duas bordas legíveis: a 5 pixels de traço ele era linha verde flutuando na
-	# sala, e linha não é móvel de obra.
-	var pole_w := maxf(3.0, wide * 0.0075)
-	var plank_y := tall * RENOVATION_PLANK_Y
-	var plank_w := maxf(2.0, tall * 0.014)
-	for i in range(0, RENOVATION_POLES.size(), 2):
-		var left := RENOVATION_POLES[i]
-		var right: float = RENOVATION_POLES[mini(i + 1, RENOVATION_POLES.size() - 1)]
-		for par in [left, right]:
-			var head := Vector2(wide * par, plank_y)
-			var foot := Vector2(wide * par, ground.y)
-			_progress_layer.draw_line(head, foot, Color(0.20, 0.15, 0.11, 0.92 * alpha), pole_w)
-			# O pé só existe na meia-luz porque tem aresta iluminada pela lâmpada: um
-			# fio claro do lado que dá para a luz, e a madeira volta a ser objeto.
-			_progress_layer.draw_line(head + Vector2(-pole_w * 0.5, 0.0),
-				foot + Vector2(-pole_w * 0.5, 0.0),
-				Color(0.62, 0.50, 0.36, 0.62 * alpha), maxf(1.5, stroke * 1.2))
-			_progress_layer.draw_circle(foot, pole_w * 1.4, Color(0.05, 0.04, 0.07, 0.45 * alpha))
-		var board := Rect2(wide * (left - 0.014), plank_y - plank_w * 0.5,
-			wide * (right - left + 0.028), plank_w)
-		_progress_layer.draw_rect(board, Color(0.30, 0.23, 0.15, 0.92 * alpha))
-		_progress_layer.draw_rect(Rect2(board.position.x, board.position.y,
-			board.size.x, plank_w * 0.26), Color(0.66, 0.54, 0.38, 0.55 * alpha))
-		_progress_layer.draw_rect(Rect2(board.position.x, board.end.y - plank_w * 0.3,
-			board.size.x, plank_w * 0.3), Color(0.10, 0.07, 0.06, 0.85 * alpha))
-		_progress_layer.draw_line(
-			Vector2(board.position.x + board.size.x * 0.5, board.position.y),
-			Vector2(board.position.x + board.size.x * 0.5, board.end.y),
-			Color(0.08, 0.06, 0.05, 0.60 * alpha), stroke)
-	# 5) Entulho: montículo após montículo com a base na linha do chão. Três arcos de
-	# raio diferente fazem pilha de gesso sem desenho novo, e o tijolo dá o canto duro
-	# que a pilha arredondada sozinha não tem.
-	for i in RENOVATION_RUBBLE.size():
-		var offset: Vector2 = RENOVATION_RUBBLE[i]
-		_draw_rubble_mound(ground + Vector2(wide * offset.x, tall * offset.y), wide * 0.050, alpha)
-	var bucket := ground + Vector2(wide * RENOVATION_BUCKET.x, tall * RENOVATION_BUCKET.y)
-	var bucket_w := wide * 0.022
-	_progress_layer.draw_colored_polygon(PackedVector2Array([
-		bucket + Vector2(-bucket_w, -tall * 0.028),
-		bucket + Vector2(bucket_w * 1.15, -tall * 0.028),
-		bucket + Vector2(bucket_w * 0.8, 0.0),
-		bucket + Vector2(-bucket_w * 0.7, 0.0),
-	]), Color(0.18, 0.18, 0.24, 0.80 * alpha))
-	_progress_layer.draw_line(bucket + Vector2(-bucket_w, -tall * 0.028),
-		bucket + Vector2(bucket_w * 1.15, -tall * 0.028),
-		Color(0.62, 0.62, 0.70, 0.40 * alpha), stroke)
-	# 6) A lâmpada do fio: enquanto não há lustre, a casa inteira depende de uma só
-	# lâmpada na altura de trabalho. O centro é a luz pintada mais próxima do meio do
-	# teto, porque é ali que o olho já procura o cabo.
-	var lamps: Array = STAGE_ROOM_LIGHTS.get(_stage_room, [])
-	var bulb_x := wide * 0.5
-	var best := 9.9
-	for lamp in lamps:
-		var aqui_luz: Vector2 = lamp
-		var score := absf(aqui_luz.x - 0.5) + aqui_luz.y
-		if score < best:
-			best = score
-			bulb_x = wide * aqui_luz.x
-	var bulb := Vector2(bulb_x, tall * 0.245)
-	_progress_layer.draw_line(Vector2(bulb_x, 0.0),
-		Vector2(bulb_x + wide * 0.006, bulb.y - tall * 0.010),
-		Color(0.07, 0.06, 0.08, 0.85 * alpha), stroke)
-	_progress_layer.draw_rect(Rect2(bulb + Vector2(-wide * 0.0035, -tall * 0.016),
-		Vector2(wide * 0.007, tall * 0.008)), Color(0.16, 0.15, 0.15, 0.85 * alpha))
-	_progress_layer.draw_circle(bulb, wide * 0.055, Color(1.0, 0.78, 0.40, 0.06 * alpha))
-	_progress_layer.draw_circle(bulb, wide * 0.026, Color(1.0, 0.82, 0.46, 0.12 * alpha))
-	_progress_layer.draw_circle(bulb, wide * 0.009, Color(1.0, 0.94, 0.72, 0.85 * alpha))
-	_progress_layer.draw_colored_polygon(PackedVector2Array([
-		bulb + Vector2(-wide * 0.012, tall * 0.007),
-		bulb + Vector2(wide * 0.012, tall * 0.007),
-		Vector2(bulb_x + wide * 0.16, ground.y),
-		Vector2(bulb_x - wide * 0.16, ground.y),
-	]), Color(1.0, 0.84, 0.50, 0.055 * alpha))
-
-## Um montículo de entulho: meia-cúpula chata, em três tamancos, com a base exatamente
-## na linha do chão. Sem RNG — o salão tem de sair igual de um redraw para o outro.
-func _draw_rubble_mound(center: Vector2, radius: float, alpha: float) -> void:
-	# A sombra no pé é o que prega a pilha no chão: sem ela o montículo flutua. Vem
-	# antes das cúpulas, para sobrar dela só a borda em volta da base.
-	_progress_layer.draw_circle(center, radius * 0.9, Color(0.05, 0.04, 0.07, 0.34 * alpha))
-	for tier in range(3):
-		var r := radius * (1.0 - float(tier) * 0.26)
-		var pe := center + Vector2(radius * 0.42 * float(tier - 1), -r * 0.06 * float(tier))
-		var shell := PackedVector2Array([pe + Vector2(-r, 0.0)])
-		for step in range(1, 6):
-			var angle := PI - float(step) * PI / 6.0
-			shell.append(pe + Vector2(cos(angle) * r, sin(angle) * -r * 0.58))
-		shell.append(pe + Vector2(r, 0.0))
-		_progress_layer.draw_colored_polygon(shell,
-			Color(0.36, 0.34, 0.38, (0.50 + float(tier) * 0.15) * alpha))
-	for tijolo in range(2):
-		var canto := center + Vector2(radius * (0.62 - float(tijolo) * 1.24), -radius * 0.2 * float(tijolo))
-		_progress_layer.draw_rect(Rect2(canto, Vector2(radius * 0.36, radius * 0.16)),
-			Color(0.34, 0.20, 0.16, 0.75 * alpha))
-
-## A camada em si: tudo desenhado em código, em coordenadas normalizadas da sala,
-## para funcionar nas quatro salas sem arte nova e sem arquivo novo no repositório.
-func _draw_progress_decor() -> void:
-	if not _stage_walkable or _progress_layer.size.x <= 0.0:
-		return
-	var wide := _progress_layer.size.x
-	var tall := _progress_layer.size.y
-	var floor_line: Vector2 = STAGE_ROOM_FLOOR.get(_stage_room, Vector2(0.60, 0.80))
-	var ground := Vector2(wide * floor_line.x, tall * floor_line.y)
-	var obras := _renovation_alpha(_progress_band)
-	# A faixa 0 é o canteiro: nada de tapete, porque o piso ainda não foi encerado.
-	# Faixa 1 — o piso encerado: a camada não desenha um tapete novo por cima do
-	# que a arte já pintou, ela realça o tapete que está lá. Uma lavagem quente e
-	# outra funda na mesma silhueta, e o brilho da borda de trás.
-	if _progress_band >= 1:
-		var mat := PackedVector2Array([])
-		var rug: Array = PROGRESS_RUG.get(_stage_room, [])
-		if rug.size() == 4:
-			for corner in rug:
-				mat.append(Vector2(wide * (corner as Vector2).x, tall * (corner as Vector2).y))
-		else:
-			var w := wide * 0.30
-			var deep := tall * 0.055
-			mat = PackedVector2Array([
-				ground + Vector2(-w * 0.55, -deep * 2.0),
-				ground + Vector2(w * 0.55, -deep * 2.0),
-				ground + Vector2(w, deep),
-				ground + Vector2(-w, deep),
-			])
-		_progress_layer.draw_colored_polygon(mat, Color(1.0, 0.70, 0.36, 0.09))
-		_progress_layer.draw_colored_polygon(mat, Color(0.20, 0.02, 0.09, 0.16))
-		_progress_layer.draw_line(mat[0], mat[1], Color(0.88, 0.70, 0.34, 0.28), 2.0)
-	# A obra por último: prancha, pé de escoramento e entulho têm de aparecer na
-	# frente do tapete, senão o andaime afunda no piso encerado.
-	if obras > 0.0:
-		_draw_progress_works(wide, tall, ground, obras)
-	if _progress_band < 2:
-		return
-	# Faixa 2 — velas acesas: cada luz que a sala já tem na arte ganha o próprio
-	# halo, largo e fraco, para parecer chama e não mancha.
-	var lamps: Array = STAGE_ROOM_LIGHTS.get(_stage_room, [])
-	for lamp in lamps:
-		var here := Vector2(wide * (lamp as Vector2).x, tall * (lamp as Vector2).y)
-		_progress_layer.draw_circle(here, wide * 0.055, Color(1.0, 0.72, 0.30, 0.05))
-		_progress_layer.draw_circle(here, wide * 0.030, Color(1.0, 0.76, 0.34, 0.07))
-		_progress_layer.draw_circle(here, wide * 0.010, Color(1.0, 0.88, 0.55, 0.30))
-	if _progress_band < 3:
-		return
-	# Faixa 3 — caixilho dourado: a moldura nasce na beirada da tela, então ela
-	# emoldura o salão em vez de entrar dentro dele.
-	var trim := maxf(2.0, wide * 0.0022)
-	for edge_y in [0.0, tall - trim]:
-		_progress_layer.draw_rect(Rect2(Vector2(0.0, edge_y), Vector2(wide, trim)),
-			Color(0.82, 0.66, 0.30, 0.42))
-	for edge_x in [0.0, wide - trim]:
-		_progress_layer.draw_rect(Rect2(Vector2(edge_x, 0.0), Vector2(trim, tall)),
-			Color(0.82, 0.66, 0.30, 0.42))
-	for corner_x in [0.03, 0.97]:
-		_progress_layer.draw_circle(Vector2(wide * corner_x, tall * 0.03), wide * 0.008,
-			Color(1.0, 0.84, 0.46, 0.18))
-	if _progress_band < 4:
-		return
-	# Faixa 4 — lustre aceso: a luz principal desce do teto em cone fraco e ganha
-	# corpo de brilho, sem ferragem desenhada por cima do lustre que a arte já tem.
-	# O centro é a luz pintada mais próxima do meio do teto, não o meio geométrico
-	# da tela — é ali que o olho já procura o lustre.
-	var crown := Vector2(ground.x, tall * 0.05)
-	var best := 9.9
-	for lamp in lamps:
-		var score := absf((lamp as Vector2).x - 0.5) + (lamp as Vector2).y
-		if score < best:
-			best = score
-			crown = Vector2(wide * (lamp as Vector2).x, tall * (lamp as Vector2).y)
-	_progress_layer.draw_colored_polygon(PackedVector2Array([
-		crown + Vector2(-wide * 0.05, 0.0),
-		crown + Vector2(wide * 0.05, 0.0),
-		crown + Vector2(wide * 0.13, tall * 0.30),
-		crown + Vector2(-wide * 0.13, tall * 0.30),
-	]), Color(1.0, 0.84, 0.46, 0.06))
-	for ring in range(4):
-		_progress_layer.draw_circle(crown, wide * (0.09 - float(ring) * 0.022),
-			Color(1.0, 0.82, 0.44, 0.05 + float(ring) * 0.05))
-	# Poeira dourada suspensa: pontos fixos por posição derivada do índice, sem
-	# RNG, para o salão continuar o mesmo entre dois redraws.
-	for mote in range(26):
-		var mx := fmod(float(mote) * 0.137, 1.0)
-		var my := fmod(float(mote) * 0.311, 1.0)
-		_progress_layer.draw_circle(Vector2(wide * mx, tall * (0.12 + my * 0.62)),
-			wide * 0.0022, Color(1.0, 0.86, 0.48, 0.42))
-
 ## O que o painel diz da faixa: nome, o que ela acendeu e quanto falta para a
-## próxima — a decoração precisa ter número, senão é enfeite sem meta.
+## próxima — a reforma precisa ter número, senão é enfeite sem meta.
 func _progress_line() -> String:
 	var band := _progress_band_now()
 	var next_score: int = PROGRESS_BAND_SCORES[band + 1] if band + 1 < PROGRESS_BAND_SCORES.size() else 0
