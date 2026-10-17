@@ -18,7 +18,8 @@ extends SceneTree
 ## zero a mesma visita não tem porta nenhuma; (5) juro só existe para quem atrasou, quem tem
 ## bolso menor que a nota não é cobrado, e o ouro cobrado entra no balanço do dia da
 ## cobrança; (6) a riscada é no terceiro dia de atraso, com fama −2 e vínculo −1, e nos dois
-## primeiros o livro só marca; (7) teto por nota, uma nota por nome e lotação do livro barram
+## primeiros o livro só marca, e a linha da riscada agora fecha com o 📙 rodapé do livro de
+## reclamações (o par do #79): prejuízo 70, fama 40→38 e vínculo 5→4 continuam os mesmos; (7) teto por nota, uma nota por nome e lotação do livro barram
 ## a gaveta; (8) ler e escrever no livro não consome sorteio: a mesma semente dá a mesma
 ## cauda de 40 valores do controle limpo; (9) 200 tiques na mesma estante mixada (peça honesta
 ## que o bolso paga + peça Mítica que não paga): com o livro aberto o balcão serve mais gente
@@ -26,8 +27,10 @@ extends SceneTree
 ## atravessam o arquivo, payload lixo é podado, save antigo acorda com a gaveta fechada, e
 ## `_reset_run()` zera o livro junto com a vida; (11) o painel lê degrau, notas e botão, a
 ## escada custa 150 → 380 → 720, fama e caixa recusam degrau, e o quarto clique no teto não
-## gasta ouro; (12) os dois selos novos acendem nas fronteiras e a lista fecha com 89
-## definições.
+## gasta ouro; (12) os dois selos novos acendem nas fronteiras e a lista fecha com 97
+## definições (o par da bancada, #76, o par do salão das capas finas, #78, o par do próprio
+## livro de reclamações, #79, e o par do cartaz do combo, #80, entraram depois desta leitura;
+## a sonda lê o tamanho real).
 ##
 ## Armadilha de caixa, terceira torneira: a FICHA do freguês paga no PRIMEIRO atendimento que
 ## ele recebe (ato 1 = 20 + nível×4 de ouro, +1 de fama). Blindar só selos e nível deixou
@@ -46,7 +49,7 @@ extends SceneTree
 ## Armadilha de régua, corrigida a mao nesta sonda: a cauda de 40 `randi()` é sempre lida
 ## logo apos `seed(SEED_VAL)` cravado. Sem o segundo seed, a segunda cauda nasce na casa 80
 ## da stream e a sonda acusaria "o livro sorteia" onde o livro só lê dicionario. E as
-## medidas de caixa blindam os 89 selos e o nivel (degrau 60): a Primeira Venda paga 10
+## medidas de caixa blindam os selos da lista (97 na última corrida) e o nivel (degrau 60): a Primeira Venda paga 10
 ## ouro e um level-up paga 25 — sem isso, "venda a credito nao entra no caixa" mediria o
 ## premio da conquista em vez do fiado.
 ##
@@ -479,7 +482,8 @@ func _limpar_prateleira(g) -> void:
 	g.shelf_batches.clear()
 
 
-## Fecha as duas torneiras de ouro que não são o balcão: os 89 selos (todos já pagos, para
+## Fecha as duas torneiras de ouro que não são o balcão: os selos da lista, 97 na última
+## corrida (todos já pagos, para
 ## a "Primeira venda" não pagar no meio da medida) e o nível, estacionado longe do próximo
 ## degrau de XP. Sem isso, "venda a crédito não entra no caixa" estaria medindo o prêmio de
 ## conquista e o ouro de level-up — e o `_grant_pack()` que eles abrem moveria a sorteio.

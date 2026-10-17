@@ -29,6 +29,12 @@ Executar na ordem. Pular passo nao e acelerar, e estragar.
 Antes de assumir a versao do motor, conferir `"$GODOT" --version`; o usuario atualiza o
 Godot e o numero muda.
 
+Esta skill tem copia rastreada no repo em
+`.qoder/skills/godot-headless-probe-and-push-gate/SKILL.md`. O arquivo que carrega e o de
+`C:/Users/gmore/.qoder/skills/`; o do repo e o que as outras sessoes e pessoas leem. Toda
+edicao aqui precisa ser espelhada la e commitada, senao o portao passa a existir em duas
+versoes que dao respostas diferentes.
+
 ## Passo 0 - registrar o hash do save real
 
 Sempre antes de qualquer comando que instantiate o jogo.
@@ -93,8 +99,71 @@ func _frames(n: int) -> void:
 		await process_frame
 ```
 
+### Sonda de causa: o numero se moveu e nao sei por que
+
+Quando a pergunta nao e "a funcionalidade funciona?" e sim "por que o ouro pulou?", a
+sonda nao deve assertar nada: capture o estado da loja, rode UM `_on_customer_tick()` e
+imprima so o que divergiu. A atribuicao vem do mural, nao do delta.
+
+```gd
+const CHAVES := ["gold", "reputation", "daily_gold_earned", "customers_served",
+	"credit_book", "regular_bonds", "regular_arc_seen", "faction_standing",
+	"player_level", "player_xp", "unlocked_achievements", "shop_day"]
+
+func _estado(g) -> Dictionary:
+	var e := {}
+	for k in CHAVES:
+		e[k] = str(g.get(k))
+	return e
+
+func _divergiu(antes: Dictionary, depois: Dictionary) -> void:
+	for k in CHAVES:
+		if antes[k] != depois[k]:
+			print("   %s: %s -> %s" % [k, antes[k], depois[k]])
+
+# na corrida, por tique:
+var antes := _estado(g)
+g._on_customer_tick()
+var depois := _estado(g)
+_divergiu(antes, depois)
+for linha in String(g.last_event).split("\n"):
+	print("   mural: ", linha)
+```
+
+Regras desta sonda:
+- **`:=` nao infere de Dictionary nem de chamada sem tipo.** Medido em
+  `tools/probes/causa.gd`: `var texto := depois[k]` da Parse Error ("Cannot infer the
+  type ... because the value doesn't have a set type"), e `var g := await _loja(...)`
+  tambem. Escreva o tipo na mao: `var texto := str(depois[k])`, `var g = await _loja(...)`.
+- **O chao da loja e re-declarado, nao importado.** `const Bancada := preload(...)` e
+  `Bancada._loja("causa")` da Parse Error ("Cannot call non-static function on the class").
+  Toda sonda viva (`salao.gd`, `bancada.gd`, `fiado.gd`) carrega o proprio corpo de
+  `_loja()`: instanciar, `await _frames(3)`, `_fixar_locale()`, parar o `world_timer`,
+  `seed()`, `_reset_run()`. Copie o corpo, nao chame por classe.
+- **Sele as conquistas e o nivel antes de medir** (o `_blindar()` ja existe em
+  `tools/probes/bancada.gd`: `_selar()` + `player_level = 60`). Sem a rolha, o selo paga
+  ouro no meio do tique e a diferenca que voce atribui ao fiado era premio de conquista.
+  Medida real deste repo: um unico tique deu +260 de caixa e o culpado era a ficha de
+  arco, nao o livro de fiado.
+- **Um tique nao e uma causa.** A mesma virada cobre conta da casa, fiado vencido e selo.
+  Medido: um tique de loja nova nao moveu chave nenhuma e o mural era um roubo —
+  "pegou Pato Amaldiçoado e correu", zero ouro. Se o delta sair vazio, a resposta esta no
+  mural, nao na ausencia de diferenca.
+- **Por que cada chave da lista:** `daily_gold_earned` registra faturamento mesmo com o
+  ouro parado no livro; `credit_book` e Dictionary, dai o `str()` no snapshot (sem ele a
+  comparacao sai por referencia); `regular_bonds` e `regular_arc_seen` explicam a etiqueta
+  que andou sozinha; `unlocked_achievements` e a prova de que a rolha vazou.
+- Nao existe `badges` nem um `level`/`xp` de loja no `main.gd`: os nomes reais sao
+  `unlocked_achievements`, `player_level` e `player_xp`. A banda e derivada
+  (`_progress_band_now()` sobre `business_score()`), entao nao entra no snapshot.
+- Saida no formato do repo (`caixa 5000 -> 5059`), que e o que torna o diff lavel no log.
+
 Fotograma de cena: `get_root().get_texture().get_image().save_png(OUT + "nome.png")` e ler
 o PNG de volta com a ferramenta Read. Um probe sem saida legivel nao prova nada.
+
+Essa linha do fotograma so funciona **em janela** (ver passo 6): com `--headless` a textura
+vem null e cada `save_png` reprova. Se a sonda vai fotografar, ela ja nasce sem a flag -
+nao e um ajuste de ultimo minuto depois do primeiro erro.
 
 ## Passo 4 - armadilhas de determinismo (corrigidas a mao na origem deste ritual)
 
@@ -126,10 +195,30 @@ o PNG de volta com a ferramenta Read. Um probe sem saida legivel nao prova nada.
   registrada, pedir um idioma ausente devolve aquela unica tabela (medido: locale `de`
   acordou em ingles). O idioma original precisa de tabela identidade (chave -> chave), senao
   voltar ao portugues continua lendo ingles.
+- **O idioma e da pessoa, nao da partida, e por isso sobrevive ao `_reset_run()`.**
+  `_pick_locale()` (main.gd) grava `locale` + `locale_confirmed` em
+  `Locales.SETTINGS_PATH` = `user://locale_settings.cfg`; `_load_person_settings()` le o
+  arquivo no `_ready()`, e o comentario no codigo diz que a preferencia mora fora do save de
+  proposito. Uma rodada anterior que passou pelo seletor de idioma deixa o proximo probe em
+  ingles, e ai a assercao em portugues sobre `.text` le ausencia sem regressao alguma no
+  jogo: medido, o selo "FORMA DEMONÍACA" virou "AUSENTE (esperado presente)" em
+  `tools/probes/filtro.gd`. O jogo chama `tr()` antes de escrever o `.text` (painel de
+  furia, botoes de setor), entao o alvo e o rotulo. Fixar no helper da sonda, logo apos os
+  fotogramas de `_ready()` e antes de `_reset_run()`:
+  `g.locale = Locales.DEFAULT`, `g.locale_confirmed = true`,
+  `TranslationServer.set_locale(Locales.DEFAULT)`. Na duvida, imprimir `game.locale` antes
+  de afirmar regressao de texto.
 - **Modal auto-aberto em `_ready()` cega a sonda.** Uma janela que para o `world_timer` e
   so fecha por clique tranca qualquer probe headless (e screenshots ficam escurecidos pela
   camada dim). Guardar o auto-open com `DisplayServer.get_name() != "headless"` e chamar
   `_open_menu()` explicitamente na sonda.
+- **Save descartavel novo traz o seletor de idioma por cima de toda foto.** Medidas em
+  `tools/probes/galeria.gd`: as seis primeiras capturas sairam cobertas pelo "ESCOLHA O
+  IDIOMA", porque o APPDATA descartavel nunca viu a loja e o `locale_confirmed` esta
+  false. Fechar pelo caminho do jogador (`game._close_menu()`), nao com `visible = false`:
+  esconder a camada deixa o estado do menu vivo e pula a preferencia de idioma que o resto
+  das assercoes espera. Atencao: `_close_menu()` chama `_save_game()` - so e seguro porque
+  o `APPDATA` esta redirecionado.
 
 ## Passo 5 - `--check-only` na sonda e em tudo que foi tocado
 
@@ -158,8 +247,9 @@ rasterizador, entao `get_root().get_texture().get_image()` devolve null e cada
 parece aprovada - so que o olhar nao existe. Regra: logica pura = `--headless`;
 recorte de frame de cena = janela (`--path .` sem flag), e `mkdir -p` da pasta de saida
 antes, porque `save_png` falha em silencio para diretorio inexistente.
-`tools/probes/trajeto.gd` ja carrega essa dica no cabecalho ("janela: precisa de
-viewport para os recortes").
+`tools/probes/trajeto.gd` e `tools/probes/galeria.gd` carregam essa dica no cabecalho
+("janela: precisa de viewport para os recortes"). O resto do portao continua valendo na
+sonda de janela: `APPDATA` descartavel, log em arquivo, gate de grep e conferencia do save.
 
 - `APPDATA` inline no comando, nunca `export` no shell compartilhado.
 - Delete do save descartavel antes da rodada, para o probe nao ler progresso de teste
@@ -209,6 +299,17 @@ O destino de uma sonda e um destes tres, decididos pelo que ela respondeu:
    ```
    ## Uso: godot --headless --path . --quit-after 1800 -s res://tools/probes/<nome>.gd
    ```
+
+   Sonda que fotografa recebe a linha **sem** `--headless`, que e a unica que roda:
+
+   ```
+   ## Uso (janela aberta, de proposito):
+   ##   APPDATA="D:\\Downloads\\tmp-userdata" godot --path . --quit-after 90000 \
+   ##     -s res://tools/probes/<nome>.gd
+   ```
+
+   Copiar a linha headless para uma sonda de foto e deixar no repo um comando que reprova
+   na primeira linha - ver `tools/probes/galeria.gd` como referencia de cabecalho.
 
    Commitar como ferramenta de desenvolvimento, com o resto da tarefa.
 2. **Virou funcionalidade do jogo** - o que ela media deveria acontecer na partida, nao

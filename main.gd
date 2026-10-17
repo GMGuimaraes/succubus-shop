@@ -165,6 +165,45 @@ var credit_book: Dictionary = {}
 var credit_paid: int = 0
 var credit_written: int = 0
 var credit_lost_gold: int = 0
+## A bancada de ensaios desta vida. Um ensaio é um punhado de ingrediente na mesa e
+## uma pergunta: será que essa mistura casa com alguma receita que o nível ainda prende?
+## A resposta é tabela, não sorteio — o `randi()` da loja não é tocado aqui. `lab_trials`
+## guarda a assinatura canônica da mistura ("po_lunar:1+sal:1") -> o id que ela entregou,
+## ou "" para beco sem saída; `lab_mix` é o que está em brasa agora, `lab_hints` são as
+## fichas que o grimório já vendeu, e `lab_discovered` só conta o que a bancada entregou,
+## porque a escada do nível e a leitura da biblioteca também abrem receita.
+var lab_trials: Dictionary = {}
+var lab_mix: Dictionary = {}
+var lab_hints: Array[String] = []
+var lab_discovered: Array[String] = []
+var lab_flops: int = 0
+## O salão das capas finas desta vida. O cordão de veludo é um degrau comprado na
+## recepção: com ele guardado na gaveta (`vip_rank == 0`) nenhuma visita é sorteada como
+## capa fina, nenhum número de balcão se move e nenhum sorteio extra é consumido. Cada
+## degrau traz mais visitas que pagam mais, exigem o topo da barra de qualidade e devolvem
+## gorjeta — e quando a estante não tem o degrau que elas aceitam, elas vão embora falando.
+var vip_rank: int = 0
+var vip_served: int = 0
+var vip_refusals: int = 0
+var vip_tips_gold: int = 0
+## O que a rua conta da casa nesta vida. `complaints` é o livro aberto (sobe quando a casa
+## erra, desce uma linha por virada e some quando a voz é comprada); `complaints_written` e
+## `complaints_hushed` são a história do livro, para o painel saber quantas linhas já entraram
+## e quantas saíram pagas. Livro em branco é loja normal: nenhum número se move.
+var complaints: int = 0
+var complaints_written: int = 0
+var complaints_hushed: int = 0
+## O ritmo do balcão nesta vida. `combo_streak` conta as vendas seguidas de hoje (morre na
+## virada e morre em quem sai sem comprar); `combo_day_best` e `combo_day_gold` são o dia
+## que está acabando, para o balanço; `combo_best` e `combo_gold` são a história da vida,
+## que as conquistas lêem. Com o cartaz guardado (`combo_rank == 0`) nada daqui vira ouro:
+## a casa conta a sequência, mas não cobra nem paga por ela.
+var combo_rank: int = 0
+var combo_streak: int = 0
+var combo_day_best: int = 0
+var combo_day_gold: int = 0
+var combo_best: int = 0
+var combo_gold: int = 0
 ## Conserva da casa: cada visita pisa barro, a vassoura custa ouro, e a etiqueta
 ## despenca no salão imundo. Os números são a única novidade; todos caem em
 ## fórmulas que o jogo já usava (paciência de fila, multiplicador de preço, conta
@@ -250,6 +289,83 @@ const CREDIT_INTEREST := 0.15
 ## Dias de atraso antes de a casa riscar a nota: o ouro vai embora, a reputação também
 ## um pouco, e o vínculo do devedor desce um degrau.
 const CREDIT_WRITEOFF_DAYS := 3
+## A bancada de ensaios. Os números são todos de mesa de trabalho, não de painel: o
+## ensaio queima os ingredientes que estão na brasa **e** cobra carvão por unidade, porque
+## avental e brasa não vêm de graça. O teto de unidades é o da receita mais gorda da
+## estante (2 + 1) arredondado para cima, para existir margem de erro sem a bancada virar
+## uma forja secreta.
+const LAB_FEE_PER_UNIT := 12
+const LAB_MAX_UNITS := 4
+## Duas espécies por ensaio: é o tamanho da pergunta. Três espécies seria outra
+## mecânica, e a pessoa tem uma loja para tocar.
+const LAB_MAX_KINDS := 2
+## Barro que um ensaio sem saída deixa no salão: a mistura falha, estoura, e a casa
+## pisca isso no chão até a criada passar.
+const LAB_FIZZLE_MESS := 3
+## Experiência do que não deu: beco errado também ensina, só que pouco.
+const LAB_FIZZLE_XP := 2
+## Experiência do acerto — mais que um degrau de leitura, menos que uma forja lendária.
+const LAB_DISCOVERY_XP := 12
+## Palpite do grimório: ouro pela ficha de ingredientes de uma receita travada, uma por
+## vez, na mesma ordem da escada de leitura. Segue o desconto da biblioteca (#biblioteca)
+## porque é a mesma estante falando, só que do lado da bancada.
+const LAB_HINT_COST := 60
+## Os três cordões do salão. `chance` é a fatia das visitas que chegam de capa fina,
+## `budget` multiplica o bolso do perfil, `standard` é o degrau mínimo da barra de
+## qualidade que a visita aceita levar (0 aceita tudo, 2 é Refinado, 3 Obra-prima, 4
+## Mítico) e `tip` é a gorjeta sobre o preço de tabela da peça. O cordão não compra
+## respeito: servir mal é fama que vai embora junto com a visita.
+const VIP_TIERS := [
+	{"rank": 0, "cost": 0, "rep": 0, "chance": 0, "budget": 1.0, "standard": 0, "tip": 0.0},
+	{"rank": 1, "cost": 220, "rep": 10, "chance": 8, "budget": 2.0, "standard": 2, "tip": 0.15},
+	{"rank": 2, "cost": 520, "rep": 24, "chance": 14, "budget": 2.6, "standard": 3, "tip": 0.22},
+	{"rank": 3, "cost": 1100, "rep": 45, "chance": 22, "budget": 3.4, "standard": 4, "tip": 0.30},
+]
+## Uma capa fina tem tempo próprio: ela não disputa o último degrau da fila correndo, e
+## por isso espera um tique a mais que o perfil sorteado.
+const VIP_PATIENCE_BONUS := 1
+## O livro de reclamações da rua: a casa pode estar no topo da fama e ainda assim estar
+## malquista, porque queixa não é desconhecimento — é serviço ruim que a rua conta uma à
+## outra. Com o livro em branco nenhum número do balcão se move: etiqueta, paciência e
+## porta só cobram a partir da sexta linha, e nada aqui consome sorteio.
+const COMPLAINT_LINE := 6
+const COMPLAINT_SCANDAL := 12
+const COMPLAINT_CAP := 24
+## Etiqueta que a rua cobra por linha acima da sexta, com teto: quem ouve falar mal da
+## loja pechincha, e pechincha até um piso.
+const COMPLAINT_LABEL_STEP := 0.02
+const COMPLAINT_LABEL_MAX := 0.20
+## A fila e a porta sentem o livro em degraus, não em linhas: boca pequena atrasa um tique,
+## escândalo atrasa dois e tira um corpo da calçada.
+const COMPLAINT_PATIENCE_LOSS := [0, 1, 2]
+const COMPLAINT_CROWD_LOSS := [0, 0, 1]
+## Pagar a voz da rua apaga três linhas de uma vez e custa mais quanto mais o livro lê.
+const COMPLAINT_HUSH_ERASE := 3
+const COMPLAINT_HUSH_BASE := 40
+const COMPLAINT_HUSH_PER_LINE := 12
+## As três fontes: peça torto na mão de alguém, capa fina devolvida no lugar e nota riscada
+## no livro de fiado. São as três vezes em que a casa erra e a rua percebe.
+const COMPLAINT_FROM_TORTO := 1
+const COMPLAINT_FROM_VIP_REFUSAL := 2
+const COMPLAINT_FROM_WRITE_OFF := 1
+## O cartaz do combo, em três degraus — e o degrau zero é a loja de sempre: a sequência
+## de vendas acontece, o balcão continua contando dela para o painel ninguém, e nenhum
+## centavo muda de lado. `start` é a venda seguida a partir da qual a casa paga, `step`
+## é o acréscimo por venda acima disso e `cap` é o teto da etiqueta: combo bom é ritmo,
+## não segunda economia. A sequência morre no dia que vira e morre na visita que sai sem
+## comprar — é por isso que o cartaz é o prêmio de quem tem balcão que dá conta.
+const COMBO_TIERS := [
+	{"rank": 0, "cost": 0, "rep": 0, "start": 0, "step": 0.0, "cap": 0.0},
+	{"rank": 1, "cost": 180, "rep": 6, "start": 3, "step": 0.02, "cap": 0.06},
+	{"rank": 2, "cost": 460, "rep": 18, "start": 3, "step": 0.03, "cap": 0.12},
+	{"rank": 3, "cost": 980, "rep": 38, "start": 2, "step": 0.05, "cap": 0.25},
+]
+## Teto da contagem: acima de doze vendas seguidas o bônus já está no teto de qualquer
+## degrau, então o painel para de contar e o save não precisa de um número sem fundo.
+const COMBO_CEIL := 12
+## Meta da segunda conquista do cartaz: quanto o combo já precisa ter posto no caixa na
+## mesma vida para a casa admitir que o cartaz se pagou sozinho.
+const COMBO_PRIZE_GOLD := 600
 ## Os nomes que a casa enxerga quando a ronda segura um braço no ar. Ninguém aqui é
 ## freguês de casa: vândalo sorteado é gente de fora do elenco, e por isso vai para
 ## a cela sem levar vínculo junto.
@@ -293,88 +409,70 @@ const PROGRESS_BAND_SCORES: Array[int] = [0, 900, 2400, 5200, 9000]
 const PROGRESS_BAND_NAMES: Array[String] = [
 	"casa em obras", "balcão arrumado", "casa respeitada", "endereço no bairro", "império da rua",
 ]
-## A luz de cada faixa, aplicada sobre o mesmo PNG. A escada começa ABAIXO da cor
-## original de propósito: o estado pintado da arte é o meio da escada (faixa 2, "casa
-## respeitada"), não o ponto de partida. Quem abre o jogo pela primeira vez vê um salão
-## cru e sem luz acesa; quem fecha a vida no império vê a mesma pintura mais quente do
-## que ela jamais foi. Um valor por faixa, sem fórmula, para a escada poder ter degrau
-## torto onde a sensação pedir.
-##
-## O degrau 0 é medido na tela, não no papel: a 0,58 o salão continuava mobiliado e
-## aceso, e "casa em obras" tem de constranger antes de premiar. Abaixo de 0,5 o
-## painel de texto fica ilegível, e é por isso que a luz só desce até aí.
+## A luz de cada faixa, aplicada sobre a arte DA faixa. Antes da escada em arte este
+## degrau fazia o trabalho inteiro: o mesmo PNG esfriava até 0,46 para fingir obra. Agora
+## a parede crua, o balcão de cavaletes e o lustre aceso estão desenhados, então a luz
+## só segura o clima — fria e azulada no casarão vazio, quente no império — e uma escada
+## curta bastou. O valor continua um por faixa, sem fórmula, para o degrau poder ser
+## torto onde a sensação pedir, e a faixa 2 continua sendo 1,00: é a cor original da
+## arte que a loja já tinha.
 const PROGRESS_BAND_LIGHT: Array[Color] = [
-	Color(0.46, 0.46, 0.62),
-	Color(0.72, 0.72, 0.85),
+	Color(0.80, 0.82, 0.95),
+	Color(0.92, 0.90, 0.96),
 	Color(1.00, 1.00, 1.00),
-	Color(1.06, 1.03, 0.96),
-	Color(1.12, 1.07, 0.93),
+	Color(1.05, 1.03, 0.98),
+	Color(1.10, 1.06, 0.94),
 ]
-## O que cada faixa acende. É a mesma lista que a camada desenhada em código lê,
-## escrita para o painel: ninguém decora o que a chefe não consegue nomear.
+## O que cada faixa entrega. É a legenda da escada de arte (`PROGRESS_BAND_ART`), escrita
+## para o painel: ninguém decora o que a chefe não consegue nomear, e o aviso da faixa
+## precisa bater com o que mudou na tela.
 const PROGRESS_BAND_GIFTS: Array[String] = [
-	"o salão em obras: poeira no ar, massa crua na parede, lona no piso e uma lâmpada no fio",
-	"piso encerado e tapete realçado na faixa de passeio",
-	"+ cordão de velas acesas nas paredes do salão",
-	"+ caixilho dourado na moldura da tela",
-	"+ lustre aceso no teto e poeira dourada no ar",
+	"o salão cru: parede sem tinta, prancha sobre cavaletes no lugar do balcão e uma lâmpada no fio",
+	"balcão de madeira entalhada, o primeiro tapete e duas prateleiras de frascos",
+	"estantes de vitrine até o teto, letreiro de asas aceso e o balcão de honra",
+	"+ dourado nas molduras, lustre no teto e o sofá da frente",
+	"+ o teto inteiro aceso, relíquias transbordando e tapete bordado até a porta",
 ]
-## A obra da faixa 0, em fração da tela. Nada aqui desenha um cenário novo nem emoldura
-## a arte que já existe: são demãos que faltam na parede, pano no piso, prancha de
-## andaime, entulho ancorado na linha do chão e o fio da lâmpada. Os móveis cobertos de
-## lona não usam coordenada nenhuma: é a própria cor do recorte dos móveis que fica
-## lavada (ver `_apply_progress_decor`), porque a oclusão repinta o móvel POR CIMA da
-## camada e comeria qualquer pano desenhado ali.
-##
-## A gramática é escura por medida, não por gosto: a arte do salão é saturada e no
-## escuro, e o probe `tools/probes/cara.gd` mostrou que retângulo claro por cima dela lê
-## como vidro fosco de interface, não como obra. Falta é sombra.
-##
-## A geometria fica na faixa de passeio da recepção (x 0,20 a 0,42), que é o piso livre
-## da sala principal. Sala onde uma peça colide com o contorno de um móvel mostra o que
-## sobra — mesma regra do tapete e do caixilho.
-const RENOVATION_WALL_PATCHES: Array[Rect2] = [
-	Rect2(0.185, 0.055, 0.175, 0.135),
-	Rect2(0.44, 0.02, 0.135, 0.095),
-	Rect2(0.675, 0.095, 0.165, 0.115),
-	Rect2(0.30, 0.235, 0.105, 0.085),
-	Rect2(0.78, 0.275, 0.12, 0.075),
+## A escada em arte, não em tinta sobre a mesma arte. Cada faixa tem o MESMO salão
+## pintado da MESMA câmera num estado diferente: faixa 0 é o casarão cru e quase vazio,
+## faixa 4 é o império de ouro. A faixa 2 é `shop_scene.png` porque a arte que o jogo
+## já tinha sempre representou a "casa respeitada" — ela só deixou de ser o ponto de
+## partida de todo mundo.
+const PROGRESS_BAND_ART: Array[String] = [
+	"res://assets/salon_bare_scene.png",
+	"res://assets/salon_tidy_scene.png",
+	"res://assets/shop_scene.png",
+	"res://assets/salon_gilded_scene.png",
+	"res://assets/salon_empire_scene.png",
 ]
-## Pares de pé-direito do escoramento (dois por cavalete) e a altura da prancha.
-const RENOVATION_POLES: Array[float] = [0.222, 0.268, 0.352, 0.398]
-const RENOVATION_PLANK_Y := 0.455
-## A lona estendida no piso, em quatro cantos: superior esquerdo, superior direito,
-## inferior direito, inferior esquerdo. É o único claro grande da cena, e por isso é
-## chumbo, não branco.
-const RENOVATION_CLOTH: Array[Vector2] = [
-	Vector2(0.185, 0.795), Vector2(0.415, 0.772), Vector2(0.475, 0.905), Vector2(0.150, 0.928),
-]
-## Montículos de entulho, em deslocamento a partir do ponto do chão pintado: o pé
-## prende no piso da sala, não numa altura arbitrária da tela.
-const RENOVATION_RUBBLE: Array[Vector2] = [
-	Vector2(-0.375, -0.008), Vector2(-0.295, 0.012), Vector2(-0.225, -0.018),
-]
-## Balde de tinta no pé do andaime, em deslocamento do ponto do chão.
-const RENOVATION_BUCKET := Vector2(-0.185, 0.004)
-## Quantas faixas de progresso ainda mostram a obra. A lona some antes do luxo chegar,
-## senão a casa "respeitada" continuaria com o balcão tapado.
-const RENOVATION_LAST_BAND := 1
-## Sala sem entrada aqui recebe a faixa de passeio no lugar.
-const PROGRESS_RUG := {
-	"res://assets/shop_scene.png": [
-		Vector2(0.30, 0.72), Vector2(0.70, 0.72), Vector2(0.83, 1.0), Vector2(0.19, 1.0),
-	],
-	"res://assets/library_room_scene.png": [
-		Vector2(0.26, 0.78), Vector2(0.74, 0.78), Vector2(0.86, 1.0), Vector2(0.14, 1.0),
-	],
-}
-## Faixa atual e a camada que a desenha. Camada própria, acima do fundo pintado e
-## abaixo do elenco: a decoração não compete com corpo nem come o clique de ninguém.
-var _progress_band: int = 0
+## Os cinco estados são a mesma sala filmada do mesmo ponto, então chão, porta, fila,
+## vitrine e ponto de encontro são UM só jogo de coordenadas: `_apply_room_props`
+## normaliza qualquer arte da escada por esta chave.
+const SALON_GEOMETRY_KEY := "res://assets/shop_scene.png"
+
+## A arte da faixa, com degradação honesta: instalação sem o arquivo novo (fatia de
+## arte não importada, teste em máquina limpa) volta à arte cheia em vez de abrir a
+## recepção com fundo preto.
+func _salon_art(band: int) -> String:
+	var path := PROGRESS_BAND_ART[clampi(band, 0, PROGRESS_BAND_ART.size() - 1)]
+	return path if ResourceLoader.exists(path) else SALON_GEOMETRY_KEY
+
+## Toda arte da escada responde pela geometria do salão cheio. É uma função e não um
+## `if` no laço de cada tabela: as dez tabelas de sala chamam `_apply_room_props` para
+## descobrir a chave, e uma faixa esquecida ali viraria sala sem chão.
+func _room_key(scene_path: String) -> String:
+	return SALON_GEOMETRY_KEY if PROGRESS_BAND_ART.has(scene_path) else scene_path
+
+## Faixa atual do salão. É a arte que a faixa pinta, não uma camada desenhada por
+## cima da mesma arte: a escada inteira (`PROGRESS_BAND_ART`) vive nos arquivos, e a
+## única tinta que sobra é a luz de `PROGRESS_BAND_LIGHT`.
+## Começa em −1 porque NENHUMA arte foi pintada ainda: a 0 é uma faixa como as outras, e
+## abrir o jogo já em faixa 0 faria o primeiro painel dar a mão como igual — a casa
+## acorderia no salão cheio com o placar dizendo "casa em obras".
+var _progress_band: int = -1
 ## O primeiro painel da sessão não comemora: a casa pode abrir já crescida, e
 ## festa de carregamento é festa falsa.
 var _progress_quiet: bool = true
-var _progress_layer: Control
 ## Pedidos de facção já entregues (facção → quantos). É nome, não ouro: fica na
 ## conta salva depois da ruína e da reencarnação, e o privilégio do arco fechado
 ## continua valendo na vida seguinte.
@@ -754,6 +852,17 @@ var spec_buttons: Array = []
 var pack_button: Button
 var credit_button: Button
 var credit_label: Label
+var lab_label: Label
+var lab_add_buttons: Array = []
+var lab_clear_button: Button
+var lab_fire_button: Button
+var lab_hint_button: Button
+var vip_label: Label
+var vip_button: Button
+var complaint_label: Label
+var complaint_button: Button
+var combo_label: Label
+var combo_button: Button
 var card_gallery_labels: Array = []
 var board_label: Label
 var score_button: Button
@@ -900,6 +1009,14 @@ const STAGE_ROOM_PROPS := {
 	"res://assets/forge_scene.png": [Rect2(0.0, 0.555, 0.165, 0.445), Rect2(0.77, 0.60, 0.23, 0.40), Rect2(0.655, 0.525, 0.095, 0.15)],
 	"res://assets/library_room_scene.png": [Rect2(0.225, 0.42, 0.13, 0.30), Rect2(0.0, 0.52, 0.215, 0.21), Rect2(0.78, 0.525, 0.205, 0.195)],
 	"res://assets/sanctum_room_scene.png": [Rect2(0.0, 0.53, 0.14, 0.17), Rect2(0.862, 0.53, 0.138, 0.17), Rect2(0.235, 0.515, 0.055, 0.15), Rect2(0.71, 0.505, 0.055, 0.15)],
+	## A mesa de guerra é o balcão da guilda: o tampo entra como contorno inclinado na
+	## altura da BORDA DE CIMA do tampo (não da superfície pintada), porque é a partir
+	## dali que a mesa é sólida e esconde quem está atrás.
+	"res://assets/expedition_hall_scene.png": [
+		[Vector2(0.225, 0.525), Vector2(0.70, 0.50), Vector2(0.71, 0.715), Vector2(0.205, 0.72)],
+		[Vector2(0.0, 0.30), Vector2(0.175, 0.335), Vector2(0.175, 0.60), Vector2(0.0, 0.585)],
+		[Vector2(0.665, 0.435), Vector2(0.845, 0.45), Vector2(0.845, 0.585), Vector2(0.665, 0.575)],
+	],
 }
 ## Móveis que ocupam uma faixa de profundidade do piso: mais ao fundo eles
 ## escondem a figura; mais perto da câmera, a figura passa na frente. Cada valor
@@ -907,6 +1024,11 @@ const STAGE_ROOM_PROPS := {
 const STAGE_ROOM_PROP_DEPTHS := {
 	"res://assets/library_room_scene.png": [0.32, 0.40, 0.40],
 	"res://assets/sanctum_room_scene.png": [0.56, 0.56, 0.39, 0.39],
+	## Os três móveis da guilda têm profundidade própria: a mesa de guerra fica no meio
+	## da sala (0,50) e as duas pilhas de caixote encostam na parede do fundo (0,05 e
+	## 0,09). Sem isso o balcão pintado engoliria a fila inteira, que espera JUSTO na
+	## frente dele.
+	"res://assets/expedition_hall_scene.png": [0.50, 0.09, 0.05],
 }
 ## Quantos contornos de móvel o shader aguenta ao mesmo tempo.
 const STAGE_PROP_SLOTS := 8
@@ -931,6 +1053,9 @@ const STAGE_ROOM_DOOR := {
 	"res://assets/forge_scene.png": [Vector2(0.02, 0.12), Vector2(0.26, 0.30)],
 	"res://assets/library_room_scene.png": [Vector2(0.98, 0.12), Vector2(0.72, 0.30)],
 	"res://assets/sanctum_room_scene.png": [Vector2(0.02, 0.10), Vector2(0.30, 0.30)],
+	## A guilda abre para a rua pelo arco da direita: é a única passagem pintada na
+	## arte, e ela leva ao beco onde o batedor some.
+	"res://assets/expedition_hall_scene.png": [Vector2(0.98, 0.12), Vector2(0.86, 0.28)],
 }
 ## Profundidade da quarta parede: abaixo de 1.0 o pé ainda pisa no chão pintado;
 ## daqui para baixo a figura entra cortada pela beirada da tela.
@@ -944,6 +1069,9 @@ const STAGE_ROOM_ARRIVE := {
 	"res://assets/forge_scene.png": [Vector2(0.42, STAGE_FOURTH_WALL_DEPTH), Vector2(0.40, 1.00), Vector2(0.42, 0.90)],
 	"res://assets/library_room_scene.png": [Vector2(0.52, STAGE_FOURTH_WALL_DEPTH), Vector2(0.50, 1.00), Vector2(0.48, 0.90)],
 	"res://assets/sanctum_room_scene.png": [Vector2(0.46, STAGE_FOURTH_WALL_DEPTH), Vector2(0.44, 1.00), Vector2(0.46, 0.90)],
+	## O piso livre da guilda é a faixa de tábua na frente do tapete: quem chega entra
+	## pelo pé da tela no meio dela, em vez de nascer em cima da mesa de guerra.
+	"res://assets/expedition_hall_scene.png": [Vector2(0.40, STAGE_FOURTH_WALL_DEPTH), Vector2(0.42, 1.00), Vector2(0.46, 0.90)],
 }
 ## Onde a fila espera, do primeiro (mais perto do balcão) ao último degrau, na
 ## lateral do tapete: quem espera não tapa a chefe nem atravessa o salão, e o corpo
@@ -962,6 +1090,11 @@ const STAGE_ROOM_QUEUE := {
 	"res://assets/forge_scene.png": [Vector2(0.235, 0.70), Vector2(0.215, 0.60), Vector2(0.20, 0.50), Vector2(0.19, 0.40), Vector2(0.182, 0.30), Vector2(0.175, 0.22)],
 	"res://assets/library_room_scene.png": [Vector2(0.62, 0.70), Vector2(0.65, 0.60), Vector2(0.68, 0.50), Vector2(0.71, 0.40), Vector2(0.73, 0.30), Vector2(0.75, 0.22)],
 	"res://assets/sanctum_room_scene.png": [Vector2(0.28, 0.70), Vector2(0.245, 0.60), Vector2(0.22, 0.50), Vector2(0.20, 0.40), Vector2(0.182, 0.30), Vector2(0.168, 0.22)],
+	## Na guilda a porta é à direita, então a fila sobe pela direita: o primeiro degrau
+	## encosta no canto da mesa de guerra e o último já pisa a soleira do arco. Nenhum
+	## deles cai sob as três pilhas de móvel da sala — a mesa tem profundidade 0,50 e a
+	## fila toda espera mais perto da câmera que isso.
+	"res://assets/expedition_hall_scene.png": [Vector2(0.60, 0.72), Vector2(0.66, 0.62), Vector2(0.72, 0.52), Vector2(0.78, 0.44), Vector2(0.83, 0.38), Vector2(0.87, 0.32)],
 }
 ## Quanto o chão desce por ponto de profundidade na quarta parede, em fração da
 ## altura da tela. Sem isso o corpo entraria flutuando na borda em vez de subir do
@@ -982,6 +1115,9 @@ const STAGE_ROOM_BROWSE := {
 	"res://assets/forge_scene.png": [Vector2(0.60, 0.55), Vector2(0.20, 0.66)],
 	"res://assets/library_room_scene.png": [Vector2(0.29, 0.58), Vector2(0.87, 0.48)],
 	"res://assets/sanctum_room_scene.png": [Vector2(0.62, 0.50), Vector2(0.37, 0.60)],
+	## Quem sai satisfeito da guilda se detém diante do mapa da mesa e diante da jaula
+	## de relíquias do caixote direito — as duas vitrines que a sala tem.
+	"res://assets/expedition_hall_scene.png": [Vector2(0.30, 0.66), Vector2(0.76, 0.58)],
 }
 ## Poses que um cliente satisfeito faz parado diante de uma prateleira.
 const STAGE_BROWSE_POSES := ["curiosidade", "pensativo", "aprovacao", "aponta", "risada", "felicidade"]
@@ -991,6 +1127,10 @@ const STAGE_ROOM_MEET := {
 	"res://assets/forge_scene.png": Vector2(0.30, 0.44),
 	"res://assets/library_room_scene.png": Vector2(0.42, 0.55),
 	"res://assets/sanctum_room_scene.png": Vector2(0.50, 0.32),
+	## A chefe de expedições recebe atrás da mesa de guerra, no centro do mapa, e o
+	## cliente do turno encosta do lado de cá: os dois x quase coincidentes são o que
+	## faz a conversa acontecer EM CIMA da mesa, como quem planeja uma estrada junto.
+	"res://assets/expedition_hall_scene.png": Vector2(0.44, 0.46),
 }
 ## Faixa de chão pintado de cada sala, em fração da altura da tela: onde o piso
 ## nasce ao fundo e onde ele chega na frente. É isto que prende o pé do elenco ao
@@ -1000,12 +1140,19 @@ const STAGE_ROOM_FLOOR := {
 	"res://assets/forge_scene.png": Vector2(0.60, 0.80),
 	"res://assets/library_room_scene.png": Vector2(0.655, 0.84),
 	"res://assets/sanctum_room_scene.png": Vector2(0.585, 0.79),
+	## O assoalho da guilda nasce atrás do tapete (0,58, na base dos caixotes) e chega
+	## até a beirada de baixo da tela: a sala é toda piso, sem escada nem vitral no
+	## caminho, e é por isso que o fundo dela é mais alto que o do salão.
+	"res://assets/expedition_hall_scene.png": Vector2(0.58, 0.85),
 }
 const STAGE_ROOM_LIGHTS := {
 	"res://assets/shop_scene.png": [Vector2(0.08, 0.22), Vector2(0.50, 0.05), Vector2(0.91, 0.18), Vector2(0.32, 0.48), Vector2(0.64, 0.42)],
 	"res://assets/forge_scene.png": [Vector2(0.52, 0.24), Vector2(0.08, 0.16), Vector2(0.91, 0.18)],
 	"res://assets/library_room_scene.png": [Vector2(0.16, 0.18), Vector2(0.82, 0.20), Vector2(0.50, 0.08)],
 	"res://assets/sanctum_room_scene.png": [Vector2(0.24, 0.20), Vector2(0.76, 0.20), Vector2(0.50, 0.08)],
+	## A guilda é acesa por tocha e não por vela: a lanterna grande do teto, as duas
+	## tochas da parede do fundo, a brasa do arco e a lâmpada que está em cima da mesa.
+	"res://assets/expedition_hall_scene.png": [Vector2(0.44, 0.09), Vector2(0.19, 0.22), Vector2(0.775, 0.22), Vector2(0.345, 0.42), Vector2(0.975, 0.17)],
 }
 ## Altura de um adulto em primeiro plano. As camadas de trás escalam em cima dela
 ## para casar com a perspectiva da arte.
@@ -1024,7 +1171,6 @@ const STAGE_ARRIVE_SECONDS := 2.8
 const STAGE_ARRIVE_TICK_FRACTION := 0.62
 const OFFLINE_FARM_MAX_SECONDS := 12.0 * 60.0 * 60.0
 const OFFLINE_FARM_BRANCH_PERIOD := 60.0 * 60.0
-const STORE_RENOVATION_ART_ENABLED := false
 const LOOT_BUYBACK_RATES: Array[int] = [35, 45, 55]
 const RETAIL_PRICE_RATES: Array[int] = [85, 100, 115, 130]
 const MAX_RESALE_STOCK_PER_PRODUCT := 25
@@ -1081,9 +1227,11 @@ var _stage_waiters: Array[Dictionary] = []
 var _stage_back_band: Control
 var _market_top_guard: Control
 var _stage_room: String = "res://assets/shop_scene.png"
-var _active_store_visual_path: String = ""
-## Se a sala atual tem chão andável. A camada de progresso respeita a flag: sem
-## chão pintado (close-up de cena), não há tapete nem lustre onde desenhar.
+## A arte realmente em exibição: o caminho do PNG pintado no fundo e na oclusão, que é
+## uma das faixas do salão enquanto `_stage_room` é só a geometria dele.
+var _stage_art: String = "res://assets/shop_scene.png"
+## Se a sala atual tem chão andável. Close-up de cena não tem palco: o elenco fica nos
+## bastidores, e a faixa de progresso não troca a arte de uma cara grande.
 var _stage_walkable: bool = true
 var _seller_home: Vector2 = Vector2.ZERO
 var _stage_layout_key := Vector2(-1.0, -1.0)
@@ -1306,7 +1454,6 @@ func _ready() -> void:
 	_mark_day_start()
 	_sync_quality_stock()
 	_build_ui()
-	_apply_store_visual(player_level)
 	_apply_sector_visibility()
 	_setup_background_music()
 	_apply_music_settings()
@@ -2128,11 +2275,7 @@ func _show_stage_for_room(scene_path: String, walkable: bool) -> void:
 		if stale.is_valid():
 			stale.kill()
 	_stage_fade_tweens.clear()
-	# A decoração por faixa é desenhada na geometria da sala: mudou a sala, muda o
-	# chão, muda o tapete.
 	_stage_walkable = walkable
-	if is_instance_valid(_progress_layer):
-		_progress_layer.queue_redraw()
 	_apply_room_props(scene_path)
 	# A sala nova tem outro ponto de encontro: sem isso a chefe ficaria parada na
 	# marca da sala anterior, porque o resto do layout não mudou.
@@ -2464,6 +2607,9 @@ func _arrivals_this_tick() -> int:
 	crowd += int(float(branches.size()) / 2.0)
 	crowd += int(_weather()["crowd"])
 	crowd -= _rival_crowd_loss()
+	# Escândalo no livro de reclamações e um corpo a menos batendo na porta por tique,
+	# mesmo na loja famosa: a rua que fala mal também segura gente em casa.
+	crowd -= _complaint_crowd_loss()
 	return clampi(crowd, 1, QUEUE_LIMIT)
 
 ## Quem está de placa acesa na praça hoje. A lista é lida do calendário da loja
@@ -2506,7 +2652,7 @@ func _visit_budget(profile: Dictionary) -> int:
 ## — debaixo de chuva ninguém olha no relógio, no calor todo mundo olha. Charme é
 ## literalmente tempo de espera, e contratar também é.
 func _queue_patience(profile: Dictionary) -> int:
-	return maxi(1, QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size() + servants.size() - _mess_patience_loss() + int(_weather()["patience"]))
+	return maxi(1, QUEUE_PATIENCE_TICKS + int(profile.get("patience", 2)) + charm_rank / 2 + staff_hired.size() + servants.size() - _mess_patience_loss() - _complaint_patience_loss() + int(_weather()["patience"]))
 
 ## Manda para dentro quem o balcão não consegue atender agora. Cada um chega com o
 ## perfil sorteado na hora, então a fila é gente com retrato e orçamento, não um
@@ -2556,6 +2702,9 @@ func _desert_waiter(entry: Dictionary) -> void:
 	queue_walkouts += 1
 	disappointed_customers += 1
 	day_walkouts += 1
+	# E o ritmo do balcão morre aqui: quem esperou demais e virou as costas leva a
+	# sequência junto, porque combo é prêmio de quem deu conta, não de quem sorteou.
+	_break_combo()
 	# Quem espera na porta em pé sobre o próprio barro bate o pé no chão antes de
 	# bater a porta: a fila suja e a sujeira atrasa a fila.
 	_add_mess(MESS_PER_WALKOUT)
@@ -2876,13 +3025,18 @@ func _occluder_material() -> ShaderMaterial:
 	_apply_room_props(_stage_room)
 	return _stage_occluder_material
 
+## A geometria é da sala; a textura é da faixa. As cinco artes do salão são o MESMO
+## cômodo filmado do MESMO ponto, então todas respondem pela chave cheia
+## (`SALON_GEOMETRY_KEY`) nas tabelas de chão, porta, fila, vitrine e móveis; o que muda
+## de uma para outra são os pixels pintados, e esses vão para o fundo e para a oclusão.
+## Sem esta normalização, a fila da loja vazia atravessaria um balcão que ainda não existe.
 func _apply_room_props(scene_path: String) -> void:
-	_stage_room = scene_path
+	_stage_room = _room_key(scene_path)
+	_stage_art = scene_path
 	if _stage_occluder_material == null:
 		return
-	var room_key := _room_layout_key(scene_path)
-	var props: Array = STAGE_ROOM_PROPS.get(room_key, [])
-	var prop_depths: Array = STAGE_ROOM_PROP_DEPTHS.get(room_key, [])
+	var props: Array = STAGE_ROOM_PROPS.get(_stage_room, [])
+	var prop_depths: Array = STAGE_ROOM_PROP_DEPTHS.get(_stage_room, [])
 	for i in range(STAGE_PROP_SLOTS):
 		var is_depth_sorted := i < prop_depths.size()
 		var corners := _prop_corners(props[i]) if i < props.size() and not is_depth_sorted else _blank_corners()
@@ -3209,51 +3363,19 @@ func _draw_stage_shadows(layer: Control) -> void:
 			layer.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
-func _store_visual_for_level(level: int) -> Dictionary:
-	var visual: Dictionary
-	if level >= 15:
-		visual = {"path": "res://assets/shop_scene.png", "name": "Empório de prestígio"}
-	elif level >= 10:
-		visual = {"path": "res://assets/shop_stage3.svg", "name": "Loja estabelecida"}
-	elif level >= 6:
-		visual = {"path": "res://assets/shop_stage2.svg", "name": "Salão reformado"}
-	elif level >= 3:
-		visual = {"path": "res://assets/shop_stage1.svg", "name": "Balcão em recuperação"}
-	else:
-		visual = {"path": "res://assets/shop_stage0.svg", "name": "Beco improvisado"}
-	if not STORE_RENOVATION_ART_ENABLED:
-		visual["path"] = "res://assets/shop_scene.png"
-		visual["name"] = "Empório (reformas visuais em preparação)"
-	return visual
-
 func _room_layout_key(scene_path: String = "") -> String:
 	var path := scene_path if not scene_path.is_empty() else _stage_room
 	if path.begins_with("res://assets/shop_stage"):
 		return "res://assets/shop_scene.png"
 	return path
 
-func _apply_store_visual(level: int) -> void:
-	var visual := _store_visual_for_level(level)
-	var path := str(visual["path"])
-	if path == _active_store_visual_path:
-		return
-	_active_store_visual_path = path
-	if current_sector != "reception" or not is_instance_valid(background_layer):
-		return
-	var texture := load(path) as Texture2D
-	if texture == null:
-		push_error("Não foi possível carregar a etapa visual da loja: %s" % path)
-		return
-	background_layer.texture = texture
-	if is_instance_valid(stage_layer):
-		_apply_room_props(path)
-		_layout_stage_figures()
-
 func _build_ui() -> void:
 	var bg := TextureRect.new()
 	background_layer = bg
-	# O salão abre vazio de propósito: quem preenche a loja é o elenco animado.
-	var opening_scene := "res://assets/shop_scene.png"
+	# O salão abre vazio de propósito: quem preenche a loja é o elenco animado. Vazio
+	# quer dizer NA FAIXA do placar: abrir com a arte do topo é a escada inteira perder o
+	# ponto de partida, e o primeiro painel mentir sobre o que está na tela.
+	var opening_scene := _salon_art(_progress_band_now())
 	if not ResourceLoader.exists(opening_scene) and ResourceLoader.exists("res://assets/reception_scene.png"):
 		opening_scene = "res://assets/reception_scene.png"
 	bg.texture = load(opening_scene)
@@ -3263,18 +3385,6 @@ func _build_ui() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.z_index = -1000
 	add_child(bg)
-
-	# A camada da faixa de progresso fica entre o fundo pintado e as figuras: o
-	# tapete no chão, as velas na parede e o lustre no teto são desenhados por
-	# código, sobre a arte que a casa já tinha.
-	_progress_layer = Control.new()
-	_progress_layer.name = "ProgressDecor"
-	_progress_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_progress_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_progress_layer.z_index = -900
-	_progress_layer.draw.connect(_draw_progress_decor)
-	_progress_layer.resized.connect(_progress_layer.queue_redraw)
-	add_child(_progress_layer)
 
 	ambient_particles = CPUParticles2D.new()
 	ambient_particles.amount = 32
@@ -3571,6 +3681,52 @@ func _build_ui() -> void:
 	cold_storage_button.pressed.connect(_buy_cold_storage)
 	forge_box.add_child(cold_storage_button)
 
+	forge_box.add_child(_make_section_title("A BANCADA DE ENSAIOS", Color(0.78, 0.96, 0.60)))
+	forge_box.add_child(_make_section_hint("Alquimia experimental: o atalho de ouro e ingrediente para a receita que o nível ainda prende. Ponha até %d unidades de no máximo %d espécies na mesa, acenda, e a bancada responde pela tabela — ou a mistura casa com uma receita travada, que aí passa a ser sua sem subir degrau e sem pagar a leitura, ou vira beco riscado no caderno. Beco riscado não se paga duas vezes, e o grimório vende a ficha de uma receita por vez." % [LAB_MAX_UNITS, LAB_MAX_KINDS]))
+	var lab_card := _make_sector_card(Color(0.05, 0.075, 0.048, 0.94), Color(0.56, 0.82, 0.46, 0.95))
+	forge_box.add_child(lab_card)
+	var lab_row := HBoxContainer.new()
+	lab_row.add_theme_constant_override("separation", 12)
+	lab_card.add_child(lab_row)
+	lab_label = Label.new()
+	lab_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lab_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lab_label.add_theme_font_size_override("font_size", 13)
+	lab_label.add_theme_color_override("font_color", Color(0.86, 0.96, 0.78))
+	lab_row.add_child(lab_label)
+	var lab_side := VBoxContainer.new()
+	lab_side.add_theme_constant_override("separation", 6)
+	lab_row.add_child(lab_side)
+	var lab_adds := HFlowContainer.new()
+	lab_adds.add_theme_constant_override("h_separation", 6)
+	lab_adds.add_theme_constant_override("v_separation", 6)
+	lab_side.add_child(lab_adds)
+	for ingredient in Ingredients.DATA:
+		var add := Button.new()
+		add.custom_minimum_size = Vector2(132, 34)
+		add.add_theme_font_size_override("font_size", 12)
+		add.pressed.connect(_lab_add.bind(str(ingredient["id"])))
+		lab_adds.add_child(add)
+		lab_add_buttons.append(add)
+	var lab_actions := HBoxContainer.new()
+	lab_actions.add_theme_constant_override("separation", 6)
+	lab_side.add_child(lab_actions)
+	lab_clear_button = Button.new()
+	lab_clear_button.custom_minimum_size = Vector2(132, 40)
+	lab_clear_button.add_theme_font_size_override("font_size", 13)
+	lab_clear_button.pressed.connect(_lab_clear)
+	lab_actions.add_child(lab_clear_button)
+	lab_fire_button = Button.new()
+	lab_fire_button.custom_minimum_size = Vector2(200, 40)
+	lab_fire_button.add_theme_font_size_override("font_size", 14)
+	lab_fire_button.pressed.connect(_lab_fire)
+	lab_actions.add_child(lab_fire_button)
+	lab_hint_button = Button.new()
+	lab_hint_button.custom_minimum_size = Vector2(200, 40)
+	lab_hint_button.add_theme_font_size_override("font_size", 13)
+	lab_hint_button.pressed.connect(_lab_buy_hint)
+	lab_actions.add_child(lab_hint_button)
+
 	for i in range(products.size()):
 		var card := PanelContainer.new()
 		var style := StyleBoxFlat.new()
@@ -3750,7 +3906,7 @@ func _build_ui() -> void:
 	reception_box.add_child(queue_label)
 
 	reception_box.add_child(_make_section_title("CONSERVA DA CASA E CELA", Color(0.86, 0.80, 1.0)))
-	reception_box.add_child(_make_section_hint("Barro no chão é conta, não cenário: encurta a paciência da fila, derruba a etiqueta e chama vândalo para a porta. A criada varre por salário, o servo apaixonado varre por afeto e a chefe varre em ouro. Quem é pego com a mão na prateleira pode acabar na cela do santuário — que rende sangue para a forja e prato na conta da virada. O placar da casa também acende o salão: piso encerado, velas, caixilho dourado e lustre entram no palco conforme a loja sobe de faixa."))
+	reception_box.add_child(_make_section_hint("Barro no chão é conta, não cenário: encurta a paciência da fila, derruba a etiqueta e chama vândalo para a porta. A criada varre por salário, o servo apaixonado varre por afeto e a chefe varre em ouro. Quem é pego com a mão na prateleira pode acabar na cela do santuário — que rende sangue para a forja e prato na conta da virada. O placar da casa também reformou o salão: a mesma sala existe em cinco artes, do casarão cru com prancha sobre cavaletes ao império de lustre aceso e tapete bordado até a porta."))
 	var house_card := _make_sector_card(Color(0.06, 0.05, 0.09, 0.94), Color(0.46, 0.42, 0.68, 0.95))
 	reception_box.add_child(house_card)
 	var house_row := HBoxContainer.new()
@@ -3931,6 +4087,63 @@ func _build_ui() -> void:
 	credit_button.add_theme_font_size_override("font_size", 14)
 	credit_button.pressed.connect(_buy_credit_rank)
 	credit_hrow.add_child(credit_button)
+
+	reception_box.add_child(_make_section_title("O SALÃO DAS CAPAS FINAS", Color(0.82, 0.70, 0.96)))
+	reception_box.add_child(_make_section_hint("Cordão de veludo é escada de três degraus: cada degrau traz mais visitas de capa fina, com bolso maior, tempo próprio e a exigência de levar o topo da barra de qualidade. Quando a estante não tem o degrau que elas aceitam, elas devolvem a peça na prateleira e a fama paga a fofoca — a recusa não queima estoque e não cobra sorteio."))
+	var vip_card := _make_sector_card(Color(0.055, 0.045, 0.075, 0.94), Color(0.62, 0.50, 0.86, 0.95))
+	reception_box.add_child(vip_card)
+	var vip_hrow := HBoxContainer.new()
+	vip_hrow.add_theme_constant_override("separation", 12)
+	vip_card.add_child(vip_hrow)
+	vip_label = Label.new()
+	vip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vip_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vip_label.add_theme_font_size_override("font_size", 13)
+	vip_label.add_theme_color_override("font_color", Color(0.88, 0.82, 0.96))
+	vip_hrow.add_child(vip_label)
+	vip_button = Button.new()
+	vip_button.custom_minimum_size = Vector2(190, 44)
+	vip_button.add_theme_font_size_override("font_size", 14)
+	vip_button.pressed.connect(_buy_vip_rank)
+	vip_hrow.add_child(vip_button)
+
+	reception_box.add_child(_make_section_title("O LIVRO DE RECLAMAÇÕES DA RUA", Color(1.0, 0.66, 0.52)))
+	reception_box.add_child(_make_section_hint("Fama alta não quer dizer bemquista: a rua conta as vezes em que a casa errou — a peça torto que saiu da forja, a capa fina devolvida na prateleira, a nota riscada no fiado. Sexta linha em diante a etiqueta encolhe e a fila emagrece; da décima segunda, um corpo a menos bate na porta a cada tique. Uma linha se apaga a cada virada, e a voz da rua tem preço."))
+	var complaint_card := _make_sector_card(Color(0.075, 0.04, 0.038, 0.94), Color(0.88, 0.52, 0.40, 0.95))
+	reception_box.add_child(complaint_card)
+	var complaint_hrow := HBoxContainer.new()
+	complaint_hrow.add_theme_constant_override("separation", 12)
+	complaint_card.add_child(complaint_hrow)
+	complaint_label = Label.new()
+	complaint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	complaint_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	complaint_label.add_theme_font_size_override("font_size", 13)
+	complaint_label.add_theme_color_override("font_color", Color(0.96, 0.80, 0.72))
+	complaint_hrow.add_child(complaint_label)
+	complaint_button = Button.new()
+	complaint_button.custom_minimum_size = Vector2(190, 44)
+	complaint_button.add_theme_font_size_override("font_size", 14)
+	complaint_button.pressed.connect(_hush_street)
+	complaint_hrow.add_child(complaint_button)
+
+	reception_box.add_child(_make_section_title("O CARTAZ DO COMBO", Color(1.0, 0.78, 0.45)))
+	reception_box.add_child(_make_section_hint("Venda puxa venda: três degraus de cartaz pagam a sequência do mesmo dia, e a sequência morre na visita que sai sem comprar e na virada da manhã. Com o cartaz guardado o balcão continua contando a sequência para si — sem pagar um centavo por ela, exatamente como sempre contou."))
+	var combo_card := _make_sector_card(Color(0.075, 0.05, 0.03, 0.94), Color(0.92, 0.66, 0.34, 0.95))
+	reception_box.add_child(combo_card)
+	var combo_hrow := HBoxContainer.new()
+	combo_hrow.add_theme_constant_override("separation", 12)
+	combo_card.add_child(combo_hrow)
+	combo_label = Label.new()
+	combo_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	combo_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	combo_label.add_theme_font_size_override("font_size", 13)
+	combo_label.add_theme_color_override("font_color", Color(0.98, 0.86, 0.70))
+	combo_hrow.add_child(combo_label)
+	combo_button = Button.new()
+	combo_button.custom_minimum_size = Vector2(190, 44)
+	combo_button.add_theme_font_size_override("font_size", 14)
+	combo_button.pressed.connect(_buy_combo_rank)
+	combo_hrow.add_child(combo_button)
 
 	reception_box.add_child(_make_section_title("A PORTA DA CASA", Color(0.62, 0.86, 1.0)))
 	reception_box.add_child(_make_section_hint("Loja que dá lucro tem alvo na porta. Cada visita é resolvida com a mão que a casa já tem: a ronda da folha, os servos do salão, os batedores do cadastro, o santuário reformado e a Administração. O vigário passa na frente para cobrar — dízimo, suborno ou porta na cara dele, e as três respostas têm preço."))
@@ -4759,8 +4972,11 @@ func _activate_sector_feature() -> void:
 ## Fundo do setor. Onde existe uma arte de sala vazia ela vira palco e o elenco
 ## anda; onde só existe o close de um rosto, o elenco fica nos bastidores, porque
 ## personagem caminhando por cima de uma cara enorme lê como fantasma.
+## A recepção é o único setor que tem ESCADA de arte: ela é a casa do jogador, e é a
+## sala que o placar reformou. Os outros setores são ofícios alugados — têm uma arte
+## só, do mesmo jeito que a guilda de expedição não cresce com o balcão.
 func _sector_scene(sector: String) -> Dictionary:
-	var room := str(_store_visual_for_level(player_level)["path"]) if sector == "reception" else "res://assets/shop_scene.png"
+	var room := _salon_art(_progress_band_now())
 	var close := ""
 	if sector == "forge":
 		room = "res://assets/forge_scene.png"
@@ -4771,6 +4987,8 @@ func _sector_scene(sector: String) -> Dictionary:
 	elif sector == "sanctum":
 		room = "res://assets/sanctum_room_scene.png"
 		close = "res://assets/sanctum_close_scene.png"
+	elif sector == "expedition":
+		room = "res://assets/expedition_hall_scene.png"
 	if ResourceLoader.exists(room):
 		return {"path": room, "walkable": true}
 	if not close.is_empty() and ResourceLoader.exists(close):
@@ -5917,6 +6135,294 @@ func _learn_recipe(index: int) -> void:
 	_save_game()
 	_refresh_ui()
 
+## ── A BANCADA DE ENSAIOS ──────────────────────────────────────────────────────────
+## Alquimia experimental: o atalho de ouro e ingrediente para a receita que o nível
+## ainda prende. Nada aqui sorteia — a resposta é a tabela de receitas contra a mistura
+## da mesa —, então a bancada pode ser lida e escrita no meio de uma corrida sem mover
+## um `randi()` da loja.
+
+## Assinatura canônica: "id:unidades" em ordem de id, para que sal+pó e pó+sal sejam o
+## mesmo ensaio. A bancada não cobra duas contas pelo mesmo punhado.
+func _lab_signature(mix: Dictionary) -> String:
+	var ids: Array[String] = []
+	for ingredient_id in mix.keys():
+		if int(mix[ingredient_id]) > 0:
+			ids.append(str(ingredient_id))
+	ids.sort()
+	var parts: Array[String] = []
+	for ingredient_id in ids:
+		parts.append("%s:%d" % [ingredient_id, int(mix[ingredient_id])])
+	return "+".join(parts)
+
+## Assinatura assinada: aceita só id de ingrediente do mercado e quantidade inteira
+## positiva. É a tesoura do load: arquivo podre não entra na bancada.
+func _lab_signature_valid(signature: String) -> bool:
+	if signature.is_empty():
+		return false
+	for chunk in signature.split("+"):
+		var bits := str(chunk).split(":")
+		if bits.size() != 2:
+			return false
+		if Ingredients.find(str(bits[0])).is_empty():
+			return false
+		if int(bits[1]) <= 0:
+			return false
+	return true
+
+## Nome de bancada para a assinatura: "Sal Gamer Refinado×1 + Pó Lunar de Terça-feira×1".
+func _lab_readable(signature: String) -> String:
+	if signature.is_empty():
+		return "nada"
+	var parts: Array[String] = []
+	for chunk in signature.split("+"):
+		var bits := str(chunk).split(":")
+		if bits.size() != 2:
+			continue
+		parts.append("%s×%d" % [Ingredients.any_name(str(bits[0])), int(bits[1])])
+	return " + ".join(parts)
+
+func _lab_units(mix: Dictionary) -> int:
+	var units := 0
+	for ingredient_id in mix.keys():
+		units += maxi(0, int(mix[ingredient_id]))
+	return units
+
+## Carvão do ensaio: ouro por unidade na brasa, além do ingrediente que ele queima.
+func _lab_fee(units: int) -> int:
+	return maxi(0, units * LAB_FEE_PER_UNIT)
+
+## Receitas ainda presas ao nível: é só contra elas que a bancada testa. Uma receita já
+## sua não tem o que descobrir — misturar por misturar seria fabricar de atravessado.
+func _lab_locked_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for item in products:
+		if int(item.get("required_level", 1)) > 1 and not _is_product_unlocked(item):
+			ids.append(str(item["id"]))
+	return ids
+
+## O tamanho da escada, fixo: quantas receitas nasceram presas ao nível no catálogo. É o
+## denominador do selo da bancada, e não muda conforme a loja sobe degrau — senão o selo
+## seria "descubra as que ainda não caíram sozinhas", que é outra frase.
+func _lab_targets_total() -> int:
+	var total := 0
+	for item in products:
+		if int(item.get("required_level", 1)) > 1:
+			total += 1
+	return total
+
+## As receitas travadas cuja ficha de ingredientes é exatamente o que está na mesa. Pode
+## devolver mais de uma: sal + pó lunar é a ficha do Elixir de Memória de Peixe e do
+## Martelo de Faísca Dramática, e a bancada entrega as duas na mesma faísca.
+func _lab_matches(mix: Dictionary) -> Array[String]:
+	var signature := _lab_signature(mix)
+	var found: Array[String] = []
+	if signature.is_empty():
+		return found
+	for item in products:
+		if int(item.get("required_level", 1)) <= 1 or _is_product_unlocked(item):
+			continue
+		if _lab_signature(item.get("ingredients", {})) == signature:
+			found.append(str(item["id"]))
+	return found
+
+## O palpite que o grimório vende: a ficha da receita travada de nível mais baixo, uma por
+## vez. O alvo não é escolha da pessoa porque a escada é da casa: primeiro o que o nível
+## entregaria logo, que é também a ordem em que a leitura cobra.
+func _lab_hint_target() -> String:
+	var best_level := 999999
+	var best_id := ""
+	for item in products:
+		var required := int(item.get("required_level", 1))
+		var recipe_id := str(item["id"])
+		if required <= 1 or lab_hints.has(recipe_id) or _is_product_unlocked(item):
+			continue
+		if required < best_level:
+			best_level = required
+			best_id = recipe_id
+	return best_id
+
+func _lab_hint_cost() -> int:
+	return maxi(20, int(round(float(LAB_HINT_COST) * (1.0 - 0.10 * float(library_upgrade_level)))))
+
+## Unidades da mistura que o estoque não tem: a brasa é reservada no ato, mas o freguês
+## pode revender o frasco enquanto ele espera, e o ensaio não pode acender a crédito.
+func _lab_unbacked() -> Array[String]:
+	var missing: Array[String] = []
+	for ingredient_id in lab_mix.keys():
+		if int(ingredient_stock.get(ingredient_id, 0)) < int(lab_mix[ingredient_id]):
+			missing.append(Ingredients.any_name(str(ingredient_id)))
+	return missing
+
+func _lab_lacks(kind: String) -> String:
+	var units := _lab_units(lab_mix)
+	var held := int(ingredient_stock.get(kind, 0))
+	if Ingredients.find(kind).is_empty():
+		return "A bancada só aceita o que o mercado vende: raridade é catalisador da forja, não ingrediente de ensaio."
+	if units >= LAB_MAX_UNITS:
+		return "A bancada comporta %d unidades por ensaio. Mais que isso é forja disfarçada." % LAB_MAX_UNITS
+	if not lab_mix.has(kind) and lab_mix.size() >= LAB_MAX_KINDS:
+		return "São %d espécies por ensaio, e a mesa já tem duas: %s." % [
+			LAB_MAX_KINDS, _lab_readable(_lab_signature(lab_mix))]
+	if held <= int(lab_mix.get(kind, 0)):
+		return "Falta %s no estoque para pôr na brasa (tem %d, a bancada já separou %d)." % [
+			str(Ingredients.find(kind)["name"]), held, int(lab_mix.get(kind, 0))]
+	return ""
+
+## Põe uma unidade na mesa. Não queima nada ainda: separa.
+func _lab_add(kind: String) -> void:
+	var reason := _lab_lacks(kind)
+	if reason != "":
+		last_event = reason
+		_refresh_ui()
+		return
+	lab_mix[kind] = int(lab_mix.get(kind, 0)) + 1
+	audio.play("click")
+	_show_feedback("⚗ %s na brasa." % str(Ingredients.find(kind)["name"]), Color(0.82, 0.95, 0.68))
+	_refresh_ui()
+
+func _lab_clear() -> void:
+	if lab_mix.is_empty():
+		last_event = "A bancada já está limpa: nada em brasa, nada queimado."
+		_refresh_ui()
+		return
+	var back := _lab_readable(_lab_signature(lab_mix))
+	lab_mix.clear()
+	last_event = "A mesa foi raspada de volta para o pote: %s." % back
+	audio.play("click")
+	_refresh_ui()
+
+## Acender a bancada: queima o carvão e os ingredientes de uma vez e devolve a resposta da
+## tabela. Beco já riscado não cobra de novo — a casa não vende duas vezes a mesma porta
+## fechada.
+func _lab_fire() -> void:
+	var units := _lab_units(lab_mix)
+	var signature := _lab_signature(lab_mix)
+	if units < 2:
+		last_event = "Um ensaio pede ao menos duas unidades na brasa. Sozinho, isso é só estoque pegando fogo."
+		_refresh_ui()
+		return
+	if signature.is_empty() or not _lab_signature_valid(signature):
+		last_event = "A mesa tem mistura a mais e receita a menos: esvazia a bancada e recomeça."
+		_refresh_ui()
+		return
+	if lab_trials.has(signature):
+		last_event = "Esse ensaio já foi escrito no caderno: %s." % _lab_trial_line(signature)
+		_refresh_ui()
+		return
+	var fee := _lab_fee(units)
+	if gold < fee:
+		last_event = "O carvão custa %d de ouro, e a caixa tem %d. A bancada não acende fiado." % [fee, gold]
+		_refresh_ui()
+		return
+	var unbacked := _lab_unbacked()
+	if not unbacked.is_empty():
+		last_event = "A brasa pede %s que o estoque não tem mais. Esvazia a bancada e refaz a mistura." % ", ".join(unbacked)
+		_refresh_ui()
+		return
+	gold -= fee
+	for ingredient_id in lab_mix.keys():
+		ingredient_stock[ingredient_id] = int(ingredient_stock.get(ingredient_id, 0)) - int(lab_mix[ingredient_id])
+	var burned := _lab_readable(signature)
+	var matches := _lab_matches(lab_mix)
+	lab_mix.clear()
+	if matches.is_empty():
+		lab_flops += 1
+		lab_trials[signature] = ""
+		_add_mess(LAB_FIZZLE_MESS)
+		_add_xp(LAB_FIZZLE_XP)
+		last_event = "Ensaio sem saída: %s virou fuligem no salão (−%d de carvão, %d de barro no chão). A banca riscou o beco no caderno: esse punhado não casa com nada que esteja preso ao nível." % [
+			burned, fee, LAB_FIZZLE_MESS]
+		audio.play("sad")
+		_show_feedback("✖ Beco riscado no caderno.", Color(1.0, 0.62, 0.52))
+		_show_stage_emotion(stage_seller_body, "espanto")
+	else:
+		var names: Array[String] = []
+		for recipe_id in matches:
+			if not known_recipes.has(recipe_id):
+				known_recipes.append(recipe_id)
+			if not lab_discovered.has(recipe_id):
+				lab_discovered.append(recipe_id)
+			names.append(str(_product_by_id(recipe_id).get("name", recipe_id)))
+		lab_trials[signature] = ",".join(matches)
+		_add_xp(LAB_DISCOVERY_XP)
+		reputation += 1
+		last_event = "ACERTO NA BANCADA: %s casa com %s! %d de carvão pago, e a receita passa a ser sua sem subir um degrau de nível (+%d de experiência, +1 de fama)." % [
+			burned, ", ".join(names), fee, LAB_DISCOVERY_XP]
+		audio.play("rare")
+		_show_feedback("✦ Receita arrancada do nível!", Color(0.86, 1.0, 0.70))
+		_show_stage_emotion(stage_seller_body, "aplausao")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## O que o caderno responde sobre uma assinatura: "nada" ou o nome do que ela entregou.
+func _lab_trial_line(signature: String) -> String:
+	var outcome := str(lab_trials.get(signature, ""))
+	if outcome.is_empty():
+		return "%s: beco riscado" % _lab_readable(signature)
+	var names: Array[String] = []
+	for recipe_id in outcome.split(","):
+		names.append(str(_product_by_id(str(recipe_id)).get("name", str(recipe_id))))
+	return "%s: %s" % [_lab_readable(signature), ", ".join(names)]
+
+## Palpite comprado: a ficha de ingredientes de uma receita travada, revelada para sempre
+## no painel do grimório. É ouro por informação, não ouro por receita — a banca continua
+## cobrando o ensaio.
+func _lab_buy_hint() -> void:
+	var target := _lab_hint_target()
+	if target.is_empty():
+		last_event = "O grimório não tem mais o que sussurrar: toda receita travada já tem ficha na mão."
+		_refresh_ui()
+		return
+	var cost := _lab_hint_cost()
+	if gold < cost:
+		last_event = "O palpite custa %d de ouro e a caixa tem %d. A estante fecha a tampa." % [cost, gold]
+		_refresh_ui()
+		return
+	gold -= cost
+	lab_hints.append(target)
+	_add_xp(2)
+	last_event = "Palpite comprado: %s leva %s. A ficha fica no grimório — e a bancada continua cobrando o ensaio." % [
+		str(_product_by_id(target).get("name", target)),
+		_lab_readable(_lab_signature(_product_by_id(target).get("ingredients", {})))]
+	audio.play("buy")
+	_show_feedback("📖 Ficha revelada.", Color(0.70, 0.90, 1.0))
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+## Resumo do painel: o que está em brasa, o que o caderno já sabe e quanto falta.
+func _lab_summary() -> String:
+	var units := _lab_units(lab_mix)
+	var head := "MESA: %d de %d unidades, %d de %d espécies (%s) • carvão: %d de ouro" % [
+		units, LAB_MAX_UNITS, lab_mix.size(), LAB_MAX_KINDS,
+		_lab_readable(_lab_signature(lab_mix)) if units > 0 else "nada", _lab_fee(units)]
+	head += "\nCADERNO: %d beco(s) riscado(s) • %d acerto(s) • %d de %d receitas travadas já caíram na bancada • %d ainda presas ao nível" % [
+		lab_flops, lab_discovered.size(), lab_discovered.size(), _lab_targets_total(),
+		_lab_locked_ids().size()]
+	var lines: Array[String] = []
+	for signature in lab_trials.keys():
+		lines.append(" • " + _lab_trial_line(str(signature)))
+	if not lines.is_empty():
+		head += "\n" + "\n".join(lines)
+	else:
+		head += "\n • o caderno está em branco: nenhum ensaio acendido nesta vida"
+	return head
+
+## Lista que volta do arquivo só com id de receita travada: id inventado, receita básica
+## de todo dia e duplicata não reentram na bancada. É a mesma tesoura do livro de fiado.
+func _lab_ids_from_file(saved_ids: Variant) -> Array[String]:
+	var kept: Array[String] = []
+	if not saved_ids is Array:
+		return kept
+	for saved_id in saved_ids:
+		var recipe_id := str(saved_id)
+		var item := _product_by_id(recipe_id)
+		if item.is_empty() or int(item.get("required_level", 1)) <= 1 or kept.has(recipe_id):
+			continue
+		kept.append(recipe_id)
+	return kept
+
 ## Produto em alta: o mais procurado no mercado reativo. Sem demanda clara de
 ## ninguém, cai no sorteio determinístico do dia para sempre existir um destaque.
 func _demand_index() -> int:
@@ -6033,6 +6539,12 @@ func _product_index(product_id: String) -> int:
 			return i
 	return -1
 
+## Ficha do produto pelo id, ou vazio para quem não está no catálogo. É a leitura que a
+## bancada usa para escrever nome de receita no mural sem indexar na mão.
+func _product_by_id(product_id: String) -> Dictionary:
+	var index := _product_index(product_id)
+	return products[index] if index >= 0 else {}
+
 ## Escolhe o freguês do próximo turno. O peso cai conforme o vínculo sobe, então
 ## quem ainda não foi visitado domina a fila: ampliar o elenco não dilui a
 ## frequência de cada personagem nem atrasa os capítulos.
@@ -6090,7 +6602,7 @@ const CUSTOMER_PROFILES: Array[Dictionary] = [
 func _draw_visitor_profile() -> Dictionary:
 	var profile: Dictionary = CUSTOMER_PROFILES[randi() % CUSTOMER_PROFILES.size()]
 	if randi() % 100 >= 35:
-		return profile
+		return _maybe_vip(profile)
 	var regular: Dictionary = _pick_regular()
 	var regular_id := str(regular["id"])
 	var bond := int(regular_bonds.get(regular_id, 0))
@@ -6098,7 +6610,7 @@ func _draw_visitor_profile() -> Dictionary:
 	var lines_by_tier: Array = regular["lines"][tier]
 	var personal_request := tier >= 1 and randi() % 100 < 35
 	var regular_line := str(regular["request"]) if personal_request else str(lines_by_tier[randi() % lines_by_tier.size()])
-	return {
+	return _maybe_vip({
 		"name": regular["name"],
 		"favorite": str(regular["favorite"]),
 		"line": regular_line,
@@ -6109,7 +6621,7 @@ func _draw_visitor_profile() -> Dictionary:
 		"faction": str(regular.get("faction", "aventureiros")),
 		"budget": 60 + tier * 30,
 		"patience": 2 + (1 if tier >= 2 else 0),
-	}
+	})
 
 func _on_customer_tick() -> void:
 	ticks += 1
@@ -6202,16 +6714,51 @@ func _on_customer_tick() -> void:
 				spoil_line += " e %d saiu(ram) do fundo da estante pela porta." % int(spoil["lost"])
 			else:
 				spoil_line += "."
+		# A rua esquece uma linha por virada, antes de o fiado riscar as suas: a queixa
+		# escrita hoje é a que amanhã começa a doer. Memória curta, sem dado e sem conta.
+		var esquecida_na_virada := complaints
+		_complaints_forget()
+		esquecida_na_virada -= complaints
 		# O livro de fiado vira junto com a prateleira: atraso é dia morado, não sorteio,
 		# e a nota riscada dói na conta uma única vez por virada.
 		var credit_line := _age_credit_book()
 		var credit_report := (" " + credit_line) if credit_line != "" else ""
 		var credit_event := ("\n📖 " + credit_line) if credit_line != "" else ""
-		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line + spoil_line + credit_report
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s%s" % [
+		# Combo é do dia: a virada recomeça a contagem para todo mundo, cartaz pendurado
+		# ou não. O que fica na vida é o recorde premiado e o ouro já pago.
+		combo_streak = 0
+		var combo_line := ""
+		var combo_event := ""
+		if combo_rank > 0 and combo_day_gold > 0:
+			combo_line = " 🔥 O cartaz pagou %d de ouro em combo, com %d venda(s) seguidas de recorde do dia." % [
+				combo_day_gold, combo_day_best]
+			combo_event = "\n🔥 O cartaz pagou %d de ouro em combo, com %d venda(s) seguidas de recorde do dia." % [
+				combo_day_gold, combo_day_best]
+		# Só quem tem livro aberto (ou acabou de apagar uma linha) lê a rua no balanço:
+		# com o caderno em branco a manhã continua com exatamente os números de sempre.
+		var complaint_line := ""
+		var complaint_event := ""
+		if complaints > 0 or esquecida_na_virada > 0:
+			var fala_da_rua := "murmúrio"
+			if _complaint_stage() == 1:
+				fala_da_rua = "boato"
+			elif _complaint_stage() == 2:
+				fala_da_rua = "escândalo"
+			var cobraca := ""
+			if _complaint_stage() > 0:
+				cobraca = " e cobra etiqueta %s, paciência −%d, porta −%d" % [
+					_label_word(), _complaint_patience_loss(), _complaint_crowd_loss()]
+			complaint_line = " 📙 A rua chama a casa de %s: %d linha(s) no livro%s%s." % [
+				fala_da_rua, complaints, cobraca,
+				", uma apagada pela virada" if esquecida_na_virada > 0 else ""]
+			complaint_event = "\n📙 A rua chama a casa de %s: %d linha(s) no livro%s%s." % [
+				fala_da_rua, complaints, cobraca,
+				", uma apagada pela virada" if esquecida_na_virada > 0 else ""]
+		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line + spoil_line + credit_report + complaint_line + combo_line
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s%s%s%s" % [
 			shop_day, Economy.report(economy_state, products, Ingredients.DATA), _weather_line(), bill_line,
 			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line, rival_line,
-			credit_event]
+			credit_event, complaint_event, combo_event]
 		# A manhã também afina a faixa: alarme novo, vigário na porta ou ruína velha
 		# mudam o tom da mesma gravação antes de a chefe abrir o balcão.
 		_apply_situation_music()
@@ -6394,6 +6941,36 @@ func _on_customer_tick() -> void:
 					credit_lending = true
 					credit_choice = preferred_index
 		var chosen_index: int = credit_choice if credit_lending else (affordable[randi() % affordable.size()] if not affordable.is_empty() else available[randi() % available.size()])
+		# A capa fina não compra peça de degrau baixo: ela examina o topo da barra daquele
+		# produto e, se a estante não tem o que ela aceita, devolve no lugar e sai falando.
+		# A recusa não queima unidade nenhuma e não consome um sorteio — o preço é o balcão
+		# perder a venda e a fama perder o ponto.
+		if bool(profile.get("vip", false)):
+			var exigencia := _vip_standard()
+			var topo := _best_tier_for(chosen_index)
+			if topo < exigencia:
+				vip_refusals += 1
+				disappointed_customers += 1
+				day_walkouts += 1
+				# Saiu falando e levou o ritmo junto: o cartaz paga sequência sem porta
+				# batida, e uma capa fina devolvida é exatamente a porta batida.
+				_break_combo()
+				reputation = maxi(0, reputation - 1)
+				# A fofoca de capa fina devolvida é barulhenta: duas linhas no livro da rua,
+				# não uma. Quem sai sem comprar pelo segundo cartão conta para duas mesas.
+				var linhas_da_recusa := _add_complaint(COMPLAINT_FROM_VIP_REFUSAL)
+				_set_customer_status("CLIENTE: saiu sem comprar")
+				if is_instance_valid(customer_emotion_label):
+					customer_emotion_label.text = "🙄 desprezo"
+				last_event = "🎩 %s examina o topo da barra de %s, encontra %s e devolve no lugar: uma capa fina não compra degrau baixo. A casa perde a venda e a fofoca vai junto (−1 de fama).\n📙 %s" % [
+					str(profile["name"]), str(products[chosen_index]["name"]),
+					str(Quality.tier(maxi(0, topo))["name"]), _complaint_tail(linhas_da_recusa)]
+				_show_stage_emotion(stage_customer, "nojo")
+				_play_customer_reaction("broke")
+				_check_achievements()
+				_save_game()
+				_refresh_ui()
+				return
 		if preferred_index >= 0 and available.has(preferred_index) and not credit_lending and randi() % 100 < 70:
 			# O dedo aponta a vitrine, mas quem decide a compra é o bolso. Este `if` trocava
 			# o escolhido pela favorita sem consultar `affordable`, e a loja recebia o preço
@@ -6411,14 +6988,19 @@ func _on_customer_tick() -> void:
 				reputation += _reputation_seduction_bonus()
 
 		var item: Dictionary = products[chosen_index]
-		var piece_tier := _take_piece(chosen_index, Quality.WORST)
+		# Quem entra pelo cordão escolhe pelo topo da barra: sai a melhor peça do produto,
+		# não a mais velha do degrau — e a exigência de cima já garantiu que ela existe.
+		var piece_tier := _take_piece(chosen_index, Quality.BEST if bool(profile.get("vip", false)) else Quality.WORST)
 		var quality_name := str(Quality.tier(piece_tier)["name"])
 		_register_sold_piece(piece_tier)
+		var linha_torta := 0
 		if piece_tier == 0:
-			# Saiu torto da forja e o cliente viu: ninguém esconde a careta.
+			# Saiu torto da forja e o cliente viu: ninguém esconde a careta — e a careta
+			# atravessa a praça. A casa paga a linha no livro da rua.
 			_show_stage_emotion(stage_customer, "nojo")
+			linha_torta = _add_complaint(COMPLAINT_FROM_TORTO)
 		var base_label := _piece_price(item, piece_tier)
-		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _fury_price_multiplier() * _mess_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor() * _recommendation_price_factor() * (1.0 + SERVANT_PRICE_SHARE * servants.size()) * (1.08 if _has_spec("trade", "cartel") else 1.0)
+		var price_multiplier: float = (1.0 + 0.20 * ad_level) * (1.0 + 0.08 * trade_rank) * _reputation_price_multiplier() * _complaint_label_factor() * _fury_price_multiplier() * _mess_price_multiplier() * Sanctum.scale(active_buffs, "price") * _market_product_factor(item) * _romance_price_factor(str(profile.get("regular_id", ""))) * _prestige_price_factor() * _recommendation_price_factor() * (1.0 + SERVANT_PRICE_SHARE * servants.size()) * (1.08 if _has_spec("trade", "cartel") else 1.0)
 		var preference_bonus := 0
 		if preferred_index == chosen_index:
 			preference_bonus = maxi(2, int(round(base_label * 0.25)))
@@ -6429,6 +7011,8 @@ func _on_customer_tick() -> void:
 			last_event = "%s comprou %s (%s). %s" % [
 				profile["name"], item["name"], quality_name, profile["line"]
 			]
+		if linha_torta > 0:
+			last_event += "\n📙 A peça torto foi entregue na mão dele, e ele saiu falando: %s" % _complaint_tail(linha_torta)
 		var sale_price: int = int(round(base_label * price_multiplier)) + preference_bonus
 		var product_heat := Economy.heat(economy_state, "product", str(item["id"]))
 		if product_heat >= 0.30:
@@ -6448,6 +7032,13 @@ func _on_customer_tick() -> void:
 		# O mural da loja também pesa na etiqueta. É bônus de balcão, não de conversa:
 		# a máquina de cartas mostra a porcentagem, o cliente não precisa ler rodapé.
 		sale_price += int(round(base_label * Cards.price_bonus(card_counts)))
+		# O cartaz paga o ritmo no mesmo molde do mural de cartas e da facção: bônus sobre a
+		# etiqueta de tabela, somado depois. Com o cartaz guardado a taxa é zero cravado, o
+		# `if` nem roda e o centavo não entra — é assim que a régua antiga continua medindo a
+		# mesma venda de sempre, centavo a centavo.
+		var combo_bonus := int(round(base_label * _combo_rate()))
+		if combo_bonus > 0:
+			sale_price += combo_bonus
 		var fulfilled_personal_request := profile.has("personal_request") and bool(profile["personal_request"]) and preferred_index == chosen_index
 		var headline_locked := false
 		if fulfilled_personal_request:
@@ -6496,6 +7087,12 @@ func _on_customer_tick() -> void:
 		if credit_settled:
 			last_event = "%s\n%s" % [str(credit_note["line"]), last_event]
 		customers_served += 1
+		# A sequência conta para o balcão inteiro, mas só vira ouro e recorde quando o
+		# cartaz está pendurado e o dinheiro entrou no caixa de fato: nota de fiado leva o
+		# bônus anotado junto, e o pagamento é na virada — o combo não conta duas vezes.
+		if combo_bonus > 0 and not credit_lending:
+			last_event += "\n" + _combo_tail(combo_bonus, combo_streak + 1)
+		_bump_combo(combo_bonus if not credit_lending else 0)
 		_add_mess(MESS_PER_VISIT)
 		if profile.has("regular_id"):
 			var regular_id := str(profile["regular_id"])
@@ -6539,6 +7136,19 @@ func _on_customer_tick() -> void:
 			_offer_romance(regular_id, new_bond)
 			_check_regular_acts(regular_id)
 			_offer_servant(regular_id)
+		# A capa fina fecha a conta com gorjeta sobre a tabela e um ponto de fama para a
+		# casa — o convite puxa convite. No fiado ela sai servida, mas a gorjeta fica para
+		# amanhã: dívida é a gorjeta de quem leva o ouro da loja na mão.
+		if bool(profile.get("vip", false)):
+			vip_served += 1
+			reputation += 1
+			if not credit_lending:
+				var gorjeta := maxi(4, int(round(float(base_label) * float(_vip_row(vip_rank)["tip"]))))
+				gold += gorjeta
+				daily_gold_earned += gorjeta
+				vip_tips_gold += gorjeta
+				last_event += "\n🎩 A capa fina deixa %d de ouro de gorjeta no balcão e leva %s — o topo da barra que a estante tinha." % [
+					gorjeta, str(Quality.tier(piece_tier)["name"])]
 		if not faction_id.is_empty():
 			var old_standing := int(faction_standing.get(faction_id, 0))
 			var old_faction_tier := Factions.tier_for(old_standing)
@@ -7102,7 +7712,6 @@ func _update_demonic_form() -> void:
 func _refresh_ui() -> void:
 	if not is_instance_valid(gold_label):
 		return
-	_apply_store_visual(player_level)
 	gold_label.text = tr("Ouro: %d") % gold
 	rep_label.text = tr("Reputação: %d • %s (+%d%%)") % [reputation, tr(_reputation_title()), int(round((_reputation_price_multiplier() - 1.0) * 100.0))]
 	# O número do painel é o corpo desenhado no salão agora, e a fila à parte:
@@ -7180,9 +7789,9 @@ func _refresh_ui() -> void:
 			])
 		faction_label.text = "\n".join(faction_lines)
 	if is_instance_valid(progression_label):
-		var store_visual := _store_visual_for_level(player_level)
+		var shop_name := tr(PROGRESS_BAND_NAMES[_progress_band_now()])
 		progression_label.text = "NÍVEL %d  •  XP: %d/%d  •  Talentos: %d  •  Dia %d  •  Loja: %s" % [
-			player_level, player_xp, _xp_required(), skill_points, shop_day, str(store_visual["name"])]
+			player_level, player_xp, _xp_required(), skill_points, shop_day, shop_name]
 	if is_instance_valid(talent_label):
 		talent_label.text = "TALENTOS • Alquimia %d/5 | Comércio %d/5 | Carisma %d/5 | Logística %d/5 | Casa %d/5" % [alchemy_rank, trade_rank, charm_rank, logistics_rank, house_rank]
 	for talent_button in [alchemy_button, trade_button, charm_button]:
@@ -7235,6 +7844,30 @@ func _refresh_ui() -> void:
 		achievement_label.text = _get_achievement_summary()
 	if is_instance_valid(forge_mastery_label):
 		forge_mastery_label.text = _forge_mastery_text()
+	if is_instance_valid(lab_label) and not lab_add_buttons.is_empty():
+		lab_label.text = _lab_summary()
+		for i in range(Ingredients.DATA.size()):
+			var ingredient: Dictionary = Ingredients.DATA[i]
+			var kind := str(ingredient["id"])
+			lab_add_buttons[i].text = "⚗ %s (%d/%d)" % [
+				str(ingredient["name"]), int(lab_mix.get(kind, 0)), int(ingredient_stock.get(kind, 0))]
+			lab_add_buttons[i].disabled = _lab_lacks(kind) != ""
+		lab_clear_button.text = "Esvaziar a mesa"
+		lab_clear_button.disabled = lab_mix.is_empty()
+		var lab_units := _lab_units(lab_mix)
+		var lab_fee := _lab_fee(lab_units)
+		var lab_repeat := (
+			lab_units >= 2 and lab_trials.has(_lab_signature(lab_mix))
+		)
+		lab_fire_button.text = "🔥 Acender a bancada (%d)" % lab_fee
+		lab_fire_button.disabled = (
+			lab_units < 2 or gold < lab_fee or lab_repeat or not _lab_unbacked().is_empty()
+		)
+		lab_hint_button.text = (
+			"📖 Palpite do grimório (%d)" % _lab_hint_cost()
+			if not _lab_hint_target().is_empty() else "📖 Grimório sem fichas novas"
+		)
+		lab_hint_button.disabled = _lab_hint_target().is_empty() or gold < _lab_hint_cost()
 	for i in range(products.size()):
 		var item: Dictionary = products[i]
 		var unlocked := _is_product_unlocked(item)
@@ -7283,7 +7916,8 @@ func _refresh_ui() -> void:
 			recipe_buttons[i].text = "Dominada ✓"
 			recipe_buttons[i].disabled = true
 		else:
-			recipe_labels[i].text = "🔒 %s • exige nível %d" % [item["name"], required_level]
+			var ficha := " — ficha do palpite: %s" % _lab_readable(_lab_signature(item.get("ingredients", {}))) if lab_hints.has(recipe_id) else ""
+			recipe_labels[i].text = "🔒 %s • exige nível %d%s" % [item["name"], required_level, ficha]
 			recipe_buttons[i].text = "Aprender (%d)" % recipe_cost
 			recipe_buttons[i].disabled = gold < recipe_cost
 	if is_instance_valid(market_label):
@@ -7409,6 +8043,37 @@ func _refresh_ui() -> void:
 			credit_button.text = "📖 Abrir o fiado — degrau %d (%d)" % [
 				int(credit_next["rank"]), int(credit_next["cost"])]
 			credit_button.disabled = false
+	if is_instance_valid(vip_label):
+		vip_label.text = _vip_summary()
+	if is_instance_valid(vip_button):
+		var vip_next := _vip_next_row()
+		if vip_next.is_empty():
+			vip_button.text = "🎩 Salão no degrau máximo"
+			vip_button.disabled = true
+		else:
+			vip_button.text = "🎩 Estender o cordão — degrau %d (%d)" % [
+				int(vip_next["rank"]), int(vip_next["cost"])]
+			vip_button.disabled = false
+	if is_instance_valid(complaint_label):
+		complaint_label.text = _complaint_summary()
+	if is_instance_valid(complaint_button):
+		if complaints <= 0:
+			complaint_button.text = "🗣 A rua está quieta"
+			complaint_button.disabled = true
+		else:
+			complaint_button.text = "🗣 Pagar a voz da rua (%d)" % _hush_cost()
+			complaint_button.disabled = gold < _hush_cost()
+	if is_instance_valid(combo_label):
+		combo_label.text = _combo_summary()
+	if is_instance_valid(combo_button):
+		var combo_next := _combo_next_row()
+		if combo_next.is_empty():
+			combo_button.text = "🔥 Cartaz no degrau máximo"
+			combo_button.disabled = true
+		else:
+			combo_button.text = "🔥 Pendurar o cartaz — degrau %d (%d)" % [
+				int(combo_next["rank"]), int(combo_next["cost"])]
+			combo_button.disabled = gold < int(combo_next["cost"])
 	for i in range(Staff.DATA.size()):
 		var seat: Dictionary = Staff.DATA[i]
 		var seat_id := str(seat["id"])
@@ -7974,6 +8639,22 @@ func _save_game() -> void:
 	config.set_value("game", "library_upgrade_level", library_upgrade_level)
 	config.set_value("game", "sanctum_upgrade_level", sanctum_upgrade_level)
 	config.set_value("game", "known_recipes", known_recipes)
+	config.set_value("game", "lab_trials", lab_trials)
+	config.set_value("game", "lab_mix", lab_mix)
+	config.set_value("game", "lab_hints", lab_hints)
+	config.set_value("game", "lab_discovered", lab_discovered)
+	config.set_value("game", "lab_flops", lab_flops)
+	config.set_value("game", "vip_rank", vip_rank)
+	config.set_value("game", "vip_served", vip_served)
+	config.set_value("game", "vip_refusals", vip_refusals)
+	config.set_value("game", "vip_tips_gold", vip_tips_gold)
+	config.set_value("game", "complaints", complaints)
+	config.set_value("game", "complaints_written", complaints_written)
+	config.set_value("game", "complaints_hushed", complaints_hushed)
+	config.set_value("game", "combo_rank", combo_rank)
+	config.set_value("game", "combo_streak", combo_streak)
+	config.set_value("game", "combo_best", combo_best)
+	config.set_value("game", "combo_gold", combo_gold)
 	config.set_value("game", "queue_distractions", queue_distractions)
 	config.set_value("game", "products", products)
 	# O que a forja ainda não terminou é dinheiro do jogador em andamento: perder
@@ -8414,6 +9095,54 @@ func _load_game() -> void:
 			var recipe_key := str(saved_recipe)
 			if not recipe_key.is_empty() and not known_recipes.has(recipe_key):
 				known_recipes.append(recipe_key)
+	# A bancada lê o arquivo com tesoura: assinatura que não é de ingrediente do mercado
+	# não entra, id de receita inventado cai do resultado do ensaio, e a mesa em brasa
+	# volta limitada ao que a casa comporta e ao que o estoque ainda tem. Um save antigo,
+	# sem nenhuma destas chaves, acorda com a mesa raspada e o caderno em branco.
+	var saved_trials = config.get_value("game", "lab_trials", {})
+	lab_trials.clear()
+	if saved_trials is Dictionary:
+		for saved_key in saved_trials.keys():
+			var trial_key := str(saved_key)
+			if not _lab_signature_valid(trial_key):
+				continue
+			var trial_outcome := str(saved_trials[saved_key])
+			var kept_outcomes: Array[String] = []
+			if not trial_outcome.is_empty():
+				for saved_recipe_id in trial_outcome.split(","):
+					var outcome_id := str(saved_recipe_id)
+					if not _product_by_id(outcome_id).is_empty() and not kept_outcomes.has(outcome_id):
+						kept_outcomes.append(outcome_id)
+			lab_trials[trial_key] = ",".join(kept_outcomes)
+	var saved_mix = config.get_value("game", "lab_mix", {})
+	lab_mix.clear()
+	if saved_mix is Dictionary:
+		var mix_units := 0
+		# Percorre o catálogo, não as chaves do arquivo: a ordem do dicionário lido do
+		# disco não é garantida, e a mesa tem de montar a mesma mistura duas cargas seguidas.
+		for ingredient in Ingredients.DATA:
+			var mix_kind := str(ingredient["id"])
+			if not saved_mix.has(mix_kind):
+				continue
+			var planned := clampi(int(saved_mix[mix_kind]), 0, int(ingredient_stock.get(mix_kind, 0)))
+			if planned <= 0 or lab_mix.size() >= LAB_MAX_KINDS or mix_units + planned > LAB_MAX_UNITS:
+				continue
+			lab_mix[mix_kind] = planned
+			mix_units += planned
+	lab_hints = _lab_ids_from_file(config.get_value("game", "lab_hints", []))
+	lab_discovered = _lab_ids_from_file(config.get_value("game", "lab_discovered", []))
+	lab_flops = maxi(0, int(config.get_value("game", "lab_flops", lab_flops)))
+	vip_rank = clampi(int(config.get_value("game", "vip_rank", vip_rank)), 0, VIP_TIERS.size() - 1)
+	vip_served = maxi(0, int(config.get_value("game", "vip_served", vip_served)))
+	vip_refusals = maxi(0, int(config.get_value("game", "vip_refusals", vip_refusals)))
+	vip_tips_gold = maxi(0, int(config.get_value("game", "vip_tips_gold", vip_tips_gold)))
+	complaints = clampi(int(config.get_value("game", "complaints", complaints)), 0, COMPLAINT_CAP)
+	complaints_written = maxi(0, int(config.get_value("game", "complaints_written", complaints_written)))
+	complaints_hushed = clampi(maxi(0, int(config.get_value("game", "complaints_hushed", complaints_hushed))), 0, complaints_written)
+	combo_rank = clampi(int(config.get_value("game", "combo_rank", combo_rank)), 0, COMBO_TIERS.size() - 1)
+	combo_streak = clampi(int(config.get_value("game", "combo_streak", combo_streak)), 0, COMBO_CEIL)
+	combo_best = clampi(maxi(0, int(config.get_value("game", "combo_best", combo_best))), 0, COMBO_CEIL)
+	combo_gold = maxi(0, int(config.get_value("game", "combo_gold", combo_gold)))
 	queue_distractions = int(config.get_value("game", "queue_distractions", queue_distractions))
 	ticks = maxi(0, int(config.get_value("game", "ticks", ticks)))
 	catalyst_enabled = bool(config.get_value("game", "catalyst_enabled", catalyst_enabled))
@@ -8851,6 +9580,14 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "poco_atravessado", "name": "Poço Sem Fundo por %d dias de balcão" % HARDEST_LIFE_DAYS, "condition": int(difficulty_days.get("poco_sem_fundo", 0)) >= HARDEST_LIFE_DAYS, "gold": 90, "rep": 5},
 		{"id": "credit_paid_five", "name": "Quem deve, paga (5 notas quitadas no balcão)", "condition": credit_paid >= 5, "gold": 75, "rep": 4},
 		{"id": "credit_red_ink", "name": "Tinta vermelha no livro (3 notas riscadas)", "condition": credit_written >= 3, "gold": 50, "rep": 0},
+		{"id": "lab_first_spark", "name": "Primeira faísca na bancada (receita travada descoberta por ensaio)", "condition": lab_discovered.size() >= 1, "gold": 60, "rep": 3, "pose": "book"},
+		{"id": "lab_full_bench", "name": "A bancada venceu o nível (%d receitas travadas arrancadas por ensaio)" % _lab_targets_total(), "condition": lab_discovered.size() >= _lab_targets_total(), "gold": 300, "rep": 12, "pose": "aplausos"},
+		{"id": "vip_first_robe", "name": "Capa fina no balcão (1 visita do salão servida com o topo da barra)", "condition": vip_served >= 1, "gold": 40, "rep": 2, "pose": "ousadia"},
+		{"id": "vip_full_salon", "name": "Salão de capas (10 visitas do salão servidas)", "condition": vip_served >= 10, "gold": 220, "rep": 8, "pose": "vitoria"},
+		{"id": "claims_first_line", "name": "A rua abriu o livro (primeira reclamação anotada)", "condition": complaints_written >= 1, "gold": 0, "rep": 0},
+		{"id": "claims_quiet_street", "name": "Boca calada (%d queixas apagadas pagando o cartório)" % (COMPLAINT_HUSH_ERASE * 3), "condition": complaints_hushed >= COMPLAINT_HUSH_ERASE * 3, "gold": 90, "rep": 3, "pose": "book"},
+		{"id": "combo_three", "name": "Ritmo de balcão (três vendas seguidas premiadas no mesmo dia)", "condition": combo_best >= 3, "gold": 70, "rep": 2, "pose": "danca"},
+		{"id": "combo_paid_back", "name": "O cartaz se paga (%d de ouro pagos em combo nesta vida)" % COMBO_PRIZE_GOLD, "condition": combo_gold >= COMBO_PRIZE_GOLD, "gold": 240, "rep": 9, "pose": "aplausos"},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
 		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"},
 		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
@@ -9250,6 +9987,9 @@ func _age_credit_book() -> String:
 		credit_lost_gold += owed
 		reputation = maxi(0, reputation - 2)
 		regular_bonds[debtor_id] = maxi(0, int(regular_bonds.get(debtor_id, 0)) - 1)
+		# A nota riscada é a queixa mais barulhenta das três fontes: quem emprestou ouro e
+		# não recebeu conta para a praça inteira, e a casa perde o nome junto com o dinheiro.
+		_add_complaint(COMPLAINT_FROM_WRITE_OFF)
 		lines.append("a casa riscou a nota de %s: %d de ouro que não voltam" % [
 			str(note.get("name", "O devedor")), owed])
 		riscadas.append(debtor_id)
@@ -9258,8 +9998,8 @@ func _age_credit_book() -> String:
 	if lines.is_empty():
 		return ""
 	audio.play("sad")
-	return "FIADO: %s • %d nota(s) no livro, %d de ouro na rua." % [
-		"; ".join(lines), credit_book.size(), _credit_on_street()]
+	return "FIADO: %s • %d nota(s) no livro, %d de ouro na rua • %s" % [
+		"; ".join(lines), credit_book.size(), _credit_on_street(), _complaint_tail(complaints)]
 
 
 func _credit_on_street() -> int:
@@ -9323,6 +10063,324 @@ func _credit_summary() -> String:
 	if not notas.is_empty():
 		head += "\n" + "\n".join(notas)
 	return head
+
+
+## A linha de rodapé que toda fonte de queixa puxa: quantas linhas o livro tem agora e o que
+## elas já cobram. Chamada por texto, sem emoji: quem imprime escolhe o marcador.
+func _complaint_tail(depois: int) -> String:
+	if _complaint_stage() == 0:
+		return "O livro de reclamações da rua lê %d linha(s): faltam %d para a rua começar a cobrar, e cada virada de dia apaga uma." % [
+			depois, COMPLAINT_LINE - depois]
+	return "O livro de reclamações da rua lê %d linha(s) e cobra: etiqueta %s, paciência −%d, porta −%d por tique." % [
+		depois, _label_word(), _complaint_patience_loss(), _complaint_crowd_loss()]
+
+
+## ── O SALÃO DAS CAPAS FINAS ──────────────────────────────────────────────────────
+## A fileira de trás do balcão: quem entra pelo cordão de veludo traz bolso maior, escolhe
+## pelo topo da barra de qualidade e deixa gorjeta. Quem não paga nada disso é a visita com
+## o cordão guardado — degrau zero devolve o perfil sorteado intacto e não consome um
+## sorteio a mais, porque salão fechado tem de medir exatamente o balcão de sempre.
+
+func _vip_row(rank: int) -> Dictionary:
+	return VIP_TIERS[clampi(rank, 0, VIP_TIERS.size() - 1)]
+
+
+func _vip_next_row() -> Dictionary:
+	if vip_rank >= VIP_TIERS.size() - 1:
+		return {}
+	return VIP_TIERS[vip_rank + 1]
+
+
+func _vip_standard() -> int:
+	return int(_vip_row(vip_rank)["standard"])
+
+
+func _vip_chance() -> int:
+	return int(_vip_row(vip_rank)["chance"])
+
+
+## Carimba a visita sorteada como capa fina: bolso, tempo de espera e o flag que o balcão
+## lê para exigir o topo da barra.
+func _maybe_vip(profile: Dictionary) -> Dictionary:
+	if vip_rank <= 0:
+		return profile
+	if randi() % 100 >= _vip_chance():
+		return profile
+	var stamped := profile.duplicate(true)
+	stamped["vip"] = true
+	stamped["budget"] = int(round(float(int(stamped.get("budget", 60))) * float(_vip_row(vip_rank)["budget"])))
+	stamped["patience"] = int(stamped.get("patience", 2)) + VIP_PATIENCE_BONUS
+	return stamped
+
+
+## O topo real da estante daquele produto: o maior degrau com peça em estoque, ou -1 se a
+## prateleira está vazia. Lê registro, não sorteia e não tira peça nenhuma.
+func _best_tier_for(index: int) -> int:
+	if index < 0 or index >= products.size():
+		return -1
+	var stock := _quality_for(str(products[index]["id"]))
+	for tier in range(Quality.size() - 1, -1, -1):
+		if int(stock[tier]) > 0:
+			return tier
+	return -1
+
+
+func _buy_vip_rank() -> void:
+	var next_row := _vip_next_row()
+	if next_row.is_empty():
+		last_event = "O salão tem três cordões, e o terceiro já está estendido: %d%% das visitas chegam de capa e exigem %s no topo da barra." % [
+			_vip_chance(), str(Quality.tier(_vip_standard())["name"])]
+		_show_feedback("🎩 O cordão já está no último degrau.", Color(0.86, 0.78, 0.95))
+		_refresh_ui()
+		return
+	if reputation < int(next_row["rep"]):
+		last_event = "Estender o cordão até o degrau %d pede %d de fama; a casa tem %d. Capa fina entra por convite, não por caixa." % [
+			int(next_row["rank"]), int(next_row["rep"]), reputation]
+		_show_feedback("✕ Falta fama para o salão.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	var cost := int(next_row["cost"])
+	if gold < cost:
+		last_event = "O cordão de veludo custa %d de ouro, e o caixa tem %d. Salão sem moeda é salão sem espelho." % [cost, gold]
+		_show_feedback("✕ Falta ouro para o salão.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	gold -= cost
+	vip_rank = int(next_row["rank"])
+	reputation += 1
+	_add_xp(12)
+	last_event = "🎩 Salão das capas finas no degrau %d: %d%% das visitas chegam de capa, bolso ×%.1f e a barra exige %s no topo (−%d de ouro)." % [
+		vip_rank, _vip_chance(), float(_vip_row(vip_rank)["budget"]),
+		str(Quality.tier(_vip_standard())["name"]), cost]
+	_show_feedback("✦ O cordão de veludo está estendido.", Color(0.86, 0.78, 0.95))
+	audio.play("coin")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+
+func _vip_summary() -> String:
+	if vip_rank <= 0:
+		return "O cordão de veludo está enrolado na gaveta: nenhuma visita chega de capa fina, e o balcão atende como sempre atendeu. O primeiro cordão custa %d de ouro e pede %d de fama." % [
+			int(VIP_TIERS[1]["cost"]), int(VIP_TIERS[1]["rep"])]
+	return "DEGRAU %d • %d%% das visitas de capa fina • bolso ×%.1f • exige %s no topo da barra • gorjeta de %.0f%% sobre a tabela • %d servida(s), %d recusada(s), %d de ouro em gorjeta." % [
+		vip_rank, _vip_chance(), float(_vip_row(vip_rank)["budget"]),
+		str(Quality.tier(_vip_standard())["name"]), float(_vip_row(vip_rank)["tip"]) * 100.0,
+		vip_served, vip_refusals, vip_tips_gold]
+
+
+## ── O LIVRO DE RECLAMAÇÕES DA RUA ────────────────────────────────────────────────
+## Queixa não é falta de fama: é a casa errando e a rua contando. As três linhas que o livro
+## aceita são as três vezes em que o erro aparece na mão de alguém — a peça torto que saiu da
+## forja, a capa fina devolvida na prateleira e a nota riscada no fiado. Até a sexta linha a
+## rua só murmura: etiqueta, paciência e porta devolvem exatamente os números de sempre, e
+## nada aqui consome sorteio. Da sexta a casa paga etiqueta e fila; da décima segunda, paga
+## também a batida na porta. Apagar custa ouro e nunca compra fama.
+
+## Anota `quanto` linhas e devolve o livro já atualizado. O teto é do livro, não da história:
+## `complaints_written` continua contando tudo que a rua já ouviu.
+func _add_complaint(quanto: int) -> int:
+	if quanto <= 0:
+		return complaints
+	complaints_written += quanto
+	complaints = mini(COMPLAINT_CAP, complaints + quanto)
+	return complaints
+
+
+## 0 = ainda não cobra nada, 1 = boato (etiqueta e fila), 2 = escândalo (etiqueta, fila e porta).
+func _complaint_stage() -> int:
+	if complaints >= COMPLAINT_SCANDAL:
+		return 2
+	if complaints >= COMPLAINT_LINE:
+		return 1
+	return 0
+
+
+## O desconto que a rua arranca da etiqueta. Abaixo da sexta linha é exatamente 1.0 — e
+## multiplicar por 1.0 não move um centavo de nenhuma conta já medida neste repo.
+func _complaint_label_factor() -> float:
+	if _complaint_stage() == 0:
+		return 1.0
+	return 1.0 - minf(COMPLAINT_LABEL_MAX, float(complaints - COMPLAINT_LINE + 1) * COMPLAINT_LABEL_STEP)
+
+
+func _complaint_patience_loss() -> int:
+	return COMPLAINT_PATIENCE_LOSS[_complaint_stage()]
+
+
+func _complaint_crowd_loss() -> int:
+	return COMPLAINT_CROWD_LOSS[_complaint_stage()]
+
+
+## A rua esquece uma linha por virada. Sem dado, sem conta, sem ouro: só a memória curta.
+func _complaints_forget() -> void:
+	if complaints > 0:
+		complaints -= 1
+
+
+func _hush_cost() -> int:
+	return COMPLAINT_HUSH_BASE + COMPLAINT_HUSH_PER_LINE * complaints
+
+
+func _hush_street() -> void:
+	if complaints <= 0:
+		last_event = "O livro está em branco: não há o que a rua cobrar de você nesta vida."
+		_show_feedback("📗 Ninguém fala mal da casa.", Color(0.72, 0.90, 0.74))
+		_refresh_ui()
+		return
+	var cost := _hush_cost()
+	if gold < cost:
+		last_event = "Calar a boca da rua com %d linha(s) no livro custa %d de ouro, e o caixa tem %d. A rua espera." % [
+			complaints, cost, gold]
+		_show_feedback("✕ Falta ouro para o cartório.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	gold -= cost
+	var antes := _complaint_stage()
+	var apagadas := mini(COMPLAINT_HUSH_ERASE, complaints)
+	complaints -= apagadas
+	complaints_hushed += apagadas
+	last_event = "🗣 A casa paga %d de ouro ao cartório da praça e risca %d linha(s): restam %d no livro, e a etiqueta volta a %s." % [
+		cost, apagadas, complaints, _label_word()]
+	if _complaint_stage() < antes:
+		_show_feedback("✦ A rua baixa o tom.", Color(0.86, 0.72, 0.58))
+	else:
+		_show_feedback("✦ O cartório risca a linha.", Color(0.86, 0.72, 0.58))
+	audio.play("coin")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+
+## Como a etiqueta está de pé agora, do jeito que o balcão a lê.
+func _label_word() -> String:
+	var corte := int(round((1.0 - _complaint_label_factor()) * 100.0))
+	if corte <= 0:
+		return "cheia"
+	return "%d%% abaixo" % corte
+
+
+func _complaint_summary() -> String:
+	var stage := _complaint_stage()
+	var base := "%d linha(s) já escritas, %d apagadas pagando." % [complaints_written, complaints_hushed]
+	if complaints <= 0:
+		return "📗 O livro está em branco: a rua não tem o que contar da sua casa. Peça torto na mão de alguém, capa fina devolvida e nota riscada no fiado são as três linhas que ele aceita — e cada virada de dia apaga o que estiver escrito."
+	if stage == 0:
+		return "📙 MURMÚRIO • %d linha(s) no livro: a rua ainda não cobra nada (%d para a sexta). Cada virada de dia esquece uma linha, e a voz da rua custa %d de ouro por %d apagada(s). %s" % [
+			complaints, COMPLAINT_LINE - complaints, _hush_cost(), COMPLAINT_HUSH_ERASE, base]
+	return "📕 %s • %d linha(s) no livro • etiqueta %s • paciência −%d • porta −%d por tique • cada virada esquece uma linha, e a voz da rua custa %d de ouro por %d apagada(s). %s" % [
+		"BOATO" if stage == 1 else "ESCÂNDALO", complaints, _label_word(),
+		_complaint_patience_loss(), _complaint_crowd_loss(), _hush_cost(),
+		COMPLAINT_HUSH_ERASE, base]
+
+
+## ── O CARTAZ DO COMBO ───────────────────────────────────────────────────────────
+## O ritmo do balcão no mesmo dia: vendas seguidas, sem ninguém batendo a porta no
+## meio. O cartaz é escada de três degraus e o degrau zero é inerte por desenho — a
+## casa conta a sequência, mas só paga quem pendurou o cartaz, porque a régua do
+## README e as sondas antigas medem exatamente o balcão sem ele.
+
+func _combo_row(rank: int) -> Dictionary:
+	return COMBO_TIERS[clampi(rank, 0, COMBO_TIERS.size() - 1)]
+
+
+func _combo_next_row() -> Dictionary:
+	if combo_rank >= COMBO_TIERS.size() - 1:
+		return {}
+	return COMBO_TIERS[combo_rank + 1]
+
+
+## Fatia da etiqueta de tabela que o ritmo paga agora. Zero com o cartaz guardado e
+## zero antes da `start`-ésima venda seguida; nada aqui toca o `randi()` da loja.
+func _combo_rate() -> float:
+	if combo_rank <= 0:
+		return 0.0
+	var row := _combo_row(combo_rank)
+	if combo_streak < int(row["start"]):
+		return 0.0
+	return minf(float(row["cap"]), float(row["step"]) * float(combo_streak - int(row["start"]) + 1))
+
+
+## Quem bate a porta no meio da sequência corta o ritmo na hora, com cartaz ou sem
+## ele: combo é prêmio de balcão que dá conta, não contagem de tiques.
+func _break_combo() -> void:
+	combo_streak = 0
+
+
+## A venda que acabou de sair. `pago` é o ouro que o combo entrou no caixa — zero no
+## degrau zero e zero na nota do fiado, que ainda vai cobrar. Recorde e cofre da vida
+## só mexem quando houve pagamento, para a conquista ler dinheiro de verdade.
+func _bump_combo(pago: int) -> void:
+	combo_streak = mini(combo_streak + 1, COMBO_CEIL)
+	combo_day_best = maxi(combo_day_best, combo_streak)
+	if pago <= 0:
+		return
+	combo_gold += pago
+	combo_day_gold += pago
+	combo_best = maxi(combo_best, combo_streak)
+
+
+func _buy_combo_rank() -> void:
+	var next_row := _combo_next_row()
+	if next_row.is_empty():
+		last_event = "O cartaz já está no último degrau: paga %d por cento na etiqueta a partir da %dª venda seguida, com teto de %d por cento." % [
+			int(round(float(_combo_row(combo_rank)["step"]) * 100.0)),
+			int(_combo_row(combo_rank)["start"]),
+			int(round(float(_combo_row(combo_rank)["cap"]) * 100.0))]
+		_show_feedback("🔥 O cartaz já é o maior da rua.", Color(1.0, 0.72, 0.45))
+		_refresh_ui()
+		return
+	if reputation < int(next_row["rep"]):
+		last_event = "O cartaz do degrau %d pede %d de fama; a casa tem %d. Combo é boca que espalha, não ouro que se compra sozinho." % [
+			int(next_row["rank"]), int(next_row["rep"]), reputation]
+		_show_feedback("✕ Falta fama para pendurar o cartaz.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	var cost := int(next_row["cost"])
+	if gold < cost:
+		last_event = "O cartaz custa %d de ouro, e o caixa tem %d. Prometer bônus sem caixa para pagá-lo é fila de promessa." % [
+			cost, gold]
+		_show_feedback("✕ Falta ouro para o cartaz.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	gold -= cost
+	combo_rank = int(next_row["rank"])
+	reputation += 1
+	_add_xp(12)
+	var row := _combo_row(combo_rank)
+	last_event = "🔥 Cartaz no degrau %d: a partir da %dª venda seguida do dia a etiqueta sai %d por cento mais cara, subindo %d por cento por venda até %d por cento de teto (−%d de ouro)." % [
+		combo_rank, int(row["start"]), int(round(float(row["step"]) * 100.0)),
+		int(round(float(row["step"]) * 100.0)), int(round(float(row["cap"]) * 100.0)), cost]
+	_show_feedback("✦ Cartaz pendurado: o balcão agora paga ritmo.", Color(1.0, 0.72, 0.45))
+	audio.play("coin")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+
+func _combo_summary() -> String:
+	var row := _combo_row(combo_rank)
+	var vida := "Recorde premiado da vida: %d venda(s) seguidas • %d de ouro pago em combo." % [
+		combo_best, combo_gold]
+	if combo_rank <= 0:
+		return "🔕 Sem cartaz na parede: a casa conta a sequência (agora em %d venda(s) seguidas), mas não paga nem cobra por ela. Pendurar o cartaz custa %d de ouro e pede %d de fama. %s" % [
+			combo_streak, int(COMBO_TIERS[1]["cost"]), int(COMBO_TIERS[1]["rep"]), vida]
+	var rate := _combo_rate()
+	if rate <= 0.0:
+		return "🔕 Cartaz no degrau %d: paga a partir da %dª venda seguida do dia e a sequência está em %d. Uma visita que sai sem comprar corta o ritmo, e a virada recomeça o dia. %s" % [
+			combo_rank, int(row["start"]), combo_streak, vida]
+	return "🔥 COMBO DE %d • etiqueta +%d por cento (teto %d) • %d de ouro pago hoje em combo. A sequência morre na virada e morre em quem sai sem comprar. %s" % [
+		combo_streak, int(round(rate * 100.0)), int(round(float(row["cap"]) * 100.0)),
+		combo_day_gold, vida]
+
+
+## O rodapé que toda festa de balcão puxa quando o combo paga: qual venda do dia foi esta,
+## quanto a etiqueta subiu e o que a casa já embolsou com o ritmo. A etiqueta é lida antes
+## de a venda entrar no contador — é por isso que a sequência vem de fora, somada, e o
+## total do dia aparece já com esta venda dentro.
+func _combo_tail(pago: int, sequencia: int) -> String:
+	return "🔥 Combo de %d venda(s) seguidas no dia: %d de ouro a mais na etiqueta (%d por cento), %d pago(s) hoje no cartaz." % [
+		sequencia, pago, int(round(_combo_rate() * 100.0)), combo_day_gold + pago]
 
 
 func _collect_branches() -> String:
@@ -9970,9 +11028,13 @@ func _close_day_balance() -> Dictionary:
 		"happy": happy_customers - day_snap_happy,
 		"lost": disappointed_customers - day_snap_lost,
 		"walkouts": day_walkouts,
+		"combo_best": combo_day_best,
+		"combo_gold": combo_day_gold,
 	}
 	_mark_day_start()
 	day_walkouts = 0
+	combo_day_best = 0
+	combo_day_gold = 0
 	return balance
 
 ## O popup do balanço: a rua para, e a chefe vê o dia em números antes de dormir.
@@ -10032,6 +11094,17 @@ func _show_day_report(balance: Dictionary) -> void:
 	counts.add_theme_font_size_override("font_size", 15)
 	counts.add_theme_color_override("font_color", Color(0.93, 0.89, 0.96))
 	box.add_child(counts)
+
+	# A linha do cartaz só nasce quando houve ouro de combo no dia: com o cartaz guardado
+	# o balanço continua sendo exatamente o mesmo popup que as sondas antigas lêem.
+	if int(balance["combo_gold"]) > 0:
+		var combo_counts := Label.new()
+		combo_counts.text = "🔥 Combo do dia: %d de ouro pago no cartaz, recorde de %d venda(s) seguidas" % [
+			int(balance["combo_gold"]), int(balance["combo_best"])]
+		combo_counts.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		combo_counts.add_theme_font_size_override("font_size", 14)
+		combo_counts.add_theme_color_override("font_color", Color(1.0, 0.78, 0.45))
+		box.add_child(combo_counts)
 
 	var prose := Label.new()
 	prose.text = day_report
@@ -10436,6 +11509,28 @@ func _reset_run() -> void:
 	# ficou de fora, então a tinta velha some toda.
 	spec_choice.clear()
 	known_recipes.clear()
+	# A bancada é da vida: o caderno de becos e a mesa em brasa são o que esta tentativa
+	# aprendeu, e a vida nova existe justamente para aprender outros.
+	lab_trials.clear()
+	lab_mix.clear()
+	lab_hints.clear()
+	lab_discovered.clear()
+	lab_flops = 0
+	vip_rank = 0
+	vip_served = 0
+	vip_refusals = 0
+	vip_tips_gold = 0
+	# O livro de reclamações é da vida, não da dinastia: a rua esquece quem fechou a loja
+	# anterior, e a vida nova começa com a boca limpa — cobrança inclusive.
+	complaints = 0
+	complaints_written = 0
+	complaints_hushed = 0
+	combo_rank = 0
+	combo_streak = 0
+	combo_day_best = 0
+	combo_day_gold = 0
+	combo_best = 0
+	combo_gold = 0
 	daily_quest_index = 0
 	daily_quest_progress = 0
 	daily_quest_claimed = false
@@ -11075,59 +12170,51 @@ func _progress_band_now() -> int:
 			band = i
 	return band
 
-## Quanto da obra ainda está de pé numa faixa: 1.0 no canteiro, quase seca na
-## primeira reforma, 0.0 quando a casa já tem piso encerado. A lona não pode morar
-## numa loja "respeitada" — quem reformou tirou o pano, e a faixa tem de dizer isso.
-func _renovation_alpha(band: int) -> float:
-	if band > RENOVATION_LAST_BAND:
-		return 0.0
-	return 1.0 if band <= 0 else 0.45
-
-
-## Aplica a faixa: esquenta o fundo pintado do mesmo salão, lava a cor dos móveis
-## enquanto há lona, engorda a poeira do ar e, na mudança de faixa, redesenha a
-## camada. A luz e o pó acompanham a faixa em todo painel — trocar `modulate` não
-## custa nada, e é o que faz a casa abrir já em obras sem que ninguém tenha subido
-## a escada (faixa 0 nunca é "mudança"). O redraw e o aviso da chefe, esses ficam só
-## na mudança: redesenhar o salão a cada tique é redesenhar a mesma coisa.
+## Aplica a faixa: troca a ARTE do salão quando a escada vira, esquenta a luz da sala
+## inteira (fundo, recorte dos móveis e elenco juntos) e engrossa a poeira do ar. A luz
+## e o pó acompanham a faixa em todo painel — trocar `modulate` não custa nada, e é o que
+## faz a casa abrir já no estado certo sem que ninguém tenha subido a escada (faixa 0
+## nunca é "mudança"). Trocar de arte e o aviso da chefe ficam só na mudança: repintar o
+## salão a cada tique é repintar a mesma coisa.
 func _apply_progress_decor() -> void:
 	var band := _progress_band_now()
 	var antes := _progress_band
 	var quiet := _progress_quiet
 	_progress_quiet = false
-	# O mesmo PNG, um degrau mais quente e mais aceso: a casa não troca de arte,
-	# troca de luz, e é a luz que o olho lê como "essa loja cresceu". A obra começa
-	# abaixo da cor original — fria e apagada, parede sem última demão e nenhuma vela
-	# acesa — e a faixa 0 é justamente o canteiro. O aquecimento é o prêmio.
+	var luz: Color = PROGRESS_BAND_LIGHT[clampi(band, 0, PROGRESS_BAND_LIGHT.size() - 1)]
+	# A escada agora é pintada, não insinuada: cada faixa tem o próprio PNG do mesmo
+	# cômodo, e a luz só segura o clima em cima dele — fria e azulada no casarão cru,
+	# quente no império. A luz é da sala INTEIRA. O recorte dos móveis é outra camada
+	# pintada com a MESMA arte: fundo a 0,80 e balcão a 1,0 fariam o móvel flutuar por
+	# cima da parede.
 	if is_instance_valid(background_layer):
-		background_layer.modulate = PROGRESS_BAND_LIGHT[
-			clampi(band, 0, PROGRESS_BAND_LIGHT.size() - 1)]
-	# O elenco mora na sala, então a luz da sala o atinge. Sem isso o corpo entra
-	# num salão a 0,46 queimando a 1,0 e vira desenho colado por cima da foto. O
-	# matiz vai a 0,78 do degradê e não 1,0: rosto precisa continuar lendo como
-	# rosto, e o escuro da obra é mais funda atrás do que em cima de quem trabalha.
-	# Só se troca o rgb — o alfa é do fade de troca de sala.
-	if is_instance_valid(stage_layer):
-		var luz: Color = PROGRESS_BAND_LIGHT[clampi(band, 0, PROGRESS_BAND_LIGHT.size() - 1)]
-		var corpo := Color(1.0, 1.0, 1.0).lerp(luz, 0.78)
-		stage_layer.modulate = Color(corpo.r, corpo.g, corpo.b, stage_layer.modulate.a)
-	# O móvel coberto tem outra cor: os móveis voltam ao tom de tinta quando a lona
-	# sai. A lona é clara porque pega a lâmpada, mas mora num salão escuro — clara
-	# demais, ela vira o objeto mais aceso da sala e a obra some. Só se troca o
-	# matiz aqui — o alfa é do fade de troca de sala, e mexer nele seria cortar a
+		background_layer.modulate = luz
+	# Só se troca o rgb — o alfa é do fade de troca de sala, e mexer nele seria cortar a
 	# animação de outra.
 	if is_instance_valid(stage_occluder):
-		var washed := Color(1.0, 1.0, 1.0).lerp(Color(0.66, 0.68, 0.80), _renovation_alpha(band))
-		stage_occluder.modulate = Color(
-			washed.r, washed.g, washed.b, stage_occluder.modulate.a)
+		stage_occluder.modulate = Color(luz.r, luz.g, luz.b, stage_occluder.modulate.a)
+	# O elenco mora na sala, então a luz da sala o atinge — mas a 0,78 do degradê e não a
+	# 1,0: rosto precisa continuar lendo como rosto, e quem trabalha tem de ficar um
+	# degrau acima do fundo.
+	if is_instance_valid(stage_layer):
+		var corpo := Color(1.0, 1.0, 1.0).lerp(luz, 0.78)
+		stage_layer.modulate = Color(corpo.r, corpo.g, corpo.b, stage_layer.modulate.a)
 	if is_instance_valid(ambient_particles):
 		# No canteiro o ar é grosso de pó de gesso; depois, a poeira dourada do luxo.
 		ambient_particles.amount = 52 if band <= 0 else 24 + band * 12
 	if band == antes:
 		return
 	_progress_band = band
-	if is_instance_valid(_progress_layer):
-		_progress_layer.queue_redraw()
+	# A casa troca de ARTE, não de tinta: o mesmo cômodo filmado do mesmo ponto, num
+	# estado diferente da obra. A troca passa pelo fade de sala de propósito — reforma
+	# que ninguém vê não é prêmio. Sala que não é o salão (close-up de cena, forja,
+	# biblioteca, santuário, guilda) não tem escada e fica como está até o jogador
+	# voltar à recepção, onde `_sector_scene` pergunta a faixa de novo.
+	var arte := _salon_art(band)
+	if _stage_room == SALON_GEOMETRY_KEY and _stage_art != arte:
+		if is_instance_valid(background_layer):
+			background_layer.texture = load(arte)
+		_show_stage_for_room(arte, _stage_walkable)
 	# A faixa sobe sozinha, mas quem avisa é a chefe: ninguém pode descobrir o
 	# salão novo por acidente no meio de uma venda.
 	if band > antes and not quiet:
@@ -11136,240 +12223,13 @@ func _apply_progress_decor() -> void:
 		# A faixa nova é a notícia maior, mas não apaga o que o balcão acabou de dizer:
 		# quem levou no fiado, quem pagou o capítulo, quem levou a encomenda. Perder essa
 		# linha no meio de uma reforma é o jogador fazer a conta da casa sem ler o
-		# recibo. A obra entra por cima, o recibo fica embaixo.
+		# recibo. A faixa entra por cima, o recibo fica embaixo.
 		var recibo := str(last_event)
 		last_event = anuncio if recibo.is_empty() else "%s\n%s" % [anuncio, recibo]
 		_show_stage_emotion(stage_seller_body, "felicidade")
 
-## A obra em si, desenhada na camada entre o fundo pintado e o elenco: poeira no ar,
-## massa crua na parede, lona no piso, escoramento de madeira, entulho com o pé na
-## linha do chão, balde de tinta e uma única lâmpada no fio. Nenhum pixel de cenário
-## novo, nenhuma moldura, nenhuma arte duplicada — é a mesma sala, inacabada.
-func _draw_progress_works(wide: float, tall: float, ground: Vector2, alpha: float) -> void:
-	var stroke := maxf(1.0, wide * 0.0018)
-	# 1) Teto sem luz: a meia-luz da obra mora em cima, onde não há lustre nem vela
-	# acesa. São três faixas horizontais de carga decrescente, e não um gradiente — a
-	# camada só sabe retângulo, e retângulo escuro de carga baixa ninguém vê como régua.
-	for demao in range(3):
-		_progress_layer.draw_rect(Rect2(0.0, tall * float(demao) / 3.0, wide, tall / 3.0),
-			Color(0.10, 0.09, 0.16, (0.11 - float(demao) * 0.04) * alpha))
-	# 2) Parede sem última demão: onde a massa ainda não recebeu tinta é MAIS ESCURA que
-	# a parede. Cada remendo são dois retângulos deslocados, sem contorno — um traço de
-	# régua na beirada seria o suficiente para virar janela.
-	for i in RENOVATION_WALL_PATCHES.size():
-		var patch: Rect2 = RENOVATION_WALL_PATCHES[i]
-		var area := Rect2(wide * patch.position.x, tall * patch.position.y,
-			wide * patch.size.x, tall * patch.size.y)
-		_progress_layer.draw_rect(area, Color(0.10, 0.09, 0.13, 0.42 * alpha))
-		_progress_layer.draw_rect(Rect2(area.position.x + area.size.x * 0.12,
-			area.position.y + area.size.y * 0.16, area.size.x * 0.7, area.size.y * 0.62),
-			Color(0.17, 0.15, 0.20, 0.34 * alpha))
-		# A borda de baixo do remendo é a única parte clara: é onde a massa termina e a
-		# tinta começa, e sem esse degrau o retângulo escuro é só sombra de interface.
-		_progress_layer.draw_rect(Rect2(area.position.x, area.end.y - tall * 0.008,
-			area.size.x, tall * 0.008), Color(0.44, 0.41, 0.44, 0.20 * alpha))
-	# 3) Lona no piso: o pano que a obra estende para receber tinta e gesso. Fica no
-	# piso livre da frente da sala, onde o elenco passa por cima — corpo na frente do
-	# pano é o que faz o pano estar no chão e não flutuando.
-	var cloth := PackedVector2Array([])
-	for canto in RENOVATION_CLOTH.size():
-		var aqui: Vector2 = RENOVATION_CLOTH[canto]
-		cloth.append(Vector2(wide * aqui.x, tall * aqui.y))
-	_progress_layer.draw_colored_polygon(cloth, Color(0.52, 0.51, 0.58, 0.30 * alpha))
-	for vinco in range(3):
-		var t := 0.22 + float(vinco) * 0.26
-		_progress_layer.draw_line(cloth[0].lerp(cloth[1], t), cloth[3].lerp(cloth[2], t),
-			Color(0.18, 0.17, 0.22, 0.26 * alpha), stroke)
-	# 4) Escoramento: cavaletes de dois pés com prancha por cima. Os pés batem na linha
-	# do chão pintado, então o andaime pertence à sala, não à tela, e o elenco passa na
-	# frente dele porque a camada é mais funda que o palco. O pé é largo o bastante para
-	# ter duas bordas legíveis: a 5 pixels de traço ele era linha verde flutuando na
-	# sala, e linha não é móvel de obra.
-	var pole_w := maxf(3.0, wide * 0.0075)
-	var plank_y := tall * RENOVATION_PLANK_Y
-	var plank_w := maxf(2.0, tall * 0.014)
-	for i in range(0, RENOVATION_POLES.size(), 2):
-		var left := RENOVATION_POLES[i]
-		var right: float = RENOVATION_POLES[mini(i + 1, RENOVATION_POLES.size() - 1)]
-		for par in [left, right]:
-			var head := Vector2(wide * par, plank_y)
-			var foot := Vector2(wide * par, ground.y)
-			_progress_layer.draw_line(head, foot, Color(0.20, 0.15, 0.11, 0.92 * alpha), pole_w)
-			# O pé só existe na meia-luz porque tem aresta iluminada pela lâmpada: um
-			# fio claro do lado que dá para a luz, e a madeira volta a ser objeto.
-			_progress_layer.draw_line(head + Vector2(-pole_w * 0.5, 0.0),
-				foot + Vector2(-pole_w * 0.5, 0.0),
-				Color(0.62, 0.50, 0.36, 0.62 * alpha), maxf(1.5, stroke * 1.2))
-			_progress_layer.draw_circle(foot, pole_w * 1.4, Color(0.05, 0.04, 0.07, 0.45 * alpha))
-		var board := Rect2(wide * (left - 0.014), plank_y - plank_w * 0.5,
-			wide * (right - left + 0.028), plank_w)
-		_progress_layer.draw_rect(board, Color(0.30, 0.23, 0.15, 0.92 * alpha))
-		_progress_layer.draw_rect(Rect2(board.position.x, board.position.y,
-			board.size.x, plank_w * 0.26), Color(0.66, 0.54, 0.38, 0.55 * alpha))
-		_progress_layer.draw_rect(Rect2(board.position.x, board.end.y - plank_w * 0.3,
-			board.size.x, plank_w * 0.3), Color(0.10, 0.07, 0.06, 0.85 * alpha))
-		_progress_layer.draw_line(
-			Vector2(board.position.x + board.size.x * 0.5, board.position.y),
-			Vector2(board.position.x + board.size.x * 0.5, board.end.y),
-			Color(0.08, 0.06, 0.05, 0.60 * alpha), stroke)
-	# 5) Entulho: montículo após montículo com a base na linha do chão. Três arcos de
-	# raio diferente fazem pilha de gesso sem desenho novo, e o tijolo dá o canto duro
-	# que a pilha arredondada sozinha não tem.
-	for i in RENOVATION_RUBBLE.size():
-		var offset: Vector2 = RENOVATION_RUBBLE[i]
-		_draw_rubble_mound(ground + Vector2(wide * offset.x, tall * offset.y), wide * 0.050, alpha)
-	var bucket := ground + Vector2(wide * RENOVATION_BUCKET.x, tall * RENOVATION_BUCKET.y)
-	var bucket_w := wide * 0.022
-	_progress_layer.draw_colored_polygon(PackedVector2Array([
-		bucket + Vector2(-bucket_w, -tall * 0.028),
-		bucket + Vector2(bucket_w * 1.15, -tall * 0.028),
-		bucket + Vector2(bucket_w * 0.8, 0.0),
-		bucket + Vector2(-bucket_w * 0.7, 0.0),
-	]), Color(0.18, 0.18, 0.24, 0.80 * alpha))
-	_progress_layer.draw_line(bucket + Vector2(-bucket_w, -tall * 0.028),
-		bucket + Vector2(bucket_w * 1.15, -tall * 0.028),
-		Color(0.62, 0.62, 0.70, 0.40 * alpha), stroke)
-	# 6) A lâmpada do fio: enquanto não há lustre, a casa inteira depende de uma só
-	# lâmpada na altura de trabalho. O centro é a luz pintada mais próxima do meio do
-	# teto, porque é ali que o olho já procura o cabo.
-	var lamps: Array = STAGE_ROOM_LIGHTS.get(_stage_room, [])
-	var bulb_x := wide * 0.5
-	var best := 9.9
-	for lamp in lamps:
-		var aqui_luz: Vector2 = lamp
-		var score := absf(aqui_luz.x - 0.5) + aqui_luz.y
-		if score < best:
-			best = score
-			bulb_x = wide * aqui_luz.x
-	var bulb := Vector2(bulb_x, tall * 0.245)
-	_progress_layer.draw_line(Vector2(bulb_x, 0.0),
-		Vector2(bulb_x + wide * 0.006, bulb.y - tall * 0.010),
-		Color(0.07, 0.06, 0.08, 0.85 * alpha), stroke)
-	_progress_layer.draw_rect(Rect2(bulb + Vector2(-wide * 0.0035, -tall * 0.016),
-		Vector2(wide * 0.007, tall * 0.008)), Color(0.16, 0.15, 0.15, 0.85 * alpha))
-	_progress_layer.draw_circle(bulb, wide * 0.055, Color(1.0, 0.78, 0.40, 0.06 * alpha))
-	_progress_layer.draw_circle(bulb, wide * 0.026, Color(1.0, 0.82, 0.46, 0.12 * alpha))
-	_progress_layer.draw_circle(bulb, wide * 0.009, Color(1.0, 0.94, 0.72, 0.85 * alpha))
-	_progress_layer.draw_colored_polygon(PackedVector2Array([
-		bulb + Vector2(-wide * 0.012, tall * 0.007),
-		bulb + Vector2(wide * 0.012, tall * 0.007),
-		Vector2(bulb_x + wide * 0.16, ground.y),
-		Vector2(bulb_x - wide * 0.16, ground.y),
-	]), Color(1.0, 0.84, 0.50, 0.055 * alpha))
-
-## Um montículo de entulho: meia-cúpula chata, em três tamancos, com a base exatamente
-## na linha do chão. Sem RNG — o salão tem de sair igual de um redraw para o outro.
-func _draw_rubble_mound(center: Vector2, radius: float, alpha: float) -> void:
-	# A sombra no pé é o que prega a pilha no chão: sem ela o montículo flutua. Vem
-	# antes das cúpulas, para sobrar dela só a borda em volta da base.
-	_progress_layer.draw_circle(center, radius * 0.9, Color(0.05, 0.04, 0.07, 0.34 * alpha))
-	for tier in range(3):
-		var r := radius * (1.0 - float(tier) * 0.26)
-		var pe := center + Vector2(radius * 0.42 * float(tier - 1), -r * 0.06 * float(tier))
-		var shell := PackedVector2Array([pe + Vector2(-r, 0.0)])
-		for step in range(1, 6):
-			var angle := PI - float(step) * PI / 6.0
-			shell.append(pe + Vector2(cos(angle) * r, sin(angle) * -r * 0.58))
-		shell.append(pe + Vector2(r, 0.0))
-		_progress_layer.draw_colored_polygon(shell,
-			Color(0.36, 0.34, 0.38, (0.50 + float(tier) * 0.15) * alpha))
-	for tijolo in range(2):
-		var canto := center + Vector2(radius * (0.62 - float(tijolo) * 1.24), -radius * 0.2 * float(tijolo))
-		_progress_layer.draw_rect(Rect2(canto, Vector2(radius * 0.36, radius * 0.16)),
-			Color(0.34, 0.20, 0.16, 0.75 * alpha))
-
-## A camada em si: tudo desenhado em código, em coordenadas normalizadas da sala,
-## para funcionar nas quatro salas sem arte nova e sem arquivo novo no repositório.
-func _draw_progress_decor() -> void:
-	if not _stage_walkable or _progress_layer.size.x <= 0.0:
-		return
-	var wide := _progress_layer.size.x
-	var tall := _progress_layer.size.y
-	var floor_line: Vector2 = STAGE_ROOM_FLOOR.get(_stage_room, Vector2(0.60, 0.80))
-	var ground := Vector2(wide * floor_line.x, tall * floor_line.y)
-	var obras := _renovation_alpha(_progress_band)
-	# A faixa 0 é o canteiro: nada de tapete, porque o piso ainda não foi encerado.
-	# Faixa 1 — o piso encerado: a camada não desenha um tapete novo por cima do
-	# que a arte já pintou, ela realça o tapete que está lá. Uma lavagem quente e
-	# outra funda na mesma silhueta, e o brilho da borda de trás.
-	if _progress_band >= 1:
-		var mat := PackedVector2Array([])
-		var rug: Array = PROGRESS_RUG.get(_stage_room, [])
-		if rug.size() == 4:
-			for corner in rug:
-				mat.append(Vector2(wide * (corner as Vector2).x, tall * (corner as Vector2).y))
-		else:
-			var w := wide * 0.30
-			var deep := tall * 0.055
-			mat = PackedVector2Array([
-				ground + Vector2(-w * 0.55, -deep * 2.0),
-				ground + Vector2(w * 0.55, -deep * 2.0),
-				ground + Vector2(w, deep),
-				ground + Vector2(-w, deep),
-			])
-		_progress_layer.draw_colored_polygon(mat, Color(1.0, 0.70, 0.36, 0.09))
-		_progress_layer.draw_colored_polygon(mat, Color(0.20, 0.02, 0.09, 0.16))
-		_progress_layer.draw_line(mat[0], mat[1], Color(0.88, 0.70, 0.34, 0.28), 2.0)
-	# A obra por último: prancha, pé de escoramento e entulho têm de aparecer na
-	# frente do tapete, senão o andaime afunda no piso encerado.
-	if obras > 0.0:
-		_draw_progress_works(wide, tall, ground, obras)
-	if _progress_band < 2:
-		return
-	# Faixa 2 — velas acesas: cada luz que a sala já tem na arte ganha o próprio
-	# halo, largo e fraco, para parecer chama e não mancha.
-	var lamps: Array = STAGE_ROOM_LIGHTS.get(_stage_room, [])
-	for lamp in lamps:
-		var here := Vector2(wide * (lamp as Vector2).x, tall * (lamp as Vector2).y)
-		_progress_layer.draw_circle(here, wide * 0.055, Color(1.0, 0.72, 0.30, 0.05))
-		_progress_layer.draw_circle(here, wide * 0.030, Color(1.0, 0.76, 0.34, 0.07))
-		_progress_layer.draw_circle(here, wide * 0.010, Color(1.0, 0.88, 0.55, 0.30))
-	if _progress_band < 3:
-		return
-	# Faixa 3 — caixilho dourado: a moldura nasce na beirada da tela, então ela
-	# emoldura o salão em vez de entrar dentro dele.
-	var trim := maxf(2.0, wide * 0.0022)
-	for edge_y in [0.0, tall - trim]:
-		_progress_layer.draw_rect(Rect2(Vector2(0.0, edge_y), Vector2(wide, trim)),
-			Color(0.82, 0.66, 0.30, 0.42))
-	for edge_x in [0.0, wide - trim]:
-		_progress_layer.draw_rect(Rect2(Vector2(edge_x, 0.0), Vector2(trim, tall)),
-			Color(0.82, 0.66, 0.30, 0.42))
-	for corner_x in [0.03, 0.97]:
-		_progress_layer.draw_circle(Vector2(wide * corner_x, tall * 0.03), wide * 0.008,
-			Color(1.0, 0.84, 0.46, 0.18))
-	if _progress_band < 4:
-		return
-	# Faixa 4 — lustre aceso: a luz principal desce do teto em cone fraco e ganha
-	# corpo de brilho, sem ferragem desenhada por cima do lustre que a arte já tem.
-	# O centro é a luz pintada mais próxima do meio do teto, não o meio geométrico
-	# da tela — é ali que o olho já procura o lustre.
-	var crown := Vector2(ground.x, tall * 0.05)
-	var best := 9.9
-	for lamp in lamps:
-		var score := absf((lamp as Vector2).x - 0.5) + (lamp as Vector2).y
-		if score < best:
-			best = score
-			crown = Vector2(wide * (lamp as Vector2).x, tall * (lamp as Vector2).y)
-	_progress_layer.draw_colored_polygon(PackedVector2Array([
-		crown + Vector2(-wide * 0.05, 0.0),
-		crown + Vector2(wide * 0.05, 0.0),
-		crown + Vector2(wide * 0.13, tall * 0.30),
-		crown + Vector2(-wide * 0.13, tall * 0.30),
-	]), Color(1.0, 0.84, 0.46, 0.06))
-	for ring in range(4):
-		_progress_layer.draw_circle(crown, wide * (0.09 - float(ring) * 0.022),
-			Color(1.0, 0.82, 0.44, 0.05 + float(ring) * 0.05))
-	# Poeira dourada suspensa: pontos fixos por posição derivada do índice, sem
-	# RNG, para o salão continuar o mesmo entre dois redraws.
-	for mote in range(26):
-		var mx := fmod(float(mote) * 0.137, 1.0)
-		var my := fmod(float(mote) * 0.311, 1.0)
-		_progress_layer.draw_circle(Vector2(wide * mx, tall * (0.12 + my * 0.62)),
-			wide * 0.0022, Color(1.0, 0.86, 0.48, 0.42))
-
 ## O que o painel diz da faixa: nome, o que ela acendeu e quanto falta para a
-## próxima — a decoração precisa ter número, senão é enfeite sem meta.
+## próxima — a reforma precisa ter número, senão é enfeite sem meta.
 func _progress_line() -> String:
 	var band := _progress_band_now()
 	var next_score: int = PROGRESS_BAND_SCORES[band + 1] if band + 1 < PROGRESS_BAND_SCORES.size() else 0
