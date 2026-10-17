@@ -193,6 +193,17 @@ var vip_tips_gold: int = 0
 var complaints: int = 0
 var complaints_written: int = 0
 var complaints_hushed: int = 0
+## O ritmo do balcão nesta vida. `combo_streak` conta as vendas seguidas de hoje (morre na
+## virada e morre em quem sai sem comprar); `combo_day_best` e `combo_day_gold` são o dia
+## que está acabando, para o balanço; `combo_best` e `combo_gold` são a história da vida,
+## que as conquistas lêem. Com o cartaz guardado (`combo_rank == 0`) nada daqui vira ouro:
+## a casa conta a sequência, mas não cobra nem paga por ela.
+var combo_rank: int = 0
+var combo_streak: int = 0
+var combo_day_best: int = 0
+var combo_day_gold: int = 0
+var combo_best: int = 0
+var combo_gold: int = 0
 ## Conserva da casa: cada visita pisa barro, a vassoura custa ouro, e a etiqueta
 ## despenca no salão imundo. Os números são a única novidade; todos caem em
 ## fórmulas que o jogo já usava (paciência de fila, multiplicador de preço, conta
@@ -337,6 +348,24 @@ const COMPLAINT_HUSH_PER_LINE := 12
 const COMPLAINT_FROM_TORTO := 1
 const COMPLAINT_FROM_VIP_REFUSAL := 2
 const COMPLAINT_FROM_WRITE_OFF := 1
+## O cartaz do combo, em três degraus — e o degrau zero é a loja de sempre: a sequência
+## de vendas acontece, o balcão continua contando dela para o painel ninguém, e nenhum
+## centavo muda de lado. `start` é a venda seguida a partir da qual a casa paga, `step`
+## é o acréscimo por venda acima disso e `cap` é o teto da etiqueta: combo bom é ritmo,
+## não segunda economia. A sequência morre no dia que vira e morre na visita que sai sem
+## comprar — é por isso que o cartaz é o prêmio de quem tem balcão que dá conta.
+const COMBO_TIERS := [
+	{"rank": 0, "cost": 0, "rep": 0, "start": 0, "step": 0.0, "cap": 0.0},
+	{"rank": 1, "cost": 180, "rep": 6, "start": 3, "step": 0.02, "cap": 0.06},
+	{"rank": 2, "cost": 460, "rep": 18, "start": 3, "step": 0.03, "cap": 0.12},
+	{"rank": 3, "cost": 980, "rep": 38, "start": 2, "step": 0.05, "cap": 0.25},
+]
+## Teto da contagem: acima de doze vendas seguidas o bônus já está no teto de qualquer
+## degrau, então o painel para de contar e o save não precisa de um número sem fundo.
+const COMBO_CEIL := 12
+## Meta da segunda conquista do cartaz: quanto o combo já precisa ter posto no caixa na
+## mesma vida para a casa admitir que o cartaz se pagou sozinho.
+const COMBO_PRIZE_GOLD := 600
 ## Os nomes que a casa enxerga quando a ronda segura um braço no ar. Ninguém aqui é
 ## freguês de casa: vândalo sorteado é gente de fora do elenco, e por isso vai para
 ## a cela sem levar vínculo junto.
@@ -844,6 +873,8 @@ var vip_label: Label
 var vip_button: Button
 var complaint_label: Label
 var complaint_button: Button
+var combo_label: Label
+var combo_button: Button
 var card_gallery_labels: Array = []
 var board_label: Label
 var score_button: Button
@@ -2616,6 +2647,9 @@ func _desert_waiter(entry: Dictionary) -> void:
 	queue_walkouts += 1
 	disappointed_customers += 1
 	day_walkouts += 1
+	# E o ritmo do balcão morre aqui: quem esperou demais e virou as costas leva a
+	# sequência junto, porque combo é prêmio de quem deu conta, não de quem sorteou.
+	_break_combo()
 	# Quem espera na porta em pé sobre o próprio barro bate o pé no chão antes de
 	# bater a porta: a fila suja e a sujeira atrasa a fila.
 	_add_mess(MESS_PER_WALKOUT)
@@ -3999,6 +4033,25 @@ func _build_ui() -> void:
 	complaint_button.add_theme_font_size_override("font_size", 14)
 	complaint_button.pressed.connect(_hush_street)
 	complaint_hrow.add_child(complaint_button)
+
+	reception_box.add_child(_make_section_title("O CARTAZ DO COMBO", Color(1.0, 0.78, 0.45)))
+	reception_box.add_child(_make_section_hint("Venda puxa venda: três degraus de cartaz pagam a sequência do mesmo dia, e a sequência morre na visita que sai sem comprar e na virada da manhã. Com o cartaz guardado o balcão continua contando a sequência para si — sem pagar um centavo por ela, exatamente como sempre contou."))
+	var combo_card := _make_sector_card(Color(0.075, 0.05, 0.03, 0.94), Color(0.92, 0.66, 0.34, 0.95))
+	reception_box.add_child(combo_card)
+	var combo_hrow := HBoxContainer.new()
+	combo_hrow.add_theme_constant_override("separation", 12)
+	combo_card.add_child(combo_hrow)
+	combo_label = Label.new()
+	combo_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	combo_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	combo_label.add_theme_font_size_override("font_size", 13)
+	combo_label.add_theme_color_override("font_color", Color(0.98, 0.86, 0.70))
+	combo_hrow.add_child(combo_label)
+	combo_button = Button.new()
+	combo_button.custom_minimum_size = Vector2(190, 44)
+	combo_button.add_theme_font_size_override("font_size", 14)
+	combo_button.pressed.connect(_buy_combo_rank)
+	combo_hrow.add_child(combo_button)
 
 	reception_box.add_child(_make_section_title("A PORTA DA CASA", Color(0.62, 0.86, 1.0)))
 	reception_box.add_child(_make_section_hint("Loja que dá lucro tem alvo na porta. Cada visita é resolvida com a mão que a casa já tem: a ronda da folha, os servos do salão, os batedores do cadastro, o santuário reformado e a Administração. O vigário passa na frente para cobrar — dízimo, suborno ou porta na cara dele, e as três respostas têm preço."))
@@ -6507,6 +6560,16 @@ func _on_customer_tick() -> void:
 		var credit_line := _age_credit_book()
 		var credit_report := (" " + credit_line) if credit_line != "" else ""
 		var credit_event := ("\n📖 " + credit_line) if credit_line != "" else ""
+		# Combo é do dia: a virada recomeça a contagem para todo mundo, cartaz pendurado
+		# ou não. O que fica na vida é o recorde premiado e o ouro já pago.
+		combo_streak = 0
+		var combo_line := ""
+		var combo_event := ""
+		if combo_rank > 0 and combo_day_gold > 0:
+			combo_line = " 🔥 O cartaz pagou %d de ouro em combo, com %d venda(s) seguidas de recorde do dia." % [
+				combo_day_gold, combo_day_best]
+			combo_event = "\n🔥 O cartaz pagou %d de ouro em combo, com %d venda(s) seguidas de recorde do dia." % [
+				combo_day_gold, combo_day_best]
 		# Só quem tem livro aberto (ou acabou de apagar uma linha) lê a rua no balanço:
 		# com o caderno em branco a manhã continua com exatamente os números de sempre.
 		var complaint_line := ""
@@ -6527,11 +6590,11 @@ func _on_customer_tick() -> void:
 			complaint_event = "\n📙 A rua chama a casa de %s: %d linha(s) no livro%s%s." % [
 				fala_da_rua, complaints, cobraca,
 				", uma apagada pela virada" if esquecida_na_virada > 0 else ""]
-		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line + spoil_line + credit_report + complaint_line
-		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s%s%s" % [
+		day_report = str(_weather()["line"]) + " " + bill_line + (" " + branch_line if branch_line != "" else "") + calm_line + clean_line + blood_line + lost_line + invasion_line + rival_line + spoil_line + credit_report + complaint_line + combo_line
+		last_event = "Dia %d começou! Um novo contrato está disponível; o anterior expirou. %s • %s\n%s%s%s%s%s%s%s%s%s" % [
 			shop_day, Economy.report(economy_state, products, Ingredients.DATA), _weather_line(), bill_line,
 			("\n" + branch_line) if branch_line != "" else "", vandal_line, invasion_line, vicar_line, rival_line,
-			credit_event, complaint_event]
+			credit_event, complaint_event, combo_event]
 		# A manhã também afina a faixa: alarme novo, vigário na porta ou ruína velha
 		# mudam o tom da mesma gravação antes de a chefe abrir o balcão.
 		_apply_situation_music()
@@ -6710,6 +6773,9 @@ func _on_customer_tick() -> void:
 				vip_refusals += 1
 				disappointed_customers += 1
 				day_walkouts += 1
+				# Saiu falando e levou o ritmo junto: o cartaz paga sequência sem porta
+				# batida, e uma capa fina devolvida é exatamente a porta batida.
+				_break_combo()
 				reputation = maxi(0, reputation - 1)
 				# A fofoca de capa fina devolvida é barulhenta: duas linhas no livro da rua,
 				# não uma. Quem sai sem comprar pelo segundo cartão conta para duas mesas.
@@ -6787,6 +6853,13 @@ func _on_customer_tick() -> void:
 		# O mural da loja também pesa na etiqueta. É bônus de balcão, não de conversa:
 		# a máquina de cartas mostra a porcentagem, o cliente não precisa ler rodapé.
 		sale_price += int(round(base_label * Cards.price_bonus(card_counts)))
+		# O cartaz paga o ritmo no mesmo molde do mural de cartas e da facção: bônus sobre a
+		# etiqueta de tabela, somado depois. Com o cartaz guardado a taxa é zero cravado, o
+		# `if` nem roda e o centavo não entra — é assim que a régua antiga continua medindo a
+		# mesma venda de sempre, centavo a centavo.
+		var combo_bonus := int(round(base_label * _combo_rate()))
+		if combo_bonus > 0:
+			sale_price += combo_bonus
 		var fulfilled_personal_request := profile.has("personal_request") and bool(profile["personal_request"]) and preferred_index == chosen_index
 		var headline_locked := false
 		if fulfilled_personal_request:
@@ -6834,6 +6907,12 @@ func _on_customer_tick() -> void:
 		if credit_settled:
 			last_event = "%s\n%s" % [str(credit_note["line"]), last_event]
 		customers_served += 1
+		# A sequência conta para o balcão inteiro, mas só vira ouro e recorde quando o
+		# cartaz está pendurado e o dinheiro entrou no caixa de fato: nota de fiado leva o
+		# bônus anotado junto, e o pagamento é na virada — o combo não conta duas vezes.
+		if combo_bonus > 0 and not credit_lending:
+			last_event += "\n" + _combo_tail(combo_bonus, combo_streak + 1)
+		_bump_combo(combo_bonus if not credit_lending else 0)
 		_add_mess(MESS_PER_VISIT)
 		if profile.has("regular_id"):
 			var regular_id := str(profile["regular_id"])
@@ -7794,6 +7873,17 @@ func _refresh_ui() -> void:
 		else:
 			complaint_button.text = "🗣 Pagar a voz da rua (%d)" % _hush_cost()
 			complaint_button.disabled = gold < _hush_cost()
+	if is_instance_valid(combo_label):
+		combo_label.text = _combo_summary()
+	if is_instance_valid(combo_button):
+		var combo_next := _combo_next_row()
+		if combo_next.is_empty():
+			combo_button.text = "🔥 Cartaz no degrau máximo"
+			combo_button.disabled = true
+		else:
+			combo_button.text = "🔥 Pendurar o cartaz — degrau %d (%d)" % [
+				int(combo_next["rank"]), int(combo_next["cost"])]
+			combo_button.disabled = gold < int(combo_next["cost"])
 	for i in range(Staff.DATA.size()):
 		var seat: Dictionary = Staff.DATA[i]
 		var seat_id := str(seat["id"])
@@ -8356,6 +8446,10 @@ func _save_game() -> void:
 	config.set_value("game", "complaints", complaints)
 	config.set_value("game", "complaints_written", complaints_written)
 	config.set_value("game", "complaints_hushed", complaints_hushed)
+	config.set_value("game", "combo_rank", combo_rank)
+	config.set_value("game", "combo_streak", combo_streak)
+	config.set_value("game", "combo_best", combo_best)
+	config.set_value("game", "combo_gold", combo_gold)
 	config.set_value("game", "queue_distractions", queue_distractions)
 	config.set_value("game", "products", products)
 	# O que a forja ainda não terminou é dinheiro do jogador em andamento: perder
@@ -8835,6 +8929,10 @@ func _load_game() -> void:
 	complaints = clampi(int(config.get_value("game", "complaints", complaints)), 0, COMPLAINT_CAP)
 	complaints_written = maxi(0, int(config.get_value("game", "complaints_written", complaints_written)))
 	complaints_hushed = clampi(maxi(0, int(config.get_value("game", "complaints_hushed", complaints_hushed))), 0, complaints_written)
+	combo_rank = clampi(int(config.get_value("game", "combo_rank", combo_rank)), 0, COMBO_TIERS.size() - 1)
+	combo_streak = clampi(int(config.get_value("game", "combo_streak", combo_streak)), 0, COMBO_CEIL)
+	combo_best = clampi(maxi(0, int(config.get_value("game", "combo_best", combo_best))), 0, COMBO_CEIL)
+	combo_gold = maxi(0, int(config.get_value("game", "combo_gold", combo_gold)))
 	queue_distractions = int(config.get_value("game", "queue_distractions", queue_distractions))
 	ticks = maxi(0, int(config.get_value("game", "ticks", ticks)))
 	catalyst_enabled = bool(config.get_value("game", "catalyst_enabled", catalyst_enabled))
@@ -9278,6 +9376,8 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "vip_full_salon", "name": "Salão de capas (10 visitas do salão servidas)", "condition": vip_served >= 10, "gold": 220, "rep": 8, "pose": "vitoria"},
 		{"id": "claims_first_line", "name": "A rua abriu o livro (primeira reclamação anotada)", "condition": complaints_written >= 1, "gold": 0, "rep": 0},
 		{"id": "claims_quiet_street", "name": "Boca calada (%d queixas apagadas pagando o cartório)" % (COMPLAINT_HUSH_ERASE * 3), "condition": complaints_hushed >= COMPLAINT_HUSH_ERASE * 3, "gold": 90, "rep": 3, "pose": "book"},
+		{"id": "combo_three", "name": "Ritmo de balcão (três vendas seguidas premiadas no mesmo dia)", "condition": combo_best >= 3, "gold": 70, "rep": 2, "pose": "danca"},
+		{"id": "combo_paid_back", "name": "O cartaz se paga (%d de ouro pagos em combo nesta vida)" % COMBO_PRIZE_GOLD, "condition": combo_gold >= COMBO_PRIZE_GOLD, "gold": 240, "rep": 9, "pose": "aplausos"},
 		{"id": "queue_charmer", "name": "Ninguém sai da fila (3 distrações)", "condition": queue_distractions >= 3, "gold": 65, "rep": 4, "pose": "queue"},
 		{"id": "speed_demon", "name": "Cinco vezes mais charmosa (velocidade 5x)", "condition": world_speed() >= 5.0, "gold": 50, "rep": 3, "pose": "speed"},
 		{"id": "chapter_seeker", "name": "Primeiro capítulo (objetivo fechado)", "condition": campaign_step >= 1, "gold": 40, "rep": 2},
@@ -9964,6 +10064,115 @@ func _complaint_summary() -> String:
 		COMPLAINT_HUSH_ERASE, base]
 
 
+## ── O CARTAZ DO COMBO ───────────────────────────────────────────────────────────
+## O ritmo do balcão no mesmo dia: vendas seguidas, sem ninguém batendo a porta no
+## meio. O cartaz é escada de três degraus e o degrau zero é inerte por desenho — a
+## casa conta a sequência, mas só paga quem pendurou o cartaz, porque a régua do
+## README e as sondas antigas medem exatamente o balcão sem ele.
+
+func _combo_row(rank: int) -> Dictionary:
+	return COMBO_TIERS[clampi(rank, 0, COMBO_TIERS.size() - 1)]
+
+
+func _combo_next_row() -> Dictionary:
+	if combo_rank >= COMBO_TIERS.size() - 1:
+		return {}
+	return COMBO_TIERS[combo_rank + 1]
+
+
+## Fatia da etiqueta de tabela que o ritmo paga agora. Zero com o cartaz guardado e
+## zero antes da `start`-ésima venda seguida; nada aqui toca o `randi()` da loja.
+func _combo_rate() -> float:
+	if combo_rank <= 0:
+		return 0.0
+	var row := _combo_row(combo_rank)
+	if combo_streak < int(row["start"]):
+		return 0.0
+	return minf(float(row["cap"]), float(row["step"]) * float(combo_streak - int(row["start"]) + 1))
+
+
+## Quem bate a porta no meio da sequência corta o ritmo na hora, com cartaz ou sem
+## ele: combo é prêmio de balcão que dá conta, não contagem de tiques.
+func _break_combo() -> void:
+	combo_streak = 0
+
+
+## A venda que acabou de sair. `pago` é o ouro que o combo entrou no caixa — zero no
+## degrau zero e zero na nota do fiado, que ainda vai cobrar. Recorde e cofre da vida
+## só mexem quando houve pagamento, para a conquista ler dinheiro de verdade.
+func _bump_combo(pago: int) -> void:
+	combo_streak = mini(combo_streak + 1, COMBO_CEIL)
+	combo_day_best = maxi(combo_day_best, combo_streak)
+	if pago <= 0:
+		return
+	combo_gold += pago
+	combo_day_gold += pago
+	combo_best = maxi(combo_best, combo_streak)
+
+
+func _buy_combo_rank() -> void:
+	var next_row := _combo_next_row()
+	if next_row.is_empty():
+		last_event = "O cartaz já está no último degrau: paga %d por cento na etiqueta a partir da %dª venda seguida, com teto de %d por cento." % [
+			int(round(float(_combo_row(combo_rank)["step"]) * 100.0)),
+			int(_combo_row(combo_rank)["start"]),
+			int(round(float(_combo_row(combo_rank)["cap"]) * 100.0))]
+		_show_feedback("🔥 O cartaz já é o maior da rua.", Color(1.0, 0.72, 0.45))
+		_refresh_ui()
+		return
+	if reputation < int(next_row["rep"]):
+		last_event = "O cartaz do degrau %d pede %d de fama; a casa tem %d. Combo é boca que espalha, não ouro que se compra sozinho." % [
+			int(next_row["rank"]), int(next_row["rep"]), reputation]
+		_show_feedback("✕ Falta fama para pendurar o cartaz.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	var cost := int(next_row["cost"])
+	if gold < cost:
+		last_event = "O cartaz custa %d de ouro, e o caixa tem %d. Prometer bônus sem caixa para pagá-lo é fila de promessa." % [
+			cost, gold]
+		_show_feedback("✕ Falta ouro para o cartaz.", Color(0.80, 0.60, 0.55))
+		_refresh_ui()
+		return
+	gold -= cost
+	combo_rank = int(next_row["rank"])
+	reputation += 1
+	_add_xp(12)
+	var row := _combo_row(combo_rank)
+	last_event = "🔥 Cartaz no degrau %d: a partir da %dª venda seguida do dia a etiqueta sai %d por cento mais cara, subindo %d por cento por venda até %d por cento de teto (−%d de ouro)." % [
+		combo_rank, int(row["start"]), int(round(float(row["step"]) * 100.0)),
+		int(round(float(row["step"]) * 100.0)), int(round(float(row["cap"]) * 100.0)), cost]
+	_show_feedback("✦ Cartaz pendurado: o balcão agora paga ritmo.", Color(1.0, 0.72, 0.45))
+	audio.play("coin")
+	_check_achievements()
+	_save_game()
+	_refresh_ui()
+
+
+func _combo_summary() -> String:
+	var row := _combo_row(combo_rank)
+	var vida := "Recorde premiado da vida: %d venda(s) seguidas • %d de ouro pago em combo." % [
+		combo_best, combo_gold]
+	if combo_rank <= 0:
+		return "🔕 Sem cartaz na parede: a casa conta a sequência (agora em %d venda(s) seguidas), mas não paga nem cobra por ela. Pendurar o cartaz custa %d de ouro e pede %d de fama. %s" % [
+			combo_streak, int(COMBO_TIERS[1]["cost"]), int(COMBO_TIERS[1]["rep"]), vida]
+	var rate := _combo_rate()
+	if rate <= 0.0:
+		return "🔕 Cartaz no degrau %d: paga a partir da %dª venda seguida do dia e a sequência está em %d. Uma visita que sai sem comprar corta o ritmo, e a virada recomeça o dia. %s" % [
+			combo_rank, int(row["start"]), combo_streak, vida]
+	return "🔥 COMBO DE %d • etiqueta +%d por cento (teto %d) • %d de ouro pago hoje em combo. A sequência morre na virada e morre em quem sai sem comprar. %s" % [
+		combo_streak, int(round(rate * 100.0)), int(round(float(row["cap"]) * 100.0)),
+		combo_day_gold, vida]
+
+
+## O rodapé que toda festa de balcão puxa quando o combo paga: qual venda do dia foi esta,
+## quanto a etiqueta subiu e o que a casa já embolsou com o ritmo. A etiqueta é lida antes
+## de a venda entrar no contador — é por isso que a sequência vem de fora, somada, e o
+## total do dia aparece já com esta venda dentro.
+func _combo_tail(pago: int, sequencia: int) -> String:
+	return "🔥 Combo de %d venda(s) seguidas no dia: %d de ouro a mais na etiqueta (%d por cento), %d pago(s) hoje no cartaz." % [
+		sequencia, pago, int(round(_combo_rate() * 100.0)), combo_day_gold + pago]
+
+
 func _collect_branches() -> String:
 	if branches.is_empty():
 		return ""
@@ -10609,9 +10818,13 @@ func _close_day_balance() -> Dictionary:
 		"happy": happy_customers - day_snap_happy,
 		"lost": disappointed_customers - day_snap_lost,
 		"walkouts": day_walkouts,
+		"combo_best": combo_day_best,
+		"combo_gold": combo_day_gold,
 	}
 	_mark_day_start()
 	day_walkouts = 0
+	combo_day_best = 0
+	combo_day_gold = 0
 	return balance
 
 ## O popup do balanço: a rua para, e a chefe vê o dia em números antes de dormir.
@@ -10671,6 +10884,17 @@ func _show_day_report(balance: Dictionary) -> void:
 	counts.add_theme_font_size_override("font_size", 15)
 	counts.add_theme_color_override("font_color", Color(0.93, 0.89, 0.96))
 	box.add_child(counts)
+
+	# A linha do cartaz só nasce quando houve ouro de combo no dia: com o cartaz guardado
+	# o balanço continua sendo exatamente o mesmo popup que as sondas antigas lêem.
+	if int(balance["combo_gold"]) > 0:
+		var combo_counts := Label.new()
+		combo_counts.text = "🔥 Combo do dia: %d de ouro pago no cartaz, recorde de %d venda(s) seguidas" % [
+			int(balance["combo_gold"]), int(balance["combo_best"])]
+		combo_counts.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		combo_counts.add_theme_font_size_override("font_size", 14)
+		combo_counts.add_theme_color_override("font_color", Color(1.0, 0.78, 0.45))
+		box.add_child(combo_counts)
 
 	var prose := Label.new()
 	prose.text = day_report
@@ -11091,6 +11315,12 @@ func _reset_run() -> void:
 	complaints = 0
 	complaints_written = 0
 	complaints_hushed = 0
+	combo_rank = 0
+	combo_streak = 0
+	combo_day_best = 0
+	combo_day_gold = 0
+	combo_best = 0
+	combo_gold = 0
 	daily_quest_index = 0
 	daily_quest_progress = 0
 	daily_quest_claimed = false

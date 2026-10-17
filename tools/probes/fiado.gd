@@ -27,9 +27,10 @@ extends SceneTree
 ## atravessam o arquivo, payload lixo é podado, save antigo acorda com a gaveta fechada, e
 ## `_reset_run()` zera o livro junto com a vida; (11) o painel lê degrau, notas e botão, a
 ## escada custa 150 → 380 → 720, fama e caixa recusam degrau, e o quarto clique no teto não
-## gasta ouro; (12) os dois selos novos acendem nas fronteiras e a lista fecha com 95
-## definições (o par da bancada, #76, o par do salão das capas finas, #78, e o par do próprio
-## livro de reclamações, #79, entraram depois desta leitura; a sonda lê o tamanho real).
+## gasta ouro; (12) os dois selos novos acendem nas fronteiras e a lista fecha com 97
+## definições (o par da bancada, #76, o par do salão das capas finas, #78, o par do próprio
+## livro de reclamações, #79, e o par do cartaz do combo, #80, entraram depois desta leitura;
+## a sonda lê o tamanho real).
 ##
 ## Armadilha de caixa, terceira torneira: a FICHA do freguês paga no PRIMEIRO atendimento que
 ## ele recebe (ato 1 = 20 + nível×4 de ouro, +1 de fama). Blindar só selos e nível deixou
@@ -48,7 +49,7 @@ extends SceneTree
 ## Armadilha de régua, corrigida a mao nesta sonda: a cauda de 40 `randi()` é sempre lida
 ## logo apos `seed(SEED_VAL)` cravado. Sem o segundo seed, a segunda cauda nasce na casa 80
 ## da stream e a sonda acusaria "o livro sorteia" onde o livro só lê dicionario. E as
-## medidas de caixa blindam os selos da lista (95 na última corrida) e o nivel (degrau 60): a Primeira Venda paga 10
+## medidas de caixa blindam os selos da lista (97 na última corrida) e o nivel (degrau 60): a Primeira Venda paga 10
 ## ouro e um level-up paga 25 — sem isso, "venda a credito nao entra no caixa" mediria o
 ## premio da conquista em vez do fiado.
 ##
@@ -481,7 +482,7 @@ func _limpar_prateleira(g) -> void:
 	g.shelf_batches.clear()
 
 
-## Fecha as duas torneiras de ouro que não são o balcão: os selos da lista, 95 na última
+## Fecha as duas torneiras de ouro que não são o balcão: os selos da lista, 97 na última
 ## corrida (todos já pagos, para
 ## a "Primeira venda" não pagar no meio da medida) e o nível, estacionado longe do próximo
 ## degrau de XP. Sem isso, "venda a crédito não entra no caixa" estaria medindo o prêmio de

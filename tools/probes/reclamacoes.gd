@@ -22,7 +22,8 @@ extends SceneTree
 ## salvar não consomem sorteio; (9) as três chaves atravessam o arquivo, payload lixo é podado
 ## (99 → teto 24, −5 → 0, apagadas > escritas volta para escritas) e save antigo sem as chaves
 ## acorda em branco e inerte; (10) reencarnar raspa o livro; (11) os dois selos acendem em 1
-## linha escrita e 9 apagadas pagando, e a lista fecha com 95 definições; (12) a corrida de
+## linha escrita e 9 apagadas pagando, e a lista fecha com 97 definições (o par do cartaz do
+## combo, #80, entrou depois desta leitura; a sonda lê o tamanho real); (12) a corrida de
 ## 200 tiques em três lados (0, 8 e 14 linhas) com a mesma semente e nenhuma peça torto na
 ## estante, para a cobrança aparecer na partida e não só no painel.
 ##
@@ -41,7 +42,7 @@ extends SceneTree
 ## reforma escrevem por baixo dela na mesma rodada, então a sonda procura o marcador em vez de
 ## ler o fim do texto — "rodapé do mural" sem 📙 seria a queixa desaparecida, não o rodapé.
 ##
-## Armadilha de régua: as três medidas de caixa selam as 95 conquistas e estacionam o nível
+## Armadilha de régua: as três medidas de caixa selam as 97 conquistas e estacionam o nível
 ## em 60. O segundo selo do livro paga 90 de ouro e 3 de fama, e venda dá experiência — sem a
 ## rolha, "a etiqueta custa 2%" estaria medindo o prêmio do selo. As caudas de 40 `randi()`
 ## são sempre lidas logo após `seed(SEED_VAL)` cravado, e o A/B de etiqueta roda um tique por
