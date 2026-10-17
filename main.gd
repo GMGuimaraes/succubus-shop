@@ -1202,9 +1202,6 @@ const STAGE_ROOM_PROPS := {
 		[Vector2(0.437, 0.487), Vector2(1.0, 0.512), Vector2(1.0, 1.0), Vector2(0.437, 1.0)],
 		[Vector2(0.0, 0.522), Vector2(0.187, 0.585), Vector2(0.187, 1.0), Vector2(0.0, 1.0)],
 	],
-	"res://assets/forge_scene.png": [Rect2(0.0, 0.555, 0.165, 0.445), Rect2(0.77, 0.60, 0.23, 0.40), Rect2(0.655, 0.525, 0.095, 0.15)],
-	"res://assets/library_room_scene.png": [Rect2(0.225, 0.42, 0.13, 0.30), Rect2(0.0, 0.52, 0.215, 0.21), Rect2(0.78, 0.525, 0.205, 0.195)],
-	"res://assets/sanctum_room_scene.png": [Rect2(0.0, 0.53, 0.14, 0.17), Rect2(0.862, 0.53, 0.138, 0.17), Rect2(0.235, 0.515, 0.055, 0.15), Rect2(0.71, 0.505, 0.055, 0.15)],
 	## A mesa de guerra é o balcão da guilda: o tampo entra como contorno inclinado na
 	## altura da BORDA DE CIMA do tampo (não da superfície pintada), porque é a partir
 	## dali que a mesa é sólida e esconde quem está atrás. Medido na arte: a quina
@@ -1223,9 +1220,19 @@ const STAGE_ROOM_PROPS := {
 ## aquele estado realmente pintou: ela ficava sentada dentro de um balcão que ainda
 ## não existe na faixa 0, e com o torso atravessado na faixa 3. O chão, a porta, a
 ## fila e o ponto de encontro continuam da sala (`_room_key`); só a linha onde o corpo
-## some é de cada arte. Base sempre em 1.0: abaixo do tampo o que a tela desenha é o
-## próprio piso daquela arte, então estender até o pé da tela não esconde nada que o
-## fundo já não escondesse — e corta a chefe no lugar certo sem deixar o pé de fora.
+## some é de cada arte.
+##
+## A base do contorno é a LINHA DE CONTATO pintada, nunca o pé da tela. Onde o objeto
+## pisa é o único y que decide duas coisas de uma vez: até onde o corpo some e de que
+## profundidade ele some (`_prop_depth`). Uma base esticada até 1.0 empurra o móvel
+## para a frente de tudo e serra o elenco inteiro que passa por aquele x — foi exatamente
+## o que engoliu 314 dos 1254 pontos da patrulha nas escadas novas. Base 1.0 só é honesta
+## na parede de frente da loja (o balcão), que NÃO é um objeto dentro da sala.
+##
+## As dezoito artes de ofício estão listadas uma a uma, com contorno do próprio móvel
+## (topo inclinado seguindo a perspectiva, base no contato medido na régua de 0,02 da
+## cartela `tools/probes/recorte.gd`). Arte fora desta tabela
+## não tem móvel na frente: o vazio é uma declaração, não um esquecimento.
 const STAGE_ART_PROPS := {
 	## Casa em obras: não há balcão, há uma prancha sobre cavaletes a meio corpo e um
 	## caixote encostado na parede da porta.
@@ -1251,27 +1258,147 @@ const STAGE_ART_PROPS := {
 		[Vector2(0.437, 0.518), Vector2(1.0, 0.545), Vector2(1.0, 1.0), Vector2(0.437, 1.0)],
 		[Vector2(0.0, 0.498), Vector2(0.187, 0.518), Vector2(0.187, 1.0), Vector2(0.0, 1.0)],
 	],
+	## ─── FORJA ──────────────────────────────────────────────────────────────────────
+	## Chão cru 0,610..0,800. Só o barril e a tábua da direita passam do contato da
+	## parede; o resto é entulho encostado no fundo e não esconde ninguém.
+	"res://assets/forge_bare_scene.png": [
+		[Vector2(0.858, 0.500), Vector2(0.906, 0.506), Vector2(0.906, 0.629), Vector2(0.858, 0.624)],
+		[Vector2(0.938, 0.300), Vector2(1.000, 0.318), Vector2(1.000, 0.672), Vector2(0.938, 0.658)],
+	],
+	## Banco arrumado 0,600..0,800: a vassoura e o barril do canto direito são os únicos
+	## que adiantam o pé para dentro do corredor.
+	"res://assets/forge_tidy_scene.png": [
+		[Vector2(0.898, 0.360), Vector2(1.000, 0.372), Vector2(1.000, 0.628), Vector2(0.898, 0.616)],
+	],
+	## Forja cheia 0,600..0,800: a mesa de pano roxo da esquerda e o banco de carvão da
+	## direita são os dois móveis que a sala sempre teve; o terceiro contorno antigo
+	## (o barril do centro, base 0,675) foi riscado — ele pisa em 0,606, na parede.
+	"res://assets/forge_scene.png": [
+		[Vector2(0.000, 0.540), Vector2(0.165, 0.562), Vector2(0.165, 0.650), Vector2(0.000, 0.644)],
+		[Vector2(0.128, 0.585), Vector2(0.222, 0.578), Vector2(0.222, 0.647), Vector2(0.128, 0.641)],
+		[Vector2(0.770, 0.612), Vector2(1.000, 0.598), Vector2(1.000, 0.634), Vector2(0.770, 0.628)],
+	],
+	## Banco do fole 0,626..0,800: o cepo da esquerda, o vaso do centro-esquerda e os
+	## barris de carvão da direita.
+	"res://assets/forge_bellows_scene.png": [
+		[Vector2(0.000, 0.520), Vector2(0.160, 0.536), Vector2(0.160, 0.648), Vector2(0.000, 0.640)],
+		[Vector2(0.262, 0.545), Vector2(0.385, 0.552), Vector2(0.385, 0.639), Vector2(0.262, 0.634)],
+		[Vector2(0.868, 0.470), Vector2(1.000, 0.482), Vector2(1.000, 0.657), Vector2(0.868, 0.646)],
+	],
+	## Forja de mestre 0,621..0,800: os dois armários góticos de bigorna, cada um com o
+	## topo em ogiva, e o vaso do lado esquerdo.
+	"res://assets/forge_master_scene.png": [
+		[Vector2(0.000, 0.430), Vector2(0.205, 0.446), Vector2(0.205, 0.649), Vector2(0.000, 0.640)],
+		[Vector2(0.238, 0.520), Vector2(0.322, 0.526), Vector2(0.322, 0.640), Vector2(0.238, 0.634)],
+		[Vector2(0.795, 0.446), Vector2(1.000, 0.430), Vector2(1.000, 0.662), Vector2(0.795, 0.646)],
+	],
+	## Forja lenda 0,623..0,800: os baús de ouro dos dois lados e os jarros de rosa que
+	## adiantam mais ainda o pé — o da direita pisa em 0,682, fundo o bastante para
+	## engolir a patrulha inteira que passar por aquele dedo da tela.
+	"res://assets/forge_grand_scene.png": [
+		[Vector2(0.000, 0.500), Vector2(0.192, 0.516), Vector2(0.192, 0.657), Vector2(0.000, 0.646)],
+		[Vector2(0.196, 0.540), Vector2(0.262, 0.546), Vector2(0.262, 0.673), Vector2(0.196, 0.664)],
+		[Vector2(0.788, 0.516), Vector2(0.955, 0.502), Vector2(0.955, 0.664), Vector2(0.788, 0.654)],
+		[Vector2(0.955, 0.540), Vector2(1.000, 0.536), Vector2(1.000, 0.682), Vector2(0.955, 0.673)],
+	],
+	## ─── BIBLIOTECA ─────────────────────────────────────────────────────────────────
+	## Sala crua 0,650..0,840: a caixa de livros e o balde pisa ACIMA da borda do chão
+	## (0,644 e 0,6375) e por isso não entra. Sobra a tapeçaria da direita.
+	"res://assets/library_bare_scene.png": [
+		[Vector2(0.898, 0.360), Vector2(1.000, 0.348), Vector2(1.000, 0.669), Vector2(0.898, 0.660)],
+	],
+	## Bancada arrumada 0,610..0,840: o banco de leitura do centro pisa em 0,613, um
+	## dedo acima da própria borda, e por isso saiu; ficam o baú roxo e o atril.
+	"res://assets/library_tidy_scene.png": [
+		[Vector2(0.706, 0.470), Vector2(0.802, 0.478), Vector2(0.802, 0.644), Vector2(0.706, 0.638)],
+		[Vector2(0.878, 0.380), Vector2(1.000, 0.368), Vector2(1.000, 0.654), Vector2(0.878, 0.646)],
+	],
+	## Biblioteca cheia 0,665..0,840: os três móveis que a sala sempre declarou, com a
+	## base corrigida do contato pintado (0,712 / 0,693 / 0,712) em vez do retângulo
+	## herdado que descia a 0,72–0,73 com profundidade chutada de 0,32 e 0,40.
+	"res://assets/library_room_scene.png": [
+		[Vector2(0.000, 0.520), Vector2(0.215, 0.536), Vector2(0.215, 0.712), Vector2(0.000, 0.704)],
+		[Vector2(0.225, 0.420), Vector2(0.355, 0.432), Vector2(0.355, 0.693), Vector2(0.225, 0.686)],
+		[Vector2(0.780, 0.528), Vector2(0.985, 0.518), Vector2(0.985, 0.712), Vector2(0.780, 0.704)],
+	],
+	## Estantes altas 0,660..0,840: a escrivaninha da esquerda, o banquinho de leitura
+	## que pisa fundo em 0,719, a carroça de livros e a mesa da direita.
+	"res://assets/library_stacks_scene.png": [
+		[Vector2(0.000, 0.520), Vector2(0.240, 0.540), Vector2(0.240, 0.694), Vector2(0.000, 0.684)],
+		[Vector2(0.088, 0.660), Vector2(0.180, 0.666), Vector2(0.180, 0.719), Vector2(0.088, 0.712)],
+		[Vector2(0.240, 0.575), Vector2(0.312, 0.580), Vector2(0.312, 0.682), Vector2(0.240, 0.676)],
+		[Vector2(0.858, 0.540), Vector2(1.000, 0.524), Vector2(1.000, 0.700), Vector2(0.858, 0.690)],
+	],
+	## Sala de mestre 0,655..0,840: o plinth central do livro grande pisa em 0,661,
+	## encostado na borda, e não esconde ninguém; os dois atris de leitura, sim.
+	"res://assets/library_master_scene.png": [
+		[Vector2(0.000, 0.470), Vector2(0.142, 0.486), Vector2(0.142, 0.699), Vector2(0.000, 0.688)],
+		[Vector2(0.858, 0.486), Vector2(1.000, 0.470), Vector2(1.000, 0.699), Vector2(0.858, 0.688)],
+	],
+	## Biblioteca lenda 0,668..0,840: seis pedestais de livro acorrentado, três de cada
+	## lado, cada um plantado num degrau diferente do mármore — é a escada de profundidade
+	## mais rica do jogo e a que mais precisava de contorno próprio.
+	"res://assets/library_grand_scene.png": [
+		[Vector2(0.000, 0.470), Vector2(0.132, 0.486), Vector2(0.132, 0.727), Vector2(0.000, 0.714)],
+		[Vector2(0.168, 0.478), Vector2(0.240, 0.486), Vector2(0.240, 0.712), Vector2(0.168, 0.704)],
+		[Vector2(0.268, 0.486), Vector2(0.340, 0.494), Vector2(0.340, 0.702), Vector2(0.268, 0.694)],
+		[Vector2(0.660, 0.494), Vector2(0.732, 0.486), Vector2(0.732, 0.702), Vector2(0.660, 0.694)],
+		[Vector2(0.760, 0.486), Vector2(0.832, 0.478), Vector2(0.832, 0.712), Vector2(0.760, 0.704)],
+		[Vector2(0.868, 0.486), Vector2(1.000, 0.470), Vector2(1.000, 0.727), Vector2(0.868, 0.714)],
+	],
+	## ─── SANTUÁRIO ──────────────────────────────────────────────────────────────────
+	## Capela crua 0,654..0,790: só a coluna quebrada do centro adianta o pé para dentro
+	## do corredor (contato 0,670).
+	"res://assets/sanctum_bare_scene.png": [
+		[Vector2(0.418, 0.300), Vector2(0.552, 0.312), Vector2(0.552, 0.670), Vector2(0.418, 0.662)],
+	],
+	## Capela arrumada 0,607..0,790: os dois bancos de oração dos cantos são o móvel mais
+	## adiantado da sala (contato 0,654); as duas pias batismais ficam um degrau atrás.
+	"res://assets/sanctum_tidy_scene.png": [
+		[Vector2(0.000, 0.470), Vector2(0.152, 0.486), Vector2(0.152, 0.654), Vector2(0.000, 0.644)],
+		[Vector2(0.248, 0.520), Vector2(0.340, 0.526), Vector2(0.340, 0.626), Vector2(0.248, 0.620)],
+		[Vector2(0.660, 0.526), Vector2(0.752, 0.520), Vector2(0.752, 0.626), Vector2(0.660, 0.620)],
+		[Vector2(0.848, 0.486), Vector2(1.000, 0.470), Vector2(1.000, 0.654), Vector2(0.848, 0.644)],
+	],
+	## Santuário cheio 0,600..0,790: as duas colunas e os dois armários de relíquia, com
+	## o contato pintado no lugar da base herdada (0,70 descia 60 px abaixo do pé real
+	## das colunas, e a profundidade 0,56 declarada não vinha de lugar nenhum).
+	"res://assets/sanctum_room_scene.png": [
+		[Vector2(0.000, 0.530), Vector2(0.140, 0.542), Vector2(0.140, 0.641), Vector2(0.000, 0.632)],
+		[Vector2(0.235, 0.360), Vector2(0.290, 0.362), Vector2(0.290, 0.634), Vector2(0.235, 0.630)],
+		[Vector2(0.710, 0.362), Vector2(0.765, 0.360), Vector2(0.765, 0.634), Vector2(0.710, 0.630)],
+		[Vector2(0.862, 0.542), Vector2(1.000, 0.530), Vector2(1.000, 0.641), Vector2(0.862, 0.632)],
+	],
+	## Capela das relíquias 0,659..0,790: os dois relicários dos cantos e as duas colunas
+	## douradas que os acompanham.
+	"res://assets/sanctum_relics_scene.png": [
+		[Vector2(0.000, 0.470), Vector2(0.130, 0.484), Vector2(0.130, 0.690), Vector2(0.000, 0.678)],
+		[Vector2(0.140, 0.330), Vector2(0.182, 0.332), Vector2(0.182, 0.678), Vector2(0.140, 0.672)],
+		[Vector2(0.818, 0.332), Vector2(0.860, 0.330), Vector2(0.860, 0.678), Vector2(0.818, 0.672)],
+		[Vector2(0.870, 0.484), Vector2(1.000, 0.470), Vector2(1.000, 0.690), Vector2(0.870, 0.678)],
+	],
+	## Santuário de mestre 0,659..0,790: o monumento central dos anjos (contato 0,706) e
+	## os dois castiçais de sete velas (0,709) passam da linha da patrulha inteira; os
+	## armários dos cantos, mais ainda (0,718).
+	"res://assets/sanctum_master_scene.png": [
+		[Vector2(0.000, 0.470), Vector2(0.120, 0.486), Vector2(0.120, 0.718), Vector2(0.000, 0.704)],
+		[Vector2(0.150, 0.420), Vector2(0.222, 0.428), Vector2(0.222, 0.709), Vector2(0.150, 0.698)],
+		[Vector2(0.380, 0.250), Vector2(0.622, 0.262), Vector2(0.622, 0.706), Vector2(0.380, 0.696)],
+		[Vector2(0.778, 0.428), Vector2(0.850, 0.420), Vector2(0.850, 0.709), Vector2(0.778, 0.698)],
+		[Vector2(0.880, 0.486), Vector2(1.000, 0.470), Vector2(1.000, 0.718), Vector2(0.880, 0.704)],
+	],
+	## Santuário lenda 0,649..0,790: o altar do coração é o móvel mais fundo pintado no
+	## jogo inteiro — contato 0,690 contra uma patrulha que anda entre 0,655 e 0,691 —
+	## e os quatro jarros de rosa dos cantos pisam em 0,718, quase na barra de baixo.
+	"res://assets/sanctum_grand_scene.png": [
+		[Vector2(0.000, 0.520), Vector2(0.092, 0.532), Vector2(0.092, 0.718), Vector2(0.000, 0.704)],
+		[Vector2(0.198, 0.520), Vector2(0.268, 0.530), Vector2(0.268, 0.705), Vector2(0.198, 0.694)],
+		[Vector2(0.330, 0.300), Vector2(0.672, 0.312), Vector2(0.672, 0.690), Vector2(0.330, 0.678)],
+		[Vector2(0.732, 0.530), Vector2(0.802, 0.520), Vector2(0.802, 0.705), Vector2(0.732, 0.694)],
+		[Vector2(0.908, 0.532), Vector2(1.000, 0.520), Vector2(1.000, 0.718), Vector2(0.908, 0.704)],
+	],
 }
-## As quinze artes novas da escada de ofício (forja, biblioteca, santuário) NÃO entram
-## aqui: elas herdam o contorno da sala, e isso foi medido em vez de suposto. A cartela
-## `tools/probes/recorte.gd` risca o contorno herdado por cima de cada arte, e o móvel
-## pintado daquelas salas fica na parede — estante, banco de velas, altar lateral — na
-## mesma faixa de x banda após banda. O que a herança nunca faz é cortar a chefe: em
-## nenhuma das três salas existe móvel cobrindo o x do ponto de encontro (0,30 / 0,42 /
-## 0,50), então a linha que serra o corpo dela só existe na recepção e no salão de
-## expedições, e essas duas têm recorte próprio por arte.
-## Móveis que ocupam uma faixa de profundidade do piso: mais ao fundo eles
-## escondem a figura; mais perto da câmera, a figura passa na frente. Cada valor
-## corresponde, na mesma ordem, a um recorte de STAGE_ROOM_PROPS.
-const STAGE_ROOM_PROP_DEPTHS := {
-	"res://assets/library_room_scene.png": [0.32, 0.40, 0.40],
-	"res://assets/sanctum_room_scene.png": [0.56, 0.56, 0.39, 0.39],
-	## Os três móveis da guilda têm profundidade própria: a mesa de guerra fica no meio
-	## da sala (0,50) e as duas pilhas de caixote encostam na parede do fundo (0,05 e
-	## 0,09). Sem isso o balcão pintado engoliria a fila inteira, que espera JUSTO na
-	## frente dele.
-	"res://assets/expedition_hall_scene.png": [0.50, 0.09, 0.05],
-}
+
 ## Quantos contornos de móvel o shader aguenta ao mesmo tempo.
 const STAGE_PROP_SLOTS := 8
 ## Faixa de piso por onde o elenco anda em cada sala, em fração da largura. Na
@@ -1323,9 +1450,18 @@ const STAGE_ROOM_ARRIVE := {
 ## única exceção: ela engole de propósito, porque é assim que o corpo sai da sala.
 const STAGE_ROOM_QUEUE := {
 	"res://assets/shop_scene.png": [Vector2(0.27, 0.70), Vector2(0.24, 0.60), Vector2(0.225, 0.50), Vector2(0.21, 0.40), Vector2(0.20, 0.30), Vector2(0.19, 0.22)],
-	"res://assets/forge_scene.png": [Vector2(0.235, 0.70), Vector2(0.215, 0.60), Vector2(0.20, 0.50), Vector2(0.19, 0.40), Vector2(0.182, 0.30), Vector2(0.175, 0.22)],
+	## A fila espera na frente de TODA arte da própria escada. Como a profundidade de
+	## cada móvel agora é o pé pintado daquele contorno (`_prop_depth`), o degrau mais
+	## fundo da fila tem de passar na frente do móvel mais fundo que qualquer faixa da
+	## sala planta naquele x — senão o último da fila fica invisível num degrau da
+	## escada e visível no outro, que é exatamente o corpo que ninguém vê sendo atendido.
+	"res://assets/forge_scene.png": [Vector2(0.235, 0.70), Vector2(0.215, 0.60), Vector2(0.20, 0.50), Vector2(0.19, 0.40), Vector2(0.182, 0.30), Vector2(0.175, 0.26)],
 	"res://assets/library_room_scene.png": [Vector2(0.62, 0.70), Vector2(0.65, 0.60), Vector2(0.68, 0.50), Vector2(0.71, 0.40), Vector2(0.73, 0.30), Vector2(0.75, 0.22)],
-	"res://assets/sanctum_room_scene.png": [Vector2(0.28, 0.70), Vector2(0.245, 0.60), Vector2(0.22, 0.50), Vector2(0.20, 0.40), Vector2(0.182, 0.30), Vector2(0.168, 0.22)],
+	## Os dois últimos degraus do santuário sobem para a frente do candelabro pintado
+	## (profundidade 0,38 na banda mestre, 0,40 na grande) em vez de recuarem para o
+	## fundo: na linha velha quem esperava no fim da fila sumia INTEIRO atrás do
+	## castiçal nas duas bandas mais ricas da sala.
+	"res://assets/sanctum_room_scene.png": [Vector2(0.28, 0.70), Vector2(0.245, 0.62), Vector2(0.22, 0.54), Vector2(0.20, 0.46), Vector2(0.182, 0.42), Vector2(0.168, 0.40)],
 	## Na guilda a porta é à direita, então a fila sobe pela direita: o primeiro degrau
 	## encosta no canto da mesa de guerra e o último já pisa a soleira do arco. Nenhum
 	## deles cai sob as três pilhas de móvel da sala — a mesa tem profundidade 0,50 e a
@@ -3477,17 +3613,42 @@ func _apply_room_props(scene_path: String) -> void:
 	if _stage_occluder_material == null:
 		return
 	var props: Array = STAGE_ART_PROPS.get(scene_path, STAGE_ROOM_PROPS.get(_stage_room, []))
-	var prop_depths: Array = STAGE_ROOM_PROP_DEPTHS.get(_stage_room, [])
-	for i in range(STAGE_PROP_SLOTS):
-		var is_depth_sorted := i < prop_depths.size()
-		var corners := _prop_corners(props[i]) if i < props.size() and not is_depth_sorted else _blank_corners()
-		_stage_occluder_material.set_shader_parameter("prop%da" % i, Vector4(corners[0].x, corners[0].y, corners[1].x, corners[1].y))
-		_stage_occluder_material.set_shader_parameter("prop%db" % i, Vector4(corners[2].x, corners[2].y, corners[3].x, corners[3].y))
+	var band: Vector2 = _stage_floor_line()
+	var walls := 0
+	var depth_props: Array = []
+	for prop in props:
+		var corners := _prop_corners(prop)
+		var depth := _prop_depth(corners, band)
+		## Base no pé da tela = parede de frente, não móvel dentro da sala. Ela vive no
+		## recorte único, que esconde a qualquer profundidade; o resto é móvel com
+		## profundidade própria e só esconde quem passa atrás dele.
+		if depth >= 1.0:
+			if walls < STAGE_PROP_SLOTS:
+				_stage_occluder_material.set_shader_parameter("prop%da" % walls, Vector4(corners[0].x, corners[0].y, corners[1].x, corners[1].y))
+				_stage_occluder_material.set_shader_parameter("prop%db" % walls, Vector4(corners[2].x, corners[2].y, corners[3].x, corners[3].y))
+				walls += 1
+		else:
+			depth_props.append([corners, depth])
+	for i in range(walls, STAGE_PROP_SLOTS):
+		_stage_occluder_material.set_shader_parameter("prop%da" % i, Vector4.ZERO)
+		_stage_occluder_material.set_shader_parameter("prop%db" % i, Vector4.ZERO)
 	if is_instance_valid(stage_occluder) and ResourceLoader.exists(scene_path):
 		stage_occluder.texture = load(scene_path)
-	_rebuild_stage_depth_occluders(scene_path, props, prop_depths)
+	_rebuild_stage_depth_occluders(scene_path, depth_props)
 
-func _rebuild_stage_depth_occluders(scene_path: String, props: Array, prop_depths: Array) -> void:
+## Profundidade de um móvel derivada do próprio pé pintado: o y onde o contorno toca o
+## chão é convertido na escala de profundidade do palco pela mesma régua que põe o pé da
+## figura no chão (`_lane_at`). Não existe mais uma tabela de profundidades à parte — e
+## é isso que torna o "passa na frente mas com o torso serrado" geometricamente
+## impossível: a figura só é cortada por este contorno se o pé dela estiver ACIMA da
+## linha de contato pintada, que é exatamente a condição de estar mais ao fundo.
+func _prop_depth(corners: PackedVector2Array, band: Vector2) -> float:
+	var base := corners[2].y
+	for corner in corners:
+		base = maxf(base, corner.y)
+	return inverse_lerp(band.x, band.y, base)
+
+func _rebuild_stage_depth_occluders(scene_path: String, depth_props: Array) -> void:
 	for overlay in _stage_depth_occluders:
 		if is_instance_valid(overlay):
 			overlay.hide()
@@ -3500,24 +3661,24 @@ func _rebuild_stage_depth_occluders(scene_path: String, props: Array, prop_depth
 	if texture == null or shader == null:
 		push_error("Não foi possível carregar a arte ou o shader dos móveis em profundidade: %s" % scene_path)
 		return
-	for i in range(mini(props.size(), prop_depths.size())):
+	for entry in depth_props:
+		var corners: PackedVector2Array = entry[0]
 		var overlay := TextureRect.new()
-		overlay.name = "StageDepthProp%d" % i
+		overlay.name = "StageDepthProp%d" % _stage_depth_occluders.size()
 		overlay.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		overlay.stretch_mode = TextureRect.STRETCH_SCALE
 		overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 		overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		overlay.texture = texture
-		overlay.material = _depth_prop_material(shader, props[i])
+		overlay.material = _depth_prop_material(shader, corners)
 		# No mesmo plano, o pé da figura já fica à frente do móvel.
-		overlay.z_index = _stage_z_for_depth(float(prop_depths[i])) - 1
+		overlay.z_index = _stage_z_for_depth(float(entry[1])) - 1
 		stage_layer.add_child(overlay)
 		_stage_depth_occluders.append(overlay)
 
-func _depth_prop_material(shader: Shader, prop: Variant) -> ShaderMaterial:
+func _depth_prop_material(shader: Shader, corners: PackedVector2Array) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = shader
-	var corners := _prop_corners(prop)
 	for i in range(STAGE_PROP_SLOTS):
 		var slot_corners := corners if i == 0 else _blank_corners()
 		material.set_shader_parameter("prop%da" % i, Vector4(slot_corners[0].x, slot_corners[0].y, slot_corners[1].x, slot_corners[1].y))

@@ -150,7 +150,6 @@ func _initialize() -> void:
 		str(game.PROGRESS_BAND_ART.has(GUILD_KEY))])
 	var tabelas := [
 		["STAGE_ROOM_PROPS", game.STAGE_ROOM_PROPS],
-		["STAGE_ROOM_PROP_DEPTHS", game.STAGE_ROOM_PROP_DEPTHS],
 		["STAGE_ROOM_DOOR", game.STAGE_ROOM_DOOR],
 		["STAGE_ROOM_ARRIVE", game.STAGE_ROOM_ARRIVE],
 		["STAGE_ROOM_QUEUE", game.STAGE_ROOM_QUEUE],
