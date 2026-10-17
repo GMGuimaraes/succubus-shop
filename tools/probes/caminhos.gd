@@ -52,6 +52,10 @@ func _initialize() -> void:
 		var room: String = entry[0]
 		var art: String = entry[1]
 		game._stage_room = room
+		## A faixa de chão é lida por ARTE (`STAGE_ART_FLOOR`) com a sala como fallback:
+		## sem fixar `_stage_art` aqui a auditoria mediria o chão do salão cheio sobre o
+		## recorte do império — um número que nenhum jogador vê.
+		game._stage_art = art
 		var layer: Control = game.stage_layer
 		var layer_h := layer.size.y
 		var groups := {

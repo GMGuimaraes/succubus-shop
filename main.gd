@@ -457,11 +457,132 @@ func _salon_art(band: int) -> String:
 	var path := PROGRESS_BAND_ART[clampi(band, 0, PROGRESS_BAND_ART.size() - 1)]
 	return path if ResourceLoader.exists(path) else SALON_GEOMETRY_KEY
 
-## Toda arte da escada responde pela geometria do salão cheio. É uma função e não um
-## `if` no laço de cada tabela: as dez tabelas de sala chamam `_apply_room_props` para
-## descobrir a chave, e uma faixa esquecida ali viraria sala sem chão.
+## Escada de cenário por ofício. A recepção cresce com o placar da casa; forja,
+## biblioteca e santuário crescem com o TRABALHO feito naquele banco, medido nos
+## contadores que a sala já move — nada de meta nova. São 30 degraus por sala: seis
+## artes pintadas e, dentro de cada arte, cinco ajustes de luz e poeira. A banda troca a
+## parede; o ajuste troca o clima. Degrau zero é a sala crua, e ali nenhum número do
+## jogo se move.
+const SECTOR_SCENERY_STEPS := 30
+## Porta de placar de ofício para cada banda de arte. É o número que a sonda lê.
+const SECTOR_SCENERY_BANDS := {
+	"forge": [0, 14, 44, 92, 170, 280],
+	"library": [0, 10, 28, 52, 84, 124],
+	"sanctum": [0, 10, 28, 52, 84, 124],
+}
+## A arte cheia de cada sala — que também é a banda 2 da escada, pelo mesmo motivo do
+## salão: a arte que o jogo já tinha sempre representou o ofício respeitado, ela só
+## deixou de ser o ponto de partida.
+const SECTOR_SCENERY_ROOM := {
+	"forge": "res://assets/forge_scene.png",
+	"library": "res://assets/library_room_scene.png",
+	"sanctum": "res://assets/sanctum_room_scene.png",
+}
+## As seis artes de cada sala, do banco cru à lenda do ofício. Arquivo que não existe
+## degrada para a arte cheia da sala, nunca para fundo preto.
+const SECTOR_SCENERY_ART := {
+	"forge": [
+		"res://assets/forge_bare_scene.png",
+		"res://assets/forge_tidy_scene.png",
+		"res://assets/forge_scene.png",
+		"res://assets/forge_bellows_scene.png",
+		"res://assets/forge_master_scene.png",
+		"res://assets/forge_grand_scene.png",
+	],
+	"library": [
+		"res://assets/library_bare_scene.png",
+		"res://assets/library_tidy_scene.png",
+		"res://assets/library_room_scene.png",
+		"res://assets/library_stacks_scene.png",
+		"res://assets/library_master_scene.png",
+		"res://assets/library_grand_scene.png",
+	],
+	"sanctum": [
+		"res://assets/sanctum_bare_scene.png",
+		"res://assets/sanctum_tidy_scene.png",
+		"res://assets/sanctum_room_scene.png",
+		"res://assets/sanctum_relics_scene.png",
+		"res://assets/sanctum_master_scene.png",
+		"res://assets/sanctum_grand_scene.png",
+	],
+}
+## As seis bandas têm o mesmo nome nos três ofícios: o que muda de uma sala para a
+## outra é o que a banda entrega, não a palavra.
+const SECTOR_SCENERY_NAMES: Array[String] = [
+	"ofício cru",
+	"bancada arrumada",
+	"ofício respeitado",
+	"casa do ofício",
+	"banco de mestre",
+	"lenda do ofício",
+]
+const SECTOR_SCENERY_GIFTS := {
+	"forge": [
+		"bigorna nua, brasa apagada e o martelo pendurado na parede",
+		"o banco de trabalho montado e a primeira forma de ferro",
+		"fole duplo, templeira acesa e a prateleira de peças prontas",
+		"a forja de cúpula alta e o sino de acabamento no pátio",
+		"dois aprendizes na bigorna e o rack de peças de mestre",
+		"+ brasa que não apaga, estandarte do ofício e a peça lendária exposta",
+	],
+	"library": [
+		"caixote de grimórios no chão e uma vela na leitura",
+		"as duas primeiras estantes e o banco de estudo",
+		"estantes até a metade da parede e o globo de mapas",
+		"a escada rolante da estante alta e a sala de cópias",
+		"o teto de vitrines e o atril do grimório vivo",
+		"+ estantes até o forro, correntes nas raridades e a luz que não se apaga",
+	],
+	"sanctum": [
+		"uma pedra no chão e tocha fumegando",
+		"o altar baixo montado e as duas primeiras velas",
+		"retábulo de relíquias e a pia de purificação",
+		"as três naves de nichos e o vitral fechado",
+		"o coro de anjos pendurado e a urna de prata",
+		"+ relíquias transbordando, ouro no piso e a colunata acesa",
+	],
+}
+## A luz de cada banda, por sala. Fria e azulada no banco cru, quente no topo — e a
+## cor é da SALA, não do salão: forja em brasa e biblioteca em azul não podem dividir
+## o mesmo degradê, senão a escada vira filtro de Instagram.
+const SECTOR_SCENERY_LIGHT := {
+	"forge": [
+		Color(0.76, 0.74, 0.86),
+		Color(0.88, 0.82, 0.86),
+		Color(1.00, 1.00, 1.00),
+		Color(1.06, 0.96, 0.86),
+		Color(1.12, 0.98, 0.82),
+		Color(1.20, 1.00, 0.76),
+	],
+	"library": [
+		Color(0.76, 0.80, 0.94),
+		Color(0.88, 0.90, 0.98),
+		Color(1.00, 1.00, 1.00),
+		Color(1.02, 1.00, 0.94),
+		Color(1.06, 1.02, 0.92),
+		Color(1.10, 1.04, 0.90),
+	],
+	"sanctum": [
+		Color(0.78, 0.76, 0.92),
+		Color(0.88, 0.84, 0.96),
+		Color(1.00, 1.00, 1.00),
+		Color(1.04, 0.98, 1.02),
+		Color(1.08, 1.00, 1.04),
+		Color(1.12, 1.02, 0.98),
+	],
+}
+
+## Toda arte de escada responde pela geometria da sala cheia — a do salão pela chave
+## própria, as dos ofícios pela arte base daquela sala. É uma função e não um `if` no
+## laço de cada tabela: as dez tabelas de sala chamam `_apply_room_props` para descobrir
+## a chave, e uma banda esquecida ali viraria sala sem chão, sem porta e sem fila.
 func _room_key(scene_path: String) -> String:
-	return SALON_GEOMETRY_KEY if PROGRESS_BAND_ART.has(scene_path) else scene_path
+	if PROGRESS_BAND_ART.has(scene_path):
+		return SALON_GEOMETRY_KEY
+	for sector in SECTOR_SCENERY_ART:
+		if (SECTOR_SCENERY_ART[sector] as Array).has(scene_path):
+			return str(SECTOR_SCENERY_ROOM[sector])
+	return scene_path
 
 ## Faixa atual do salão. É a arte que a faixa pinta, não uma camada desenhada por
 ## cima da mesma arte: a escada inteira (`PROGRESS_BAND_ART`) vive nos arquivos, e a
@@ -563,6 +684,11 @@ var forge_status_label: Label
 var craft_jobs: Array[Dictionary] = []
 var library_upgrade_level: int = 0
 var sanctum_upgrade_level: int = 0
+## Escada de cenário dos ofícios. São contadores de trabalho já feito na sala, medidos
+## nas ações que o painel já tem botão: no degrau zero a sala está crua e nenhum número
+## do jogo se move — o que muda é o que a parede mostra, não o que o caixa paga.
+var library_consults: int = 0
+var relics_calmed: int = 0
 var library_upgrade_button: Button
 var sanctum_upgrade_button: Button
 var cold_storage_button: Button
@@ -1179,12 +1305,30 @@ const STAGE_ROOM_MEET := {
 const STAGE_ROOM_FLOOR := {
 	"res://assets/shop_scene.png": Vector2(0.60, 0.80),
 	"res://assets/forge_scene.png": Vector2(0.60, 0.80),
-	"res://assets/library_room_scene.png": Vector2(0.655, 0.84),
-	"res://assets/sanctum_room_scene.png": Vector2(0.585, 0.79),
+	## As duas salas nasceram com o pé da faixa encostado na junção pintada (margem de
+	## 1 e 3 pixels na sonda `tools/probes/chao.gd`): tecnicamente no chão, e na tela o
+	## corpo ainda lia como flutuando, porque sombra e pé não têm piso abaixo. Cada uma
+	## desceu o tanto justo para a profundidade 0,08 pisar 11 px dentro do mármore.
+	"res://assets/library_room_scene.png": Vector2(0.665, 0.84),
+	"res://assets/sanctum_room_scene.png": Vector2(0.600, 0.79),
 	## O assoalho da guilda nasce atrás do tapete (0,58, na base dos caixotes) e chega
 	## até a beirada de baixo da tela: a sala é toda piso, sem escada nem vitral no
 	## caminho, e é por isso que o fundo dela é mais alto que o do salão.
 	"res://assets/expedition_hall_scene.png": Vector2(0.58, 0.85),
+}
+## A faixa de chão é a exceção à regra de que a escada divide UM só jogo de
+## coordenadas — e pelo mesmo motivo do recorte de móveis: cada arte pinta o próprio
+## fundo numa altura diferente. Lido na régua de `tools/probes/chao.gd`, o assoalho
+## nasce em 0,672 no casarão cru, 0,685 no balcão arrumado, 0,575 no salão cheio,
+## 0,615 no dourado e 0,655 no império. Com a faixa única do salão (0,60) o elenco do
+## fundo — profundidades 0,08 e 0,12, pés em 0,616 e 0,624 — ficava plantado NA PAREDE
+## em quatro das cinco faixas: corpo flutuando acima do rodapé. Arte que não está aqui
+## herda a faixa da sala.
+const STAGE_ART_FLOOR := {
+	"res://assets/salon_bare_scene.png": Vector2(0.672, 0.80),
+	"res://assets/salon_tidy_scene.png": Vector2(0.685, 0.80),
+	"res://assets/salon_gilded_scene.png": Vector2(0.615, 0.80),
+	"res://assets/salon_empire_scene.png": Vector2(0.655, 0.80),
 }
 const STAGE_ROOM_LIGHTS := {
 	"res://assets/shop_scene.png": [Vector2(0.08, 0.22), Vector2(0.50, 0.05), Vector2(0.91, 0.18), Vector2(0.32, 0.48), Vector2(0.64, 0.42)],
@@ -2924,8 +3068,18 @@ func _lane(depth: int) -> Dictionary:
 ## começa a quarta parede: o chão desce para fora da tela e o corpo passa da
 ## escala da frente da sala, porque quem entra pelo pé do tapete chega perto
 ## demais para caber inteiro.
+## Faixa de chão da ARTE em tela, com a sala como fallback. As duas faixas existem
+## porque a escada divide um só jogo de coordenadas com a arte de fundo, e a arte de
+## fundo nem sempre pinta o piso onde a sala pinta: a casa em obras sobe a parede
+## até 0,665, e o elenco herdaria a faixa do salão cheio (0,60) e ficaria plantado
+## no rodapé, corpo flutuando na parede.
+func _stage_floor_line() -> Vector2:
+	if STAGE_ART_FLOOR.has(_stage_art):
+		return STAGE_ART_FLOOR[_stage_art]
+	return STAGE_ROOM_FLOOR.get(_stage_room, Vector2(0.60, 0.80))
+
 func _lane_at(depth: float) -> Dictionary:
-	var floor_line: Vector2 = STAGE_ROOM_FLOOR.get(_stage_room, Vector2(0.60, 0.80))
+	var floor_line: Vector2 = _stage_floor_line()
 	var floor_y := lerpf(floor_line.x, floor_line.y, clampf(depth, -0.25, 1.0))
 	if depth > 1.0:
 		floor_y += STAGE_FOURTH_FLOOR_DROP * (depth - 1.0)
@@ -4940,6 +5094,7 @@ func _activate_sector_feature() -> void:
 		var xp_reward := 6 + library_upgrade_level * 3
 		_add_xp(xp_reward)
 		reputation += 1
+		library_consults += 1
 		last_event = "Você consulta um grimório vivo. Ele revela uma margem secreta e concede +%d XP." % xp_reward
 		audio.play("rare")
 		_show_feedback("Conhecimento aplicado.", Color(0.70, 0.90, 1.0))
@@ -4948,6 +5103,7 @@ func _activate_sector_feature() -> void:
 		_add_affection(affinity_reward)
 		fury = maxi(0, fury - 1)
 		_update_demonic_form()
+		relics_calmed += 1
 		last_event = "Você acalma uma relíquia inquieta. A succubus recupera %d pontos de afinidade." % affinity_reward
 		audio.play("happy")
 		_show_feedback("Relíquia harmonizada.", Color(0.86, 0.60, 1.0))
@@ -4960,20 +5116,21 @@ func _activate_sector_feature() -> void:
 ## Fundo do setor. Onde existe uma arte de sala vazia ela vira palco e o elenco
 ## anda; onde só existe o close de um rosto, o elenco fica nos bastidores, porque
 ## personagem caminhando por cima de uma cara enorme lê como fantasma.
-## A recepção é o único setor que tem ESCADA de arte: ela é a casa do jogador, e é a
-## sala que o placar reformou. Os outros setores são ofícios alugados — têm uma arte
-## só, do mesmo jeito que a guilda de expedição não cresce com o balcão.
+## A recepção cresce com o placar da casa (`PROGRESS_BAND_ART`). Forja, biblioteca e
+## santuário têm escada própria, medida no trabalho do próprio banco
+## (`_scenery_art`), e a guilda continua de uma arte só — ofício alugado não reformado
+## pelo balcão.
 func _sector_scene(sector: String) -> Dictionary:
 	var room := _salon_art(_progress_band_now())
 	var close := ""
 	if sector == "forge":
-		room = "res://assets/forge_scene.png"
+		room = _scenery_art(sector)
 		close = "res://assets/forge_close_scene.png"
 	elif sector == "library":
-		room = "res://assets/library_room_scene.png"
+		room = _scenery_art(sector)
 		close = "res://assets/library_close_scene.png"
 	elif sector == "sanctum":
-		room = "res://assets/sanctum_room_scene.png"
+		room = _scenery_art(sector)
 		close = "res://assets/sanctum_close_scene.png"
 	elif sector == "expedition":
 		room = "res://assets/expedition_hall_scene.png"
@@ -8526,6 +8683,8 @@ func _save_game() -> void:
 	config.set_value("game", "world_speed_index", world_speed_index)
 	config.set_value("game", "library_upgrade_level", library_upgrade_level)
 	config.set_value("game", "sanctum_upgrade_level", sanctum_upgrade_level)
+	config.set_value("game", "library_consults", library_consults)
+	config.set_value("game", "relics_calmed", relics_calmed)
 	config.set_value("game", "known_recipes", known_recipes)
 	config.set_value("game", "lab_trials", lab_trials)
 	config.set_value("game", "lab_mix", lab_mix)
@@ -8971,6 +9130,10 @@ func _load_game() -> void:
 	world_speed_index = clampi(int(config.get_value("game", "world_speed_index", world_speed_index)), 0, world_speed_options.size() - 1)
 	library_upgrade_level = clampi(int(config.get_value("game", "library_upgrade_level", library_upgrade_level)), 0, 5)
 	sanctum_upgrade_level = clampi(int(config.get_value("game", "sanctum_upgrade_level", sanctum_upgrade_level)), 0, 5)
+	# Save antigo não tem as duas chaves e acorda com a sala crua (degrau 0), que é o
+	# mesmo degrau em que a escada acorda para quem nunca abriu a forja.
+	library_consults = maxi(0, int(config.get_value("game", "library_consults", library_consults)))
+	relics_calmed = maxi(0, int(config.get_value("game", "relics_calmed", relics_calmed)))
 	var saved_recipes = config.get_value("game", "known_recipes", [])
 	if saved_recipes is Array:
 		known_recipes.clear()
@@ -9519,7 +9682,10 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "card_holo", "name": "Brilho de coleção (primeira carta holográfica)", "condition": Cards.evolved_count(card_counts, 1) >= 1, "gold": 90, "rep": 4},
 		{"id": "card_prism", "name": "Prisma no mural (uma carta em seis cópias)", "condition": Cards.evolved_count(card_counts, 2) >= 1, "gold": 240, "rep": 10, "pose": "vitoria"},
 		{"id": "card_album_working", "name": "Álbum trabalhando (os três conjuntos pagando bônus)", "condition": Cards.luck_bonus(card_counts) >= 1 and Cards.price_bonus(card_counts) >= 0.04 and Cards.pack_discount(card_counts) >= 2, "gold": 150, "rep": 6},
-		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"}
+		{"id": "empire_founded", "name": "Império fundado (campanha completa)", "condition": game_completed, "gold": 300, "rep": 15, "pose": "relic"},
+		{"id": "forge_scenery_top", "name": "A forja tem telhado de brasa (forja no degrau 30)", "condition": _scenery_step("forge") >= SECTOR_SCENERY_STEPS - 1, "gold": 180, "rep": 8},
+		{"id": "library_scenery_top", "name": "Estante até o forro (biblioteca no degrau 30)", "condition": _scenery_step("library") >= SECTOR_SCENERY_STEPS - 1, "gold": 180, "rep": 8},
+		{"id": "sanctum_scenery_top", "name": "Colunata acesa (santuário no degrau 30)", "condition": _scenery_step("sanctum") >= SECTOR_SCENERY_STEPS - 1, "gold": 180, "rep": 8}
 	]
 
 func _check_achievements() -> void:
@@ -11427,6 +11593,10 @@ func _reset_run() -> void:
 	craft_jobs.clear()
 	library_upgrade_level = 0
 	sanctum_upgrade_level = 0
+	# Escada de cenário é da vida, não da família: o banco reencarnado reaprende o ofício
+	# do zero, do mesmo jeito que a bigorna e o alambique voltam ao degrau 0.
+	library_consults = 0
+	relics_calmed = 0
 	active_buffs.clear()
 	ingredient_stock = STARTING_PANTRY.duplicate()
 	total_ingredients_bought = 0
@@ -12065,6 +12235,12 @@ func _apply_progress_decor() -> void:
 	var quiet := _progress_quiet
 	_progress_quiet = false
 	var luz: Color = PROGRESS_BAND_LIGHT[clampi(band, 0, PROGRESS_BAND_LIGHT.size() - 1)]
+	# A escada do ofício manda na sala que está na tela, e a luz dela é DA SALA: forja em
+	# brasa e biblioteca em azul não podem dividir o degradê da casa. Em recepção, guilda
+	# e close-up `sala` vem vazio e o degradê do salão continua valendo.
+	var sala := _scenery_sector_shown()
+	if not sala.is_empty():
+		luz = _scenery_light(sala)
 	# A escada agora é pintada, não insinuada: cada faixa tem o próprio PNG do mesmo
 	# cômodo, e a luz só segura o clima em cima dele — fria e azulada no casarão cru,
 	# quente no império. A luz é da sala INTEIRA. O recorte dos móveis é outra camada
@@ -12083,8 +12259,16 @@ func _apply_progress_decor() -> void:
 		var corpo := Color(1.0, 1.0, 1.0).lerp(luz, 0.78)
 		stage_layer.modulate = Color(corpo.r, corpo.g, corpo.b, stage_layer.modulate.a)
 	if is_instance_valid(ambient_particles):
-		# No canteiro o ar é grosso de pó de gesso; depois, a poeira dourada do luxo.
-		ambient_particles.amount = 52 if band <= 0 else 24 + band * 12
+		# No canteiro o ar é grosso de pó de gesso; depois, a poeira dourada do luxo. Na
+		# sala de ofício o ar é o trabalho: escória na forja, pó de papel na biblioteca,
+		# incenso no santuário — e ele engorda degrau a degrau, não banda a banda.
+		ambient_particles.amount = (18 + _scenery_step(sala) * 2) if not sala.is_empty() else (52 if band <= 0 else 24 + band * 12)
+	# A sala do ofício troca de arte no meio da partida, sem esperar o jogador sair e
+	# voltar: o rack de peças que aparece um degrau por vez é prêmio de quem está olhando.
+	if not sala.is_empty():
+		var arte_sala := _scenery_art(sala)
+		if _stage_art != arte_sala:
+			_show_stage_for_room(arte_sala, _stage_walkable)
 	if band == antes:
 		return
 	_progress_band = band
@@ -12114,6 +12298,11 @@ func _apply_progress_decor() -> void:
 ## O que o painel diz da faixa: nome, o que ela acendeu e quanto falta para a
 ## próxima — a reforma precisa ter número, senão é enfeite sem meta.
 func _progress_line() -> String:
+	# O painel fala da sala que está na tela. A régua é a mesma — o que o ofício já
+	# produziu — mas a linha da casa não serve para ler a forja.
+	var sala := _scenery_sector_shown()
+	if not sala.is_empty():
+		return _scenery_line(sala)
 	var band := _progress_band_now()
 	var next_score: int = PROGRESS_BAND_SCORES[band + 1] if band + 1 < PROGRESS_BAND_SCORES.size() else 0
 	var missing: int = next_score - business_score()
@@ -12124,6 +12313,92 @@ func _progress_line() -> String:
 	if missing > 0:
 		linha += tr(" Próxima faixa em %d de placar.") % missing
 	return linha
+
+## Placar de ofício: só números que o jogo já media antes desta escada existir. A forja
+## conta peças, a biblioteca conta consultas, o santuário conta rituais e relíquias
+## calmadas — ninguém ganha meta nova para a sala crescer.
+func _scenery_score(sector: String) -> int:
+	match sector:
+		"forge":
+			return total_crafted + alchemy_rank * 4 + legendary_crafted * 6
+		"library":
+			return library_upgrade_level * 6 + library_consults
+		"sanctum":
+			return sanctum_upgrade_level * 6 + rituals_performed + relics_calmed
+	return 0
+
+## Banda de arte (0..5) que o placar da sala pinta hoje.
+func _scenery_band(sector: String) -> int:
+	var portas: Array = SECTOR_SCENERY_BANDS.get(sector, [])
+	var band := 0
+	for i in range(portas.size()):
+		if _scenery_score(sector) >= int(portas[i]):
+			band = i
+	return band
+
+## Degrau 0..29: cinco ajustes de luz e poeira dentro de cada banda, contados pela
+## fração do caminho já andada até a porta da banda seguinte.
+func _scenery_step(sector: String) -> int:
+	var portas: Array = SECTOR_SCENERY_BANDS.get(sector, [])
+	if portas.is_empty():
+		return 0
+	var band := _scenery_band(sector)
+	var base := int(portas[band])
+	var proximo := int(portas[band + 1]) if band + 1 < portas.size() else base * 2 + 40
+	var dentro := clampi(
+		int(float(_scenery_score(sector) - base) / float(maxi(1, proximo - base)) * 5.0), 0, 4)
+	return clampi(band * 5 + dentro, 0, SECTOR_SCENERY_STEPS - 1)
+
+## A arte do degrau, com a mesma degradação honesta do salão: sem arquivo, a sala volta
+## à arte cheia em vez de abrir preta.
+func _scenery_art(sector: String) -> String:
+	var artes: Array = SECTOR_SCENERY_ART.get(sector, [])
+	if artes.is_empty():
+		return str(SECTOR_SCENERY_ROOM.get(sector, SALON_GEOMETRY_KEY))
+	var path := str(artes[_scenery_band(sector)])
+	return path if ResourceLoader.exists(path) else str(SECTOR_SCENERY_ROOM.get(sector, SALON_GEOMETRY_KEY))
+
+## Luz do degrau: a cor da banda puxada até meio caminho da banda seguinte, para o clima
+## aquecer a cada degrau sem invadir a parede da arte que ainda não foi paga.
+func _scenery_light(sector: String) -> Color:
+	var cores: Array = SECTOR_SCENERY_LIGHT.get(sector, [])
+	if cores.is_empty():
+		return Color.WHITE
+	var band := _scenery_band(sector)
+	var cor := cores[band] as Color
+	if band + 1 < cores.size():
+		cor = cor.lerp(cores[band + 1] as Color, float(_scenery_step(sector) % 5) / 8.0)
+	return cor
+
+## Quanto falta para a próxima arte da sala — o prêmio que o painel anuncia.
+func _scenery_missing(sector: String) -> int:
+	var portas: Array = SECTOR_SCENERY_BANDS.get(sector, [])
+	var band := _scenery_band(sector)
+	if band + 1 >= portas.size():
+		return 0
+	return maxi(0, int(portas[band + 1]) - _scenery_score(sector))
+
+## A linha que o painel mostra quando o jogador está OLHANDO a sala do ofício.
+func _scenery_line(sector: String) -> String:
+	var band := _scenery_band(sector)
+	var gifts: Array = SECTOR_SCENERY_GIFTS.get(sector, [])
+	var linha := tr("A SALA ESTÁ: %s — degrau %d/%d (%s)") % [
+		tr(SECTOR_SCENERY_NAMES[band]),
+		_scenery_step(sector) + 1,
+		SECTOR_SCENERY_STEPS,
+		tr(str(gifts[band]))]
+	var falta := _scenery_missing(sector)
+	if falta > 0:
+		linha += tr(" Próxima arte da sala em %d de ofício.") % falta
+	return linha
+
+## Qual sala tem escada agora: só a do ofício que o palco está mostrando. Returna vazio
+## em recepção, guilda e close-up, onde a escada não pinta nada.
+func _scenery_sector_shown() -> String:
+	var sector := str(current_sector)
+	if SECTOR_SCENERY_ROOM.has(sector) and _stage_room == str(SECTOR_SCENERY_ROOM[sector]):
+		return sector
+	return ""
 
 ## Entregar à guilda é o meio-termo que existe só porque a cela existe: a casa
 ## ganha a rua como aliada e abre mão do sangue que aquele prisioneiro daria.
