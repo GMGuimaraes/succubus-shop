@@ -1,6 +1,6 @@
 ---
 name: succubus-shop-feature-plumbing
-description: 'Fia um recurso novo no Succubus Shop (D:/Downloads/succubus-shop) sem quebrar o contrato medido: os onze pontos de edicao em main.gd (estado e tabela de constantes, vars de UI, card do setor, funcoes de logica, bloco em _refresh_ui, _save_game com config.set_value, _load_game com clamp e poda de payload lixo, _reset_run com decisao vida-vs-familia, _achievement_definitions, e as tabelas EN e ES de locales.gd no mesmo commit), mais a sonda em tools/probes e a clausula de Recursos atuais no README. Usar ao acrescentar contador, flag, lista, escada de degraus, painel novo ou mecanica sorteada ao jogo; ao perceber que um numero sumiu no save, que o degrau 0 mexeu na conta, que a sonda idioma reprovo chave orfa, ou que reencarnar nao limpou o estado novo. Nao usar para validar nem para commitar/push: isso e o skill godot-headless-probe-and-push-gate.'
+description: 'Fia um recurso novo no Succubus Shop (D:/Downloads/succubus-shop) sem quebrar o contrato medido: os onze pontos de edicao em main.gd (estado e tabela de constantes, vars de UI, card do setor, funcoes de logica, bloco em _refresh_ui, _save_game com config.set_value, _load_game com clamp e poda de payload lixo, _reset_run com decisao vida-vs-familia, _achievement_definitions, e as tabelas EN e ES de locales.gd no mesmo commit), mais a sonda em tools/probes e a clausula de Recursos atuais no README. Usar ao acrescentar contador, flag, lista, escada de degraus, painel novo ou mecanica sorteada ao jogo; ao acrescentar corpo de elenco (nome em STAGE_CROWD_BODIES, retrato no mesmo indice, perfil com portrait: i, regua STAGE_BODY_HEIGHT, folha de poses via tools/split_poses.gd); ao perceber que um numero sumiu no save, que o degrau 0 mexeu na conta, que a sonda idioma reprovo chave orfa, ou que reencarnar nao limpou o estado novo. Nao usar para validar nem para commitar/push: isso e o skill godot-headless-probe-and-push-gate.'
 ---
 
 # Fiação de recurso no Succubus Shop
@@ -45,6 +45,55 @@ A forma decide quais engates se aplicam e qual é a prova central.
 
 Antes de escrever: confirmar que o recurso não tem fórmula paralelo. Toda regra nova entra
 numa conta que o jogo já media (preço, fama, tique, chance) e a sonda mede essa conta.
+
+## Corpo novo no elenco: o cordão de três listas por índice
+
+Acrescentar alguém ao elenco **não passa pelos onze pontos**: passa pelo MESMO índice `i` em
+três listas, e o pareamento é silencioso — corpo sem retrato no mesmo índice não dá exceção,
+dá bárbaro entrando pela porta com o rosto do bardo.
+
+1. `grep -n "const STAGE_CROWD_BODIES" main.gd` — acrescentar o nome do corpo **no fim**.
+   **Nunca inserir no meio**: a ordem é o par retrato↔corpo; inserir renumera os recorrentes
+   `0..N` e troca o rosto de quem já existe.
+2. `grep -n "var customer_portrait_paths" main.gd` — acrescentar o retrato na **mesma
+   posição `i`**. O comentário acima dela declara "ordem fixa" porque o `portrait: i` de
+   `CUSTOMER_PROFILES` e de `regulars.gd` aponta para aqui.
+3. `grep -n "const CUSTOMER_PROFILES" main.gd` — perfil novo com `"portrait": i` no índice
+   recém-nascido do par.
+4. Corpo fora de escala (raça baixa ou alta) **só existe** com entrada em
+   `grep -n "const STAGE_BODY_HEIGHT" main.gd`: a folha de poses normaliza todo mundo pela
+   altura do palco, então sem a régua a fada, o diabrete, o órc e o necromante chegariam do
+   tamanho de um elfo. A régua é de ficção, não de medida: quem é pequeno na loja é pequeno
+   na tela.
+
+### Arte do elenco
+
+Uma folha com as poses do MESMO personagem sobre **verde puro (#00FF00)** →
+`godot --headless --path . -s res://tools/split_poses.gd -- <folha> <prefixo> <poses>` corta
+por chroma key, apara cada quadro na caixa de pixels vivos, ancora pelo pé e normaliza a
+altura (`STAGE_HEIGHT`); o corte cai nos vales da curva de ocupação, não em painéis de
+largura fixa. Gerar uma folha custa uma imagem e entrega poses idênticas em rosto, roupa e
+escala; gerar N imagens separadas quase nunca bate. Convenção de nomes:
+`stage_<corpo>.png` (pernas juntas), `stage_<corpo>_walkN.png`,
+`stage_<corpo>_<emoção>.png` — o arquivo parado em `assets/` já aumenta o ciclo, sem tocar
+em tabela nenhuma. Gerar **primeiro as seis que a partida realmente dispara** (aceno,
+aponta, felicidade, aprovação, desconfiança, tédio); o resto de `STAGE_EMOTION_POSES` só
+decora quem tem arte — personagem sem arte de emoção simplesmente não a usa.
+
+### Prova
+
+O molde é `tools/probes/elenco.gd`: (1) pareamento por índice — corpo `i` entra em cena
+andando com o retrato `i`; (2) ciclo de marcha sem buraco no meio (buraco é gente
+escorregando no lugar); (3) a escada de altura desenhada fecha com a régua de raça;
+(4) rodízio sem repetir rosto em cena; (5) os arquétipos novos chegam ao balcão, não só à
+lista (cobertura de tiradas); (6) a corrida de 200 tiques com a mesma semente **IDÊNTICA**
+— elenco maior não pode introduzir sorteio escondido. Armadilha medida na própria pele: a
+sonda que abre duas lojas sem apagar o save descartável entre elas faz a segunda ler o que a
+primeira escreveu — placar e vínculos são da família e passam pelo `_reset_run()`, então a
+mesma semente rende duas lojas diferentes por culpa da sonda, não do jogo.
+
+Os números desta seção (tetos de corpos e perfis, as seis poses iniciais, `STAGE_HEIGHT`)
+são do estado atual do repo; re-medir antes de citar em README ou asserção de sonda.
 
 ## Os onze pontos de engate
 
