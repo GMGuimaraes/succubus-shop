@@ -1349,8 +1349,14 @@ const STAGE_ART_FLOOR := {
 	"res://assets/forge_bellows_scene.png": Vector2(0.626, 0.80),
 	"res://assets/forge_master_scene.png": Vector2(0.621, 0.80),
 	"res://assets/forge_grand_scene.png": Vector2(0.623, 0.80),
-	## Biblioteca: a sala já herdava 0,665 e só a lenda pintava o mármore quase na linha
-	## do pé (0,668 contra 0,679) — um dedo de margem a menos que o resto da escada.
+	## Biblioteca: a escada inteira pintava o mármore mais alto que a sala, e a faixa
+	## herdada (0,665) deixava a bancada arrumada com o pé 50 px DENTRO da sala — não
+	## flutuava, mas quem anda no fundo parecia parado no meio do salão. Cada banda agora
+	## tem o próprio piso; a lenda era só um dedo mais funda que a sala (0,668).
+	"res://assets/library_bare_scene.png": Vector2(0.650, 0.84),
+	"res://assets/library_tidy_scene.png": Vector2(0.610, 0.84),
+	"res://assets/library_stacks_scene.png": Vector2(0.660, 0.84),
+	"res://assets/library_master_scene.png": Vector2(0.655, 0.84),
 	"res://assets/library_grand_scene.png": Vector2(0.668, 0.84),
 	## Santuário: aqui a escada inteira descia mais fundo que a sala. Cru, relíquias,
 	## mestre e lenda pintam o piso entre 0,645 e 0,655, e o pé herdado de 0,615 ficava
