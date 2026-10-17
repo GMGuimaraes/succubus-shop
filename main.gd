@@ -1013,18 +1013,56 @@ var _stage_sequence_cache: Dictionary = {}
 const STAGE_ROOM_PROPS := {
 	"res://assets/shop_scene.png": [
 		[Vector2(0.437, 0.487), Vector2(1.0, 0.512), Vector2(1.0, 1.0), Vector2(0.437, 1.0)],
-		[Vector2(0.0, 0.575), Vector2(0.187, 0.635), Vector2(0.187, 1.0), Vector2(0.0, 1.0)],
+		[Vector2(0.0, 0.522), Vector2(0.187, 0.585), Vector2(0.187, 1.0), Vector2(0.0, 1.0)],
 	],
 	"res://assets/forge_scene.png": [Rect2(0.0, 0.555, 0.165, 0.445), Rect2(0.77, 0.60, 0.23, 0.40), Rect2(0.655, 0.525, 0.095, 0.15)],
 	"res://assets/library_room_scene.png": [Rect2(0.225, 0.42, 0.13, 0.30), Rect2(0.0, 0.52, 0.215, 0.21), Rect2(0.78, 0.525, 0.205, 0.195)],
 	"res://assets/sanctum_room_scene.png": [Rect2(0.0, 0.53, 0.14, 0.17), Rect2(0.862, 0.53, 0.138, 0.17), Rect2(0.235, 0.515, 0.055, 0.15), Rect2(0.71, 0.505, 0.055, 0.15)],
 	## A mesa de guerra é o balcão da guilda: o tampo entra como contorno inclinado na
 	## altura da BORDA DE CIMA do tampo (não da superfície pintada), porque é a partir
-	## dali que a mesa é sólida e esconde quem está atrás.
+	## dali que a mesa é sólida e esconde quem está atrás. Medido na arte: a quina
+	## longínqua do tampo corre a y≈0,45 de ponta a ponta, e a borda de perto (0,51)
+	## é o lado de cá da madeira — cortar ali deixava a chefe com as pernas atravessadas
+	## sobre o mapa.
 	"res://assets/expedition_hall_scene.png": [
-		[Vector2(0.225, 0.525), Vector2(0.70, 0.50), Vector2(0.71, 0.715), Vector2(0.205, 0.72)],
-		[Vector2(0.0, 0.30), Vector2(0.175, 0.335), Vector2(0.175, 0.60), Vector2(0.0, 0.585)],
-		[Vector2(0.665, 0.435), Vector2(0.845, 0.45), Vector2(0.845, 0.585), Vector2(0.665, 0.575)],
+		[Vector2(0.180, 0.455), Vector2(0.695, 0.450), Vector2(0.705, 0.712), Vector2(0.175, 0.718)],
+		[Vector2(0.0, 0.402), Vector2(0.225, 0.418), Vector2(0.225, 0.600), Vector2(0.0, 0.585)],
+		[Vector2(0.645, 0.438), Vector2(0.858, 0.472), Vector2(0.858, 0.590), Vector2(0.645, 0.600)],
+	],
+}
+## O recorte é da ARTE PINTADA, não da sala. As faixas do salão mostram móveis
+## diferentes no mesmo chão — prancha sobre cavaletes, balcão baixo, balcão de honra —
+## e um único contorno herdado do `shop_scene` cortava a chefe acima do tampo que
+## aquele estado realmente pintou: ela ficava sentada dentro de um balcão que ainda
+## não existe na faixa 0, e com o torso atravessado na faixa 3. O chão, a porta, a
+## fila e o ponto de encontro continuam da sala (`_room_key`); só a linha onde o corpo
+## some é de cada arte. Base sempre em 1.0: abaixo do tampo o que a tela desenha é o
+## próprio piso daquela arte, então estender até o pé da tela não esconde nada que o
+## fundo já não escondesse — e corta a chefe no lugar certo sem deixar o pé de fora.
+const STAGE_ART_PROPS := {
+	## Casa em obras: não há balcão, há uma prancha sobre cavaletes a meio corpo e um
+	## caixote encostado na parede da porta.
+	"res://assets/salon_bare_scene.png": [
+		[Vector2(0.448, 0.522), Vector2(1.0, 0.542), Vector2(1.0, 1.0), Vector2(0.448, 1.0)],
+		[Vector2(0.0, 0.545), Vector2(0.055, 0.552), Vector2(0.055, 1.0), Vector2(0.0, 1.0)],
+	],
+	## Primeiro balcão de verdade, ainda baixo, com a pilha de caixotes da entrada.
+	"res://assets/salon_tidy_scene.png": [
+		[Vector2(0.437, 0.512), Vector2(1.0, 0.527), Vector2(1.0, 1.0), Vector2(0.437, 1.0)],
+		[Vector2(0.0, 0.548), Vector2(0.125, 0.560), Vector2(0.125, 1.0), Vector2(0.0, 1.0)],
+	],
+	## Balcão de honra com o sofá da frente. O sofá pára em x=0,187 de propósito: a
+	## fila inteira espera a partir de x=0,19, e móvel na frente de tudo engole quem
+	## fica meio minuto parado ali.
+	"res://assets/salon_gilded_scene.png": [
+		[Vector2(0.437, 0.494), Vector2(1.0, 0.512), Vector2(1.0, 1.0), Vector2(0.437, 1.0)],
+		[Vector2(0.055, 0.452), Vector2(0.187, 0.470), Vector2(0.187, 1.0), Vector2(0.055, 1.0)],
+	],
+	## O império: o balcão mais alto da escada, com o topo a y≈0,52 e o sofá encostado
+	## na coluna da porta.
+	"res://assets/salon_empire_scene.png": [
+		[Vector2(0.437, 0.518), Vector2(1.0, 0.545), Vector2(1.0, 1.0), Vector2(0.437, 1.0)],
+		[Vector2(0.0, 0.498), Vector2(0.187, 0.518), Vector2(0.187, 1.0), Vector2(0.0, 1.0)],
 	],
 }
 ## Móveis que ocupam uma faixa de profundidade do piso: mais ao fundo eles
@@ -3016,15 +3054,17 @@ func _occluder_material() -> ShaderMaterial:
 
 ## A geometria é da sala; a textura é da faixa. As cinco artes do salão são o MESMO
 ## cômodo filmado do MESMO ponto, então todas respondem pela chave cheia
-## (`SALON_GEOMETRY_KEY`) nas tabelas de chão, porta, fila, vitrine e móveis; o que muda
-## de uma para outra são os pixels pintados, e esses vão para o fundo e para a oclusão.
-## Sem esta normalização, a fila da loja vazia atravessaria um balcão que ainda não existe.
+## (`SALON_GEOMETRY_KEY`) nas tabelas de chão, porta, fila, vitrine e luz; o que muda
+## de uma para outra são os pixels pintados, e esses vão para o fundo e para o recorte
+## dos móveis (`STAGE_ART_PROPS`). Sem a normalização, a fila da loja vazia atravessaria
+## um balcão que ainda não existe; sem o recorte por arte, a chefe some na altura do
+## balcão de ouro mesmo na casa em obras.
 func _apply_room_props(scene_path: String) -> void:
 	_stage_room = _room_key(scene_path)
 	_stage_art = scene_path
 	if _stage_occluder_material == null:
 		return
-	var props: Array = STAGE_ROOM_PROPS.get(_stage_room, [])
+	var props: Array = STAGE_ART_PROPS.get(scene_path, STAGE_ROOM_PROPS.get(_stage_room, []))
 	var prop_depths: Array = STAGE_ROOM_PROP_DEPTHS.get(_stage_room, [])
 	for i in range(STAGE_PROP_SLOTS):
 		var is_depth_sorted := i < prop_depths.size()
