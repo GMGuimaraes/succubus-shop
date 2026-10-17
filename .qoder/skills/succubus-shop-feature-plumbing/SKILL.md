@@ -1,6 +1,6 @@
 ---
 name: succubus-shop-feature-plumbing
-description: 'Fia um recurso novo no Succubus Shop (D:/Downloads/succubus-shop) sem quebrar o contrato medido: os onze pontos de edicao em main.gd (estado e tabela de constantes, vars de UI, card do setor, funcoes de logica, bloco em _refresh_ui, _save_game com config.set_value, _load_game com clamp e poda de payload lixo, _reset_run com decisao vida-vs-familia, _achievement_definitions, e as tabelas EN e ES de locales.gd no mesmo commit), mais a sonda em tools/probes e a clausula de Recursos atuais no README. Usar ao acrescentar contador, flag, lista, escada de degraus, painel novo ou mecanica sorteada ao jogo; ao acrescentar corpo de elenco (nome em STAGE_CROWD_BODIES, retrato no mesmo indice, perfil com portrait: i, regua STAGE_BODY_HEIGHT, folha de poses via tools/split_poses.gd); ao perceber que um numero sumiu no save, que o degrau 0 mexeu na conta, que a sonda idioma reprovo chave orfa, ou que reencarnar nao limpou o estado novo. Nao usar para validar nem para commitar/push: isso e o skill godot-headless-probe-and-push-gate.'
+description: 'Fia um recurso novo no Succubus Shop (D:/Downloads/succubus-shop) sem quebrar o contrato medido: os onze pontos de edicao em main.gd (estado, constantes, UI, card do setor, logica, _refresh_ui, _save_game, _load_game com clamp e poda de lixo, _reset_run vida-vs-familia, _achievement_definitions e locales EN/ES no mesmo commit), mais a sonda em tools/probes e a clausula no README. Usar ao acrescentar contador, flag, lista, escada de degraus, escada de arte (faixa que troca o PNG da sala; engates _room_key e STAGE_ART_PROPS), painel novo ou mecanica sorteada ao jogo; ao acrescentar corpo de elenco (tres listas no mesmo indice, regua STAGE_BODY_HEIGHT, folha chroma-key); ao perceber que um numero sumiu no save, que o degrau 0 mexeu na conta, que a sala acordou sem chao, que a chefe foi engolida pelo recorte errado, que a sonda idioma reprovo chave orfa, ou que reencarnar nao limpou o estado novo. Nao usar para validar nem para commitar/push: isso e o skill godot-headless-probe-and-push-gate.'
 ---
 
 # Fiação de recurso no Succubus Shop
@@ -39,6 +39,7 @@ A forma decide quais engates se aplicam e qual é a prova central.
 | flag booleana | `imp_hired`, `demonic_form_active` | `config.set_value` grava bool; reset explícito |
 | lista / dicionário | `banned_regulars`, `credit_book`, `staff_hired`, `shelf_batches` | **poda de payload lixo** na carga; `.clear()` no reset |
 | escada de degraus | `vip_rank` + `VIP_TIERS`, `credit_rank` + `CREDIT_TIERS`, `alchemy_rank` | degrau 0 = mecânica desligada; tabela com custo/exigência por nó |
+| escada de arte | `PROGRESS_BAND_ART` (salão), `SECTOR_SCENERY_ART` (forja/biblioteca/santuário) | bandas de placar × degraus de luz/poeira; **não move número nenhum** — engates próprios na seção «Escada de arte» |
 | painel só-leitura | cards de setor, `_progress_line()` | UI + `_refresh_ui`; nenhuma chave nova no save |
 | mecânica sorteada | visita capa fina, furto, expedição | **cauda de RNG invariante** é a prova central |
 | dados/regras próprios | `staff.gd`, `rivals.gd`, `commerce.gd` | novo `const X = preload("res://x.gd")`; **o estado persistível ainda mora no `main.gd`** |
@@ -94,6 +95,40 @@ mesma semente rende duas lojas diferentes por culpa da sonda, não do jogo.
 
 Os números desta seção (tetos de corpos e perfis, as seis poses iniciais, `STAGE_HEIGHT`)
 são do estado atual do repo; re-medir antes de citar em README ou asserção de sonda.
+
+## Escada de arte: os dois engates próprios
+
+A escada de arte é a variante da escada de degraus que pinta a sala em vez de mover
+número: as bandas do placar trocam o PNG da sala e, dentro de cada arte, os degraus só
+afinam luz e poeira. No salão a régua é o `business_score` (`PROGRESS_BAND_ART`, cinco
+faixas); nos ofícios é o trabalho do banco (`SECTOR_SCENERY_STEPS` = 30 degraus: seis
+artes × cinco afinos, portas em `SECTOR_SCENERY_BANDS`, artes por sala em
+`SECTOR_SCENERY_ART`). Degrau zero é a sala crua e não move caixa, fama nem sorteio — a
+prova é a cauda de `randi()` idêntica ao controle ao avaliar os estados da escada, mais
+«pintar a sala não move número» (molde: `tools/probes/cenario.gd`).
+
+Esquecer os dois engates abaixo não dá erro de parse. Dá sala sem chão e corpo cortado
+no lugar errado:
+
+1. **Arte nova fora do `_room_key()` acorda a sala sem chão.** `grep -n "func _room_key"
+   main.gd` normaliza toda arte da escada pela geometria da sala cheia — as faixas do
+   salão por `SALON_GEOMETRY_KEY`, as dos ofícios por `SECTOR_SCENERY_ROOM`. Arte nova
+   precisa entrar na tabela da escada a que pertence; esquecida ali, o `_stage_room` cai
+   no caminho do PNG e as dez tabelas de sala (chão, porta, fila, vitrine, ponto de
+   encontro, luzes) não acham a chave. O comentário do repo é literal: «uma banda
+   esquecida ali viraria sala sem chão, sem porta e sem fila». A sonda confere a
+   geometria lida (a da sala cheia) contra a arte pintada (a da faixa).
+2. **Arte pintada sem recorte em `STAGE_ART_PROPS` engole a chefe.** Cada faixa desenha
+   o próprio móvel numa altura diferente, então o contorno de oclusão vem da **arte**
+   (`grep -n "const STAGE_ART_PROPS" main.gd`), não da sala. Herdar o polígono do salão
+   cheio cortava a chefe até **0,035 de tela antes** do móvel realmente pintado (casa em
+   obras corta em 0,525; o herdado era 0,49). `tools/probes/recorte.gd` mede o corte na
+   coluna da chefe por faixa e reprova qualquer arte da escada sem recorte próprio.
+
+PNG faltando não abre fundo preto: `_salon_art()` e `grep -n "func _scenery_art" main.gd`
+degradam para a arte cheia da sala (fatia de arte não importada, teste em máquina limpa).
+Sala que não é escada (close-up de cena, guilda) não entra nas tabelas e continua
+intocada quando a faixa vira.
 
 ## Os onze pontos de engate
 
@@ -245,6 +280,15 @@ Armadilhas reais (cada uma custou uma rodada nesta sessão):
 - **Faltou `await` na corrida** e a sonda leu antes de o tique acontecer.
 - **Método chutado no dicionário** só aparece em runtime; conferir com `grep -n "func "
   main.gd` antes de chamar.
+- **Instância não-tipada não infere tipo.** `var g = await _loja(...)` devolve `Variant`;
+  `var ouro := g.foo()` reprova o parse com *Cannot infer the type*. Declarar o tipo
+  (`var ouro: int = g.foo()`).
+- **`Locales` não é global.** A sonda que traduz declara o próprio
+  `const Locales = preload("res://locales.gd")`; ter no `main.gd` não vale — cada script
+  declara os seus preloads.
+- **Headless nasce 1280×1280.** Medida de oclusão ou linha de chão em fração de tela
+  exige fixar a janela em 1280×720 (molde: `tools/probes/caminhos.gd`); o corpo tem
+  altura fixa em pixels e, na tela quadrada, toda fração sai errada.
 
 ## Fechar
 
