@@ -10,6 +10,25 @@ O projeto prioriza conteúdo original, opções de acessibilidade e desenvolvime
 
 Esta captura mostra uma partida limpa no estado atual do protótipo; a interface e o balanceamento ainda estão em evolução.
 
+### Galeria da alpha
+
+As sete telas abaixo são **prints reais da partida**, gerados pela sonda `tools/probes/galeria.gd` (o comando está no cabeçalho dela) numa loja já em andamento: mesmo HUD, mesmos cartões e mesmos números que aparecem jogando. Regenerar a galeria é rodar a sonda e copiar os PNGs para `screenshots/`.
+
+| O salão com a fila no balcão | A conta do dia | A forja com peça na brasa |
+|---|---|---|
+| ![Recepção com a fila formada, o elenco no palco e as cartas da chefe](screenshots/gallery_recepcao.png) | ![Popup de balanço do dia com o ouro que entrou, os felizes e os que saíram sem comprar](screenshots/gallery_balanco.png) | ![Forja em curso com a barra de tempo e o ferreiro no palco](screenshots/gallery_forja.png) |
+| O balcão atende quem chega sozinho: fila, paciência e o caixa mudando a cada tique. | A virada fecha a conta do dia — não a vida inteira — e diz o que a rua cobrou. | O cronômetro da bigorna corre no alto da tela: a peça sai do tempo de mundo, não do clique. |
+
+| O livro de fiado | O cartaz do combo |
+|---|---|
+| ![Cartão do fiado com a nota aberta na rua e o botão do próximo degrau](screenshots/gallery_fiado.png) | ![Cartão do combo com a sequência do dia, a taxa anunciada e o recorde da vida](screenshots/gallery_combo.png) |
+| Quem não paga leva a peça anotada: nome, valor e dia de vencimento no livro. | A sequência do mesmo dia paga ouro na etiqueta e morre na virada. |
+
+| O painel de conquistas | A estrada com expedição em curso |
+|---|---|
+| ![Pela menu do ESC: conquistas desbloqueadas com o prêmio de cada uma](screenshots/gallery_conquistas.png) | ![Diário de bordo com a expedição voltando, barra de progresso e chance de contratempo](screenshots/gallery_estrada.png) |
+| Cada selo paga ouro e fama na hora e mostra o que ainda falta. | O batedor some no mapa e volta com o saco — ou com o contratempo. |
+
 ### Visão conceitual da meta final
 
 ![Conceito da meta final: loja, expedições, defesa e prestígio](screenshots/final-vision.svg)
@@ -48,6 +67,7 @@ A camada `commerce.gd` separa catálogo/entitlements da lógica do jogo e a inte
 - **Sistema:** Windows 10 ou posterior, 64 bits. O projeto ainda não foi validado em outras plataformas.
 - **Gráficos:** GPU compatível com OpenGL 3.3; o projeto usa o renderizador GL Compatibility e janela de referência 1280 × 720.
 - **Processador e memória:** estimativa inicial de CPU dual-core e 4 GB de RAM; ainda sem benchmark em hardware de entrada.
+- **Espaço em disco:** **170 MB** para o pacote da alpha (`Succubus-Shop-Windows-Alpha.zip` medido em 169.679.606 bytes na publicação `v0.1.0-alpha.5`), mais alguns KB por save. O número é do arquivo publicado, não uma estimativa.
 - **Desenvolvimento:** Godot 4.7.2 para abrir e executar o projeto pelo editor. Builds alpha Windows 64-bit são publicados em Releases.
 
 ## Recursos atuais
