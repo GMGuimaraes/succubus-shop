@@ -138,6 +138,18 @@ func _get_stream(sound: String) -> AudioStream:
 		_streams[sound] = load(path) if ResourceLoader.exists(path) else null
 	return _streams[sound]
 
+## Sair com um efeito ainda tocando deixa para tras o `AudioStreamPlaybackWAV` que o
+## AudioServer criou naquela reproducao, e com ele o `.wav` continuando "em uso" no
+## cache de recursos -- e sao exatamente as duas linhas de vazamento que todo smoke
+## vinha tolerando por nome no portao. Parar os players e soltar o cache na saida da
+## arvore devolve os dois antes de o AudioServer fechar.
+func _exit_tree() -> void:
+	for player in _sfx_players:
+		if is_instance_valid(player):
+			player.stop()
+	_sfx_players.clear()
+	_streams.clear()
+
 func _load_settings() -> void:
 	var config := ConfigFile.new()
 	if config.load(SETTINGS_PATH) != OK:

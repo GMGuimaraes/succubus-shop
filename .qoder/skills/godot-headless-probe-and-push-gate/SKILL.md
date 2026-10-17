@@ -263,19 +263,21 @@ sonda de janela: `APPDATA` descartavel, log em arquivo, gate de grep e conferenc
 ## Passo 7 - gate de erro por grep
 
 ```bash
-grep -nE "ERROR|SCRIPT ERROR|Cannot|Invalid|assert" /d/Downloads/tmp-userdata/probe.log \
-  | grep -v "ObjectDB instances were leaked at exit" \
-  | grep -v "resources still in use at exit" \
-  | grep -v "shop_theme_loop.mp3"
+grep -nE "ERROR|SCRIPT ERROR|Cannot|Invalid|assert" /d/Downloads/tmp-userdata/probe.log
 ```
 
 Qualquer linha que sobrar reprova o push: voltar ao passo 4. Saida vazia e aprovacao.
 
-**Baseline conhecida (nao e regressao):** todo smoke imprime
-`WARNING: 2 ObjectDB instances were leaked at exit` +
-`ERROR: 1 resources still in use at exit`, causados por
-`res://assets/shop_theme_loop.mp3` ainda referenciado no shutdown. Se alguem consertar o
-vazamento, atualizar esta lista - nunca alargar o `grep -v` ate o gate aprovar tudo.
+**Nao existe mais baseline tolerada.** Houve uma: todo smoke imprimia
+`WARNING: 2 ObjectDB instances were leaked at exit` + `ERROR: 1 resources still in use
+at exit`, e o portao filtrava essas duas linhas mais `shop_theme_loop.mp3`. A causa nao
+era o MP3. Medida com `--verbose` (que e o unico modo de ver o *nome* do objeto vazado),
+a dupla era `res://audio/rare.wav` e o `AudioStreamPlaybackWAV` que ele deixa vivo quando
+a arvore morre com um efeito tocando. Fechada em 2026-10-17 por `_exit_tree()` em
+`audio.gd`, que para os players e solta o cache de streams antes de o AudioServer fechar.
+Se a linha voltar, e regressao real: rodar a sonda com `--verbose`, ler o nome impresso em
+`Leaked instance:` / `Resource still in use:` e consertar a origem — nunca alargar o
+`grep -v` ate o gate aprovar tudo.
 
 ## Passo 8 - conferir o save real
 
