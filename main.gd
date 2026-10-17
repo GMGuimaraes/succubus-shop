@@ -670,11 +670,22 @@ var menu_volume_label: Label
 ## Onde a tela atual é montada dentro da moldura.
 var menu_box: VBoxContainer
 var menu_button: Button
+## O cartaz do primeiro dia, pendurado entre a barra de salas e o palco: é a única
+## forma de a loja se explicar sem arrancar o balcão da tela, então ele não é modal e
+## não mexe no ESC. Existe uma vez por pessoa e recolhe quando o guia é lido ou
+## dispensado.
+var guide_strip: PanelContainer
+var guide_strip_label: Label
 ## Janela e desenho são da pessoa que joga, não da vida: moram no mesmo arquivo do
 ## idioma e sobrevivem a reencarnar e a apagar o progresso.
 var window_mode: int = DisplayServer.WINDOW_MODE_WINDOWED
 var ui_scale: float = 1.0
 var vsync_mode: int = DisplayServer.VSYNC_ENABLED
+## O guia já foi lido? Preferência da pessoa, como o idioma e a tela: mora no arquivo
+## de preferências, não no save da vida, e reencarnar não apaga a marca. Em falso ele
+## abre o cartaz do primeiro dia sobre o painel; lido, o cartaz recolhe e nenhuma
+## conta da loja se moveu — o guia explica a loja, não paga por ela.
+var guide_seen: bool = false
 ## O arquivo de preferências respondeu? Se sim, ele manda sobre o save: o save é a conta
 ## da loja, e a loja pode ser exportada para outra máquina sem arrastar o idioma dela.
 var _locale_from_settings: bool = false
@@ -786,6 +797,56 @@ const COMMISSION_STAGE_TEXTS := {
 	"rare": "Presenciar %d eventos raros",
 	"legendary": "Entregar %d peça(s) Lendária(s) no balcão",
 }
+
+## O guia da loja, em prosa. A tabela é constante porque a leitura não pode depender do
+## estado: o que muda de partida para partida está na lista "o que fazer agora", calculada
+## na hora, e nunca aqui. Nada neste arquivo paga, cobra ou sorteia — é a única
+## garantia que o guia precisa dar, e é ela que a sonda mede.
+const GUIDE_SECTIONS: Array[Dictionary] = [
+	{
+		"titulo": "O BALCÃO",
+		"linhas": [
+			"O freguês entra sozinho, procura o que quer e paga o que está na prateleira. Seu trabalho não é clicar em ninguém: é manter a estante com o que a fama manda buscar.",
+			"Um tique do mundo a cada três segundos, e o balcão atende uma visita por tique. As outras esperam na linha do tapete; quem passa da própria paciência vai embora, e a fama paga a conta da fila.",
+			"O botão Vender do balcão tira a peça do estoque por 70% do preço de tabela. É dinheiro rápido sem freguês: serve para o dia apertado, não para a vida da casa.",
+		],
+	},
+	{
+		"titulo": "A FORJA E A PRATELEIRA",
+		"linhas": [
+			"Compre ingrediente no mercado, fabrique a peça e espere o cronômetro. São até três peças ao mesmo tempo na forja.",
+			"Qualidade é o que decide o preço: ela sobe com o nível, com o dote de alquimia e com o catalisador queimado dentro da forma.",
+			"Estoque tem prazo. Peça parada desce de degrau e, vencida, sai pela porta — a conserva e o depósito de sal existem para comprar tempo.",
+		],
+	},
+	{
+		"titulo": "O DIA",
+		"linhas": [
+			"Vinte tiques viram o dia. Na virada a casa cobra a conta, as filiais pagam ou devem, o fiado corre juros e o combo do dia recomeça.",
+			"O balanço fecha a conta e o placar guarda o melhor dia que a loja já teve.",
+			"Sem você a loja trabalha até doze horas: o que passar disso fica para a próxima visita.",
+		],
+	},
+	{
+		"titulo": "A PROGRESSÃO",
+		"linhas": [
+			"Venda, contrato do dia, pedido pessoal e capítulo dão experiência. Cada nível paga ouro, fama e um ponto de talento.",
+			"O ponto de talento espera na Biblioteca, nas trilhas de alquimia, comércio, charme, logística e administração da casa. No degrau 4 cada trilha faz a loja assinar um ofício e raspar o outro até a próxima vida.",
+			"Conquista paga ouro, fama e um pacote de cartas, e carta boa é bônus no balcão, não enfeite de colecionador.",
+			"Fechar o império troca de vida: caixa, prateleira e campanha voltam ao zero e ficam a aura, os dotes, os vínculos e o que as facções já sabem de você.",
+		],
+	},
+	{
+		"titulo": "AS CINCO SALAS",
+		"linhas": [
+			"Recepção: a campanha, a fila, a conta da casa, a conservação, as filiais, a concorrência da praça, o livro de fiado e o VIP.",
+			"Forja: as receitas, o mercado de ingredientes, o topo da forja e a bancada de ensaios.",
+			"Biblioteca: o nível, os talentos, as especializações e a leitura que adianta uma receita presa ao nível.",
+			"Santuário: os rituais, as relíquias, as bênçãos e a cela que rende para a forja.",
+			"Expedição: a estrada, os batedores e o ingrediente que a praça não vende.",
+		],
+	},
+]
 
 ## Encomendas de longo prazo: o pedido de um patrono que se cumpre em três etapas
 ## atravessando dias, enquanto o contrato do dia nasce e morre na mesma virada. Os
@@ -1968,6 +2029,8 @@ func _build_menu_layer() -> void:
 			_menu_screen_save()
 		"conquistas":
 			_menu_screen_conquistas()
+		"guia":
+			_menu_screen_guia()
 		"creditos":
 			_menu_screen_creditos()
 		"idioma":
@@ -1985,6 +2048,8 @@ func _menu_title() -> String:
 			return "SALVAR E CARREGAR"
 		"conquistas":
 			return "CONQUISTAS"
+		"guia":
+			return "COMO SE JOGA"
 		"creditos":
 			return "CRÉDITOS"
 		"idioma":
@@ -2015,6 +2080,7 @@ func _menu_screen_root() -> void:
 	_menu_note("O balcão continua aqui. Este é o menu da loja — o mesmo que o ESC abre.",
 			Color(0.72, 0.66, 0.8), 13)
 	_menu_button("Continuar a loja", _close_menu, 48)
+	_menu_button("📖 Como se joga", _menu_open_guia)
 	_menu_button("⚙ Opções", _show_menu_screen.bind("opcoes"))
 	_menu_button("💾 Salvar e carregar", _show_menu_screen.bind("save"))
 	_menu_button(tr("🏆 Conquistas (%d/%d)") % [unlocked_achievements.size(), _achievement_definitions().size()],
@@ -2116,6 +2182,115 @@ func _menu_screen_conquistas() -> void:
 		_menu_note(tr("Trancadas neste balcão: %d — os nomes ficam escondidos para não estragar a surpresa.")
 				% (definitions.size() - shown), Color(0.66, 0.6, 0.76), 12)
 	_menu_back_button()
+
+## O guia é leitura, não balcão: nenhuma linha daqui escreve em ouro, fama, experiência,
+## estoque ou sorteio. A única marca que ele deixa é a de ter sido lido, e essa mora no
+## arquivo de preferências da pessoa, nunca no save da vida.
+func _menu_screen_guia() -> void:
+	_menu_note("Dois minutos de leitura e a loja deixa de ser um menu de botões.",
+			Color(0.72, 0.66, 0.8), 13)
+	for section in GUIDE_SECTIONS:
+		_menu_note(str(section["titulo"]), Color(0.85, 0.62, 1.0), 15)
+		for line in section["linhas"]:
+			_menu_note(str(line), Color(0.78, 0.72, 0.86), 13)
+	_menu_note("O QUE FAZER AGORA", Color(1.0, 0.86, 0.45), 15)
+	for step in _guide_next_steps():
+		_menu_note("• " + step, Color(0.85, 0.78, 0.95), 13)
+	_menu_note("Leia sem pressa: com o menu aberto o relógio da rua para, e nenhum freguês bate à porta enquanto você está aqui.",
+			Color(0.66, 0.6, 0.76), 12)
+	_menu_button("Entendi, abrir o balcão", _close_menu, 48)
+	_menu_back_button()
+
+## O passo que a casa pede agora, lido do estado e nunca de cabeça. A ordem é a da
+## sobrevivência: primeiro peça na estante, depois o talento parado na gaveta, depois a
+## virada que ainda não chegou. Sem estoque o balcão atende o ar, então nada mais importa.
+func _guide_next_steps() -> Array[String]:
+	var steps: Array[String] = []
+	var stock := 0
+	for item in products:
+		stock += int(item["stock"])
+	if stock == 0:
+		if craft_jobs.is_empty():
+			steps.append(tr("Comece pela Forja: fabrique uma peça já liberada. Sem estoque no balcão, a fila olha para a prateleira vazia e vai embora."))
+		else:
+			steps.append(tr("A forja já trabalha: espere o cronômetro e a prateleira enche sozinha."))
+	elif stock < 3 and craft_jobs.is_empty():
+		steps.append(tr("Pouca peça na estante e forja parada: fabrique antes de a fila crescer."))
+	if skill_points > 0:
+		steps.append(tr("Há %d ponto(s) de talento parado(s) na gaveta. Gaste na Biblioteca — talento não gasto é loja parada.") % skill_points)
+	if shop_day <= 1:
+		steps.append(tr("Aguarde a primeira virada do dia: é nela que a casa cobra conta, o fiado corre juros e o contrato do dia paga."))
+	if steps.is_empty():
+		steps.append(tr("A casa está redonda: o balcão corre sozinho e o seu trabalho agora é escolher para onde vai o ouro."))
+	return steps
+
+## Abrir o guia pela aba de baixo do menu, ou pelo cartaz do primeiro dia. Marcando como
+## lido aqui em vez de no fechamento: quem leu e voltou pelo "← Voltar ao menu" leu, e
+## cartaz que volta depois da leitura é cartaz que não confiaram em quem leu.
+func _menu_open_guia() -> void:
+	if not guide_seen:
+		guide_seen = true
+		_save_person_settings()
+		_refresh_guide_strip()
+	_show_menu_screen("guia")
+
+## Dispensar sem ler é resposta: o cartaz existe para ser visto uma vez, não para ser
+## negociado a cada abertura da loja.
+func _dismiss_guide_strip() -> void:
+	guide_seen = true
+	_save_person_settings()
+	_refresh_guide_strip()
+
+## O cartaz do primeiro dia, entre a barra de salas e o palco. Não é modal de propósito:
+## a loja tem um balcão acontecendo atrás dele, e um tutorial que para o jogo ensina a
+## medo em vez de ensinar a loja.
+func _build_guide_strip(parent: Node) -> void:
+	guide_strip = PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.10, 0.05, 0.14, 0.96)
+	style.border_color = Color(1.0, 0.72, 0.42, 0.9)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(12)
+	style.content_margin_left = 14
+	style.content_margin_right = 14
+	style.content_margin_top = 10
+	style.content_margin_bottom = 10
+	guide_strip.add_theme_stylebox_override("panel", style)
+	guide_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	parent.add_child(guide_strip)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	guide_strip.add_child(row)
+
+	guide_strip_label = Label.new()
+	guide_strip_label.text = tr("Primeiro dia na loja: o balcão vende sozinho o que está na prateleira. O guia explica o resto em dois minutos.")
+	guide_strip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	guide_strip_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	guide_strip_label.add_theme_font_size_override("font_size", 14)
+	guide_strip_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.45))
+	row.add_child(guide_strip_label)
+
+	var open_button := Button.new()
+	open_button.text = "📖 Como se joga"
+	open_button.custom_minimum_size = Vector2(150, 40)
+	open_button.pressed.connect(_menu_open_guia)
+	row.add_child(open_button)
+
+	var dismiss_button := Button.new()
+	dismiss_button.text = "Não mostrar de novo"
+	dismiss_button.custom_minimum_size = Vector2(170, 40)
+	dismiss_button.pressed.connect(_dismiss_guide_strip)
+	row.add_child(dismiss_button)
+
+	_refresh_guide_strip()
+
+## Só a visibilidade muda, e ela muda por uma chave que é da pessoa: ler o guia não
+## acende nem apaga nenhuma conta da loja.
+func _refresh_guide_strip() -> void:
+	if not is_instance_valid(guide_strip):
+		return
+	guide_strip.visible = not guide_seen
 
 func _menu_screen_creditos() -> void:
 	_menu_note("SUCCUBUS SHOP", Color(1.0, 0.67, 0.88), 20)
@@ -2251,8 +2426,9 @@ func _pick_locale(id: String) -> void:
 	audio.play("click")
 
 ## A preferência mora fora do save de propósito: reencarnar, resetar a vida e até apagar
-## o progresso são contas da loja, e o idioma e a tela são da pessoa que joga. Um arquivo
-## só, lido antes de escrito: salvar o idioma sem ler apagava a seção da tela, e vice-versa.
+## o progresso são contas da loja, e o idioma, a tela e o guia são da pessoa que joga. Um
+## arquivo só, lido antes de escrito: salvar o idioma sem ler apagava a seção da tela, e
+## vice-versa.
 func _save_person_settings() -> void:
 	var config := ConfigFile.new()
 	config.load(Locales.SETTINGS_PATH)
@@ -2261,6 +2437,7 @@ func _save_person_settings() -> void:
 	config.set_value("display", "window_mode", window_mode)
 	config.set_value("display", "ui_scale", ui_scale)
 	config.set_value("display", "vsync_mode", vsync_mode)
+	config.set_value("guide", "seen", guide_seen)
 	config.save(Locales.SETTINGS_PATH)
 
 func _load_person_settings() -> void:
@@ -2268,6 +2445,10 @@ func _load_person_settings() -> void:
 	if config.load(Locales.SETTINGS_PATH) != OK:
 		return
 	var saved := str(config.get_value("locale", "language", ""))
+	# Save antigo e arquivo novo acordam igual: sem a chave do guia a loja trata como
+	# primeira vez, e é isso que faz o cartaz aparecer para quem já jogava antes de ele
+	# existir.
+	guide_seen = bool(config.get_value("guide", "seen", false))
 	if Locales.knows(saved):
 		locale = saved
 		locale_confirmed = bool(config.get_value("locale", "confirmed", false))
@@ -3721,6 +3902,8 @@ func _build_ui() -> void:
 	forge_status_label.add_theme_font_size_override("font_size", 14)
 	forge_status_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.48))
 	speed_row.add_child(forge_status_label)
+
+	_build_guide_strip(root)
 
 	progression_label = Label.new()
 	progression_label.add_theme_font_size_override("font_size", 16)
@@ -8534,6 +8717,7 @@ func _refresh_ui() -> void:
 	else:
 		imp_button.text = "Contratar diabrete • 125 ouro"
 		imp_button.disabled = gold < 125
+	_refresh_guide_strip()
 
 ## Ruidos de saves antigos ou de versões diferentes do mercado: aproveita só o
 ## calor válido e mantém a estrutura {"ingredient": {}, "product": {}}.
@@ -11514,6 +11698,9 @@ func _reincarnate() -> void:
 ## Só o que a vida construiu cai: a ficha das pessoas, o álbum, as lembranças, as
 ## conquistas, o prestígio e as opções continuam no lugar.
 func _reset_run() -> void:
+	# O guia não é da vida nem do CNPJ: é da pessoa, e por isso esta função não o toca.
+	# Reencarnar com o cartaz voltando à tela seria a loja fingindo que o jogador nunca
+	# leu o que já leu. Só o arquivo de preferências, que nem é lido aqui, manda nele.
 	gold = _prestige_start_gold()
 	# A vida nova não herda o vermelho da anterior: a casa recomeça no nome dela.
 	debt = 0
