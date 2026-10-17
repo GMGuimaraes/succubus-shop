@@ -122,6 +122,13 @@ func _initialize() -> void:
 	print("── o ESC abre, fecha e manda na rua ──")
 	var loja = await _loja("esc")
 	loja.world_timer.start()
+	# Em janela a loja acorda com o portão de idioma na tela — o portão só abre fora do
+	# headless. Um ESC antes de medir fecha o portão e devolve a loja ao chão da medida
+	# (menu fechado); sem isto a mesma sonda lê dois estados de partida diferentes
+	# conforme o modo de lançamento, e o primeiro ESC fecha em vez de abrir.
+	if not loja.locale_confirmed and is_instance_valid(loja.menu_layer):
+		_esc(loja)
+		await _frames(2)
 	print("   antes do ESC: menu %s • relógio %s" % [
 		"fechado" if not is_instance_valid(loja.menu_layer) else "aberto",
 		"rodando" if not loja.world_timer.is_stopped() else "parado"])
@@ -129,7 +136,8 @@ func _initialize() -> void:
 	print("   depois do ESC: menu %s • relógio %s • raiz com %d item(ns) • modo abertura %s" % [
 		"aberto" if is_instance_valid(loja.menu_layer) else "fechado",
 		"parado" if loja.world_timer.is_stopped() else "RODANDO",
-		loja.menu_box.get_child_count(), str(loja.menu_start_mode)])
+		0 if not is_instance_valid(loja.menu_box) else loja.menu_box.get_child_count(),
+		str(loja.menu_start_mode)])
 	# O seletor saiu da raiz: hoje mora na camada 🌐, a um toque do menu. Descer nela é
 	# a conta honesta dos botões de idioma.
 	var porta = _porta_da_camada(loja, "🌐")

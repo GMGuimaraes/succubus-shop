@@ -933,16 +933,31 @@ const STAGE_CROWD_BODIES: Array[String] = [
 	"witch",
 	"druid",
 	"pirate",
+	"alchemist",
+	"necromancer",
+	"bounty",
+	"elf",
+	"orc",
+	"fairy",
+	"vampire",
+	"imp",
 ]
-## Quantos transeuntes o salão comporta ao mesmo tempo. O elenco tem dezesseis
+## Quantos transeuntes o salão comporta ao mesmo tempo. O elenco tem vinte e quatro
 ## corpos justamente para não repetir, mas sala cheia de gente andando tapa a
 ## chefe e o balcão: o teto é de cena, não de elenco.
 const STAGE_MAX_WALKERS := 4
 ## Altura relativa de cada corpo. A folha de poses normaliza todo mundo pela
-## altura do palco, então sem isto o goblin andaria do tamanho de um humano.
+## altura do palco, então sem isto o goblin andaria do tamanho de um humano — e a
+## folha desenha cada figura preenchendo a altura inteira do quadro, de modo que a
+## fada e o diabrete chegariam do tamanho de um elfo. A régua aqui é de ficção, não
+## de medida: quem é pequeno na loja é pequeno na tela.
 const STAGE_BODY_HEIGHT := {
 	"goblin": 0.62,
 	"dwarf": 0.74,
+	"fairy": 0.46,
+	"imp": 0.58,
+	"orc": 1.12,
+	"necromancer": 1.06,
 }
 ## Emoções que o elenco sabe representar quando a arte existir. Os nomes vêm dos
 ## momentos da partida, não de uma lista de desejos: cada um deles é chamado por
@@ -1265,7 +1280,9 @@ var sensual_tween: Tween
 ## Índice usado em "portrait" nos perfis e em regulars.gd. Ordem fixa:
 ## 0 aventureiro, 1 maga/mago, 2 gótico, 3 bárbaro, 4 ladina, 5 clérigo,
 ## 6 mercadora, 7 nobre, 8 goblin, 9 cobrador do submundo, 10 ferreiro anão,
-## 11 barda, 12 paladina, 13 bruxa, 14 druida, 15 capitã pirata.
+## 11 barda, 12 paladina, 13 bruxa, 14 druida, 15 capitã pirata,
+## 16 alquimista, 17 necromante, 18 caçadora de recompensas, 19 elfa,
+## 20 órc, 21 fada cobradora, 22 conde vampiro, 23 diabrete vendedor.
 ## Esta é a mesma ordem de STAGE_CROWD_BODIES: o corpo que anda no salão é o
 ## rosto que o painel mostra.
 var customer_portrait_paths: Array[String] = [
@@ -1284,7 +1301,15 @@ var customer_portrait_paths: Array[String] = [
 	"res://assets/customer_paladin.png",
 	"res://assets/customer_witch.png",
 	"res://assets/customer_druid.png",
-	"res://assets/customer_pirate.png"
+	"res://assets/customer_pirate.png",
+	"res://assets/customer_alchemist.png",
+	"res://assets/customer_necromancer.png",
+	"res://assets/customer_bounty.png",
+	"res://assets/customer_elf.png",
+	"res://assets/customer_orc.png",
+	"res://assets/customer_fairy.png",
+	"res://assets/customer_vampire.png",
+	"res://assets/customer_imp.png"
 ]
 var seller_portrait_paths: Dictionary = {"happy": "res://assets/seller_happy.png", "neutral": "res://assets/seller_neutral.png", "surprised": "res://assets/seller_surprised.png", "demonic": "res://assets/seller_demonic.png"}
 
@@ -6450,7 +6475,15 @@ const CUSTOMER_PROFILES: Array[Dictionary] = [
 	{"name": "Bruxa em Lua de Mel", "favorite": "incenso_teleporte", "line": "“Meu familiar disse que você é perigosa. Por isso mesmo fiquei.”", "faction": "guildas", "portrait": 13, "budget": 180, "patience": 3},
 	{"name": "Ferreiro do Estoque Infinito", "favorite": "martelo_faisca", "line": "“Vim comprar um martelo. Saí com três e uma opinião sobre os seus.”", "faction": "guildas", "portrait": 10, "budget": 165, "patience": 3},
 	{"name": "Druida em Greve", "favorite": "elixir_memoria", "line": "“A floresta me manda dizer que está decepcionada com vocês dois.”", "faction": "aventureiros", "portrait": 14, "budget": 85, "patience": 2},
-	{"name": "Capitã do Contrabando Afetivo", "favorite": "caixa_misteriosa", "line": "“Tudo que eu vendo é de procedência duvidosa e coração sincero.”", "faction": "mercadores", "portrait": 15, "budget": 210, "patience": 1, "thief": true}
+	{"name": "Capitã do Contrabando Afetivo", "favorite": "caixa_misteriosa", "line": "“Tudo que eu vendo é de procedência duvidosa e coração sincero.”", "faction": "mercadores", "portrait": 15, "budget": 210, "patience": 1, "thief": true},
+	{"name": "Alquimista Queimada", "favorite": "frasco_motivacao", "line": "“Já explodi duas bancadas suas. Vim pedir desculpas e um frasco.”", "faction": "guildas", "portrait": 16, "budget": 95, "patience": 3},
+	{"name": "Necromante de Cartão", "favorite": "pergaminho_procrastinacao", "line": "“Eu trago os mortos de volta. A papelada do funeral, essa não.”", "faction": "submundo", "portrait": 17, "budget": 140, "patience": 2},
+	{"name": "Caçadora de Recompensas", "favorite": "adaga_charme", "line": "“Tenho três alvos na parede e um favorito atrás do balcão.”", "faction": "aventureiros", "portrait": 18, "budget": 130, "patience": 1},
+	{"name": "Elfa que Nunca Esquece", "favorite": "elixir_memoria", "line": "“Oitocentos anos guardando rancor. Hoje vim pagar um.”", "faction": "nobres", "portrait": 19, "budget": 190, "patience": 3},
+	{"name": "Órc do Buquê", "favorite": "lagrimas_jogador", "line": "“Poção de coragem, por favor. É para um pedido de casamento.”", "faction": "mercadores", "portrait": 20, "budget": 110, "patience": 2},
+	{"name": "Fada Cobradora", "favorite": "confianca_instantanea", "line": "“Pequena, sim. A minha conta é que é grande.”", "faction": "submundo", "portrait": 21, "budget": 65, "patience": 1},
+	{"name": "Conde que Só Prova", "favorite": "dano_emocional", "line": "“Aceito degustação. Recuso alho, sol e segunda-feira.”", "faction": "nobres", "portrait": 22, "budget": 175, "patience": 3},
+	{"name": "Diabrete Viajante", "favorite": "caixa_misteriosa", "line": "“Contrato padrão: você leva a poção, eu levo a alma. Brincadeira. Talvez.”", "faction": "mercadores", "portrait": 23, "budget": 88, "patience": 1, "thief": true}
 	]
 
 ## Sorteia a visita de um tique: um nome avulso da lista ou, quando a loja já tem
