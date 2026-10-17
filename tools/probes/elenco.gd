@@ -71,6 +71,11 @@ func _loja(rotulo: String):
 	g.locale = Locales.DEFAULT
 	g.locale_confirmed = true
 	TranslationServer.set_locale(Locales.DEFAULT)
+	# Em janela a loja acorda com o portão de idioma sobre o salão (headless não abre
+	# portão), e a última seção desta sonda é justamente olhar o palco: fechar o portão
+	# é o mesmo caminho que o jogador usa.
+	if is_instance_valid(g.menu_layer):
+		g._close_menu()
 	g.world_timer.stop()
 	seed(SEED_VAL)
 	g._reset_run()
