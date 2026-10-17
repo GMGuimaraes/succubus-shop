@@ -1191,6 +1191,14 @@ const STAGE_ART_PROPS := {
 		[Vector2(0.0, 0.498), Vector2(0.187, 0.518), Vector2(0.187, 1.0), Vector2(0.0, 1.0)],
 	],
 }
+## As quinze artes novas da escada de ofício (forja, biblioteca, santuário) NÃO entram
+## aqui: elas herdam o contorno da sala, e isso foi medido em vez de suposto. A cartela
+## `tools/probes/recorte.gd` risca o contorno herdado por cima de cada arte, e o móvel
+## pintado daquelas salas fica na parede — estante, banco de velas, altar lateral — na
+## mesma faixa de x banda após banda. O que a herança nunca faz é cortar a chefe: em
+## nenhuma das três salas existe móvel cobrindo o x do ponto de encontro (0,30 / 0,42 /
+## 0,50), então a linha que serra o corpo dela só existe na recepção e no salão de
+## expedições, e essas duas têm recorte próprio por arte.
 ## Móveis que ocupam uma faixa de profundidade do piso: mais ao fundo eles
 ## escondem a figura; mais perto da câmera, a figura passa na frente. Cada valor
 ## corresponde, na mesma ordem, a um recorte de STAGE_ROOM_PROPS.
@@ -1324,11 +1332,34 @@ const STAGE_ROOM_FLOOR := {
 ## fundo — profundidades 0,08 e 0,12, pés em 0,616 e 0,624 — ficava plantado NA PAREDE
 ## em quatro das cinco faixas: corpo flutuando acima do rodapé. Arte que não está aqui
 ## herda a faixa da sala.
+##
+## As artes novas dos ofícios entram medidas na cartela da mesma sonda
+## (`juncao_forja.png`, `juncao_biblioteca.png`, `juncao_santuario.png`), com o pé da
+## profundidade 0,08 caído ~15 px DENTRO do piso pintado. O que não está listado não
+## flutua e fica com a faixa da sala de propósito: menos número chutado no arquivo.
 const STAGE_ART_FLOOR := {
 	"res://assets/salon_bare_scene.png": Vector2(0.672, 0.80),
 	"res://assets/salon_tidy_scene.png": Vector2(0.685, 0.80),
 	"res://assets/salon_gilded_scene.png": Vector2(0.615, 0.80),
 	"res://assets/salon_empire_scene.png": Vector2(0.655, 0.80),
+	## Forja: o fole, o banco de mestre e a lenda pintam o chão mais baixo que o salão
+	## cru da sala (0,60 herdado deixava o pé de 0,08 em 0,616 — de 3 a 7 px ACIMA do
+	## piso). O banco arrumado e o cru pisam fundo o suficiente para ficarem com a sala.
+	"res://assets/forge_bare_scene.png": Vector2(0.610, 0.80),
+	"res://assets/forge_bellows_scene.png": Vector2(0.626, 0.80),
+	"res://assets/forge_master_scene.png": Vector2(0.621, 0.80),
+	"res://assets/forge_grand_scene.png": Vector2(0.623, 0.80),
+	## Biblioteca: a sala já herdava 0,665 e só a lenda pintava o mármore quase na linha
+	## do pé (0,668 contra 0,679) — um dedo de margem a menos que o resto da escada.
+	"res://assets/library_grand_scene.png": Vector2(0.668, 0.84),
+	## Santuário: aqui a escada inteira descia mais fundo que a sala. Cru, relíquias,
+	## mestre e lenda pintam o piso entre 0,645 e 0,655, e o pé herdado de 0,615 ficava
+	## até 29 px na parede; o banco arrumado (0,605) ganha os 15 px que as irmãs têm.
+	"res://assets/sanctum_bare_scene.png": Vector2(0.654, 0.79),
+	"res://assets/sanctum_tidy_scene.png": Vector2(0.607, 0.79),
+	"res://assets/sanctum_relics_scene.png": Vector2(0.659, 0.79),
+	"res://assets/sanctum_master_scene.png": Vector2(0.659, 0.79),
+	"res://assets/sanctum_grand_scene.png": Vector2(0.649, 0.79),
 }
 const STAGE_ROOM_LIGHTS := {
 	"res://assets/shop_scene.png": [Vector2(0.08, 0.22), Vector2(0.50, 0.05), Vector2(0.91, 0.18), Vector2(0.32, 0.48), Vector2(0.64, 0.42)],

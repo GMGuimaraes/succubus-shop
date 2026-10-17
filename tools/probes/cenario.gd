@@ -255,15 +255,52 @@ func _secao_geometria() -> void:
 				faltando.append(path.get_file())
 		_assert("%s: nenhuma arte perde o chão da sala" % sector, faltando.is_empty(),
 			"%d de 6 artes já pintadas, %d degradando para %s" % [6 - sem_arquivo, sem_arquivo, sala.get_file()])
-		var sem_recorte: Array[String] = []
+		var sem_chao: Array[String] = []
+		var x_chefe: float = (g.STAGE_ROOM_MEET.get(sala, Vector2(0.5, 0.4)) as Vector2).x
+		var chefe_cortada: Array[String] = []
 		for arte in (g.SECTOR_SCENERY_ART[sector] as Array):
 			var path := str(arte)
-			if ResourceLoader.exists(path) and not g.STAGE_ART_PROPS.has(path) \
-					and not g.STAGE_ROOM_PROPS.has(path):
-				sem_recorte.append(path.get_file())
-		_assert("%s: arte pintada sem recorte registrado" % sector, sem_recorte.is_empty(),
-			"%s" % (", ".join(sem_recorte) if not sem_recorte.is_empty() else "nenhuma"))
+			if not ResourceLoader.exists(path):
+				continue
+			## O contrato medido não é "toda arte tem contorno próprio" — é "nenhuma arte
+			## da escada deixa alguém sem chão, nem serra a chefe num móvel que aquela
+			## banda não pintou". O recorte próprio é o que a recepção e a guilda precisam
+			## porque lá o balcão muda de altura; nas oficinas o móvel corre a parede e a
+			## cartela de `recorte.gd` confere, banda a banda, que ele não cobre o x da
+			## chefe. Aqui a asserção é essa: faixa de chão existe, e ou o recorte é da
+			## arte ou nada cruza a coluna onde a chefe atende.
+			if not g.STAGE_ART_FLOOR.has(path) and not g.STAGE_ROOM_FLOOR.has(g._room_key(path)):
+				sem_chao.append(path.get_file())
+			var props: Array = g.STAGE_ART_PROPS.get(path, g.STAGE_ROOM_PROPS.get(g._room_key(path), []))
+			if not g.STAGE_ART_PROPS.has(path) and _cobre_x(props, x_chefe):
+				chefe_cortada.append(path.get_file())
+		_assert("%s: nenhuma arte da escada ficou sem faixa de chão" % sector, sem_chao.is_empty(),
+			"%s" % (", ".join(sem_chao) if not sem_chao.is_empty() else "6 de 6 artes com piso próprio ou da sala"))
+		_assert("%s: arte herdada cortando a chefe em móvel não medido" % sector,
+			chefe_cortada.is_empty(),
+			"%s" % (", ".join(chefe_cortada) if not chefe_cortada.is_empty()
+				else "x=%.2f livre em 6 de 6 artes" % x_chefe))
 	await _fechar(g)
+
+
+## Algum contorno de móvel cobre a coluna x pedida? É a pergunta que decide se a herança
+## do recorte pode serrar a chefe: se nada passa por aquele x, a linha de corte dela não
+## existe naquela sala e a arte pode herdar a sala sem risco.
+func _cobre_x(props: Array, x: float) -> bool:
+	for p in props:
+		if p is Rect2:
+			var r := p as Rect2
+			if x >= r.position.x and x <= r.end.x:
+				return true
+		elif p is Array:
+			var menor := 2.0
+			var maior := -1.0
+			for v in (p as Array):
+				menor = minf(menor, float((v as Vector2).x))
+				maior = maxf(maior, float((v as Vector2).x))
+			if x >= menor and x <= maior:
+				return true
+	return false
 
 
 func _secao_painel() -> void:
