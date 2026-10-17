@@ -161,6 +161,10 @@ Regras desta sonda:
 Fotograma de cena: `get_root().get_texture().get_image().save_png(OUT + "nome.png")` e ler
 o PNG de volta com a ferramenta Read. Um probe sem saida legivel nao prova nada.
 
+Essa linha do fotograma so funciona **em janela** (ver passo 6): com `--headless` a textura
+vem null e cada `save_png` reprova. Se a sonda vai fotografar, ela ja nasce sem a flag -
+nao e um ajuste de ultimo minuto depois do primeiro erro.
+
 ## Passo 4 - armadilhas de determinismo (corrigidas a mao na origem deste ritual)
 
 - **Nunca `await` entre ticks.** A rotacao de atores do palco consome RNG guiado por
@@ -208,6 +212,13 @@ o PNG de volta com a ferramenta Read. Um probe sem saida legivel nao prova nada.
   so fecha por clique tranca qualquer probe headless (e screenshots ficam escurecidos pela
   camada dim). Guardar o auto-open com `DisplayServer.get_name() != "headless"` e chamar
   `_open_menu()` explicitamente na sonda.
+- **Save descartavel novo traz o seletor de idioma por cima de toda foto.** Medidas em
+  `tools/probes/galeria.gd`: as seis primeiras capturas sairam cobertas pelo "ESCOLHA O
+  IDIOMA", porque o APPDATA descartavel nunca viu a loja e o `locale_confirmed` esta
+  false. Fechar pelo caminho do jogador (`game._close_menu()`), nao com `visible = false`:
+  esconder a camada deixa o estado do menu vivo e pula a preferencia de idioma que o resto
+  das assercoes espera. Atencao: `_close_menu()` chama `_save_game()` - so e seguro porque
+  o `APPDATA` esta redirecionado.
 
 ## Passo 5 - `--check-only` na sonda e em tudo que foi tocado
 
@@ -236,8 +247,9 @@ rasterizador, entao `get_root().get_texture().get_image()` devolve null e cada
 parece aprovada - so que o olhar nao existe. Regra: logica pura = `--headless`;
 recorte de frame de cena = janela (`--path .` sem flag), e `mkdir -p` da pasta de saida
 antes, porque `save_png` falha em silencio para diretorio inexistente.
-`tools/probes/trajeto.gd` ja carrega essa dica no cabecalho ("janela: precisa de
-viewport para os recortes").
+`tools/probes/trajeto.gd` e `tools/probes/galeria.gd` carregam essa dica no cabecalho
+("janela: precisa de viewport para os recortes"). O resto do portao continua valendo na
+sonda de janela: `APPDATA` descartavel, log em arquivo, gate de grep e conferencia do save.
 
 - `APPDATA` inline no comando, nunca `export` no shell compartilhado.
 - Delete do save descartavel antes da rodada, para o probe nao ler progresso de teste
@@ -287,6 +299,17 @@ O destino de uma sonda e um destes tres, decididos pelo que ela respondeu:
    ```
    ## Uso: godot --headless --path . --quit-after 1800 -s res://tools/probes/<nome>.gd
    ```
+
+   Sonda que fotografa recebe a linha **sem** `--headless`, que e a unica que roda:
+
+   ```
+   ## Uso (janela aberta, de proposito):
+   ##   APPDATA="D:\\Downloads\\tmp-userdata" godot --path . --quit-after 90000 \
+   ##     -s res://tools/probes/<nome>.gd
+   ```
+
+   Copiar a linha headless para uma sonda de foto e deixar no repo um comando que reprova
+   na primeira linha - ver `tools/probes/galeria.gd` como referencia de cabecalho.
 
    Commitar como ferramenta de desenvolvimento, com o resto da tarefa.
 2. **Virou funcionalidade do jogo** - o que ela media deveria acontecer na partida, nao
