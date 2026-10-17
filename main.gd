@@ -1440,6 +1440,20 @@ const STAGE_ROOM_LIGHTS := {
 ## Altura de um adulto em primeiro plano. As camadas de trás escalam em cima dela
 ## para casar com a perspectiva da arte.
 const STAGE_FIGURE_HEIGHT := 250.0
+## Quanto mede um adulto NA ARTE daquela sala, em vez da sala de referência. A curva
+## de profundidade é uma só porque o salão é a câmera-padrão, mas cada arte foi
+## pintada de um ângulo diferente, e o móvel grande denuncia: a mesa de guerra da
+## guilda tem 193 px de altura pintada e entra na tela com o tampo em y=0,450, quatro
+## centésimos ACIMA do balcão da recepção (0,490). Com o corpo do salão (195 px na
+## faixa da chefe), sobravam 13% dele acima do tampo — cabeça e pescoço boiando sobre
+## a mesa, que é o "anão" da tela. Medido em `tools/probes/proporcao.gd`: 1,25 devolve
+## à chefe os mesmos 30% que o balcão deixa mostrar na recepção, a fração que ninguém
+## chama de anão. Sala fora da tabela continua no tamanho de sempre, e o resto do
+## elenco dela escala junto porque a tabela manda na altura de referência, não na
+## curva — o transeunte do fundo não pode crescer sem a chefe.
+const STAGE_ROOM_FIGURE := {
+	"res://assets/expedition_hall_scene.png": 1.25,
+}
 ## Onde a visita nasce e onde ela encosta no balcão. Entrar lá do fundo, onde a
 ## estante pega, e vir até a frente da sala é o que faz o cliente passar POR TRÁS
 ## do móvel pintado em vez de atravessar por cima dele.
@@ -2534,7 +2548,7 @@ func _spawn_stage_walker() -> void:
 		return
 	var depth := randf_range(0.05, 0.30)
 	var lane := _lane_at(depth)
-	var walker := _make_stage_poses(crowd, STAGE_FIGURE_HEIGHT)
+	var walker := _make_stage_poses(crowd, _figure_base_height())
 	var figure_scale: float = lane["scale"]
 	walker.scale = Vector2(figure_scale, figure_scale)
 	# Mais fundo na sala: um pouco mais frio e escuro, mas nunca fantasma.
@@ -2723,7 +2737,7 @@ func _host_enters_room() -> void:
 	_seller_lean_tween = create_tween()
 	stage_seller.position = _seller_home + Vector2(96.0, 0.0)
 	stage_seller.rotation_degrees = 0.0
-	stage_seller.scale = Vector2.ONE
+	stage_seller.scale = _seller_rest_scale()
 	_seller_lean_tween.tween_property(stage_seller, "position", _seller_home, 0.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
 ## O cliente do turno entra pela porta da sala e vem até o balcão seguindo a
@@ -2736,7 +2750,7 @@ func _stage_customer_arrives(portrait_index: int) -> void:
 		_customer_walk_tween.kill()
 	_customer_walk_tween = null
 	var body := absi(portrait_index) % STAGE_CROWD_BODIES.size()
-	_dress_stage_poses(stage_customer, body, _lane_height(2))
+	_dress_stage_poses(stage_customer, body, _figure_base_height())
 	# O corpo do freguês do turno é dele. Se um transeunte já o vestia, o
 	# transeunte se apaga: dois do mesmo rosto na tela pareciam um sprite só
 	# colado duas vezes.
@@ -3125,7 +3139,7 @@ func _spawn_waiter(entry: Dictionary) -> void:
 	var body := absi(int(profile.get("portrait", 0))) % STAGE_CROWD_BODIES.size()
 	if _crowd_taken(body):
 		return
-	var node := _make_stage_poses(body, _lane_height(2))
+	var node := _make_stage_poses(body, _figure_base_height())
 	node.pivot_offset = node.size / 2.0
 	node.set_meta("walk_frames", 1)
 	stage_layer.add_child(node)
@@ -3206,7 +3220,7 @@ func _stage_clear_waiters() -> void:
 ## Devolve um corpo ao salão. Bem atendido, ele ainda dá uma olhada nas
 ## prateleiras e acena antes de ir; saiu mal-humorado, atravessa sem parar.
 func _release_to_floor(body: int, depth: float, center_x: float, served: bool) -> void:
-	var stroller := _make_stage_poses(body, _lane_height(2))
+	var stroller := _make_stage_poses(body, _figure_base_height())
 	stroller.pivot_offset = stroller.size / 2.0
 	stage_layer.add_child(stroller)
 	# Um degrau abaixo de quem está no balcão agora: o recém-chegado vem vindo pelo
@@ -3262,16 +3276,17 @@ func _seller_lean_in() -> void:
 	if _seller_lean_tween != null and _seller_lean_tween.is_valid():
 		_seller_lean_tween.kill()
 	var home := _seller_home
+	var rest := _seller_rest_scale()
 	_seller_lean_tween = create_tween()
 	_seller_lean_tween.tween_callback(_set_stage_frame.bind(stage_seller_body, 1))
 	_seller_lean_tween.tween_property(stage_seller, "position", home + Vector2(-18.0, 3.0), 0.3).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	_seller_lean_tween.parallel().tween_property(stage_seller, "rotation_degrees", -6.0, 0.3).set_trans(Tween.TRANS_SINE)
-	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", Vector2(1.07, 1.07), 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", rest * 1.07, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_seller_lean_tween.tween_interval(1.15)
 	_seller_lean_tween.tween_callback(_set_stage_frame.bind(stage_seller_body, 0))
 	_seller_lean_tween.tween_property(stage_seller, "position", home, 0.65).set_trans(Tween.TRANS_SINE)
 	_seller_lean_tween.parallel().tween_property(stage_seller, "rotation_degrees", 0.0, 0.65).set_trans(Tween.TRANS_SINE)
-	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", Vector2.ONE, 0.65).set_trans(Tween.TRANS_SINE)
+	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", rest, 0.65).set_trans(Tween.TRANS_SINE)
 
 ## Três profundidades de salão, todas no respiro que a UI abre sobre a arte de
 ## fundo: quanto mais fundo, mais alto na tela, menor e mais translúcida a figura.
@@ -3319,6 +3334,23 @@ func _lane_stop(depth: float, values: Array[float]) -> float:
 func _lane_height(depth: int) -> float:
 	return STAGE_FIGURE_HEIGHT * _lane_scales[clampi(depth, 0, _lane_scales.size() - 1)]
 
+## Multiplicador de adulto da sala em tela — ver `STAGE_ROOM_FIGURE`.
+func _room_figure_scale() -> float:
+	return float(STAGE_ROOM_FIGURE.get(_stage_room, 1.0))
+
+## Altura de referência do corpo na sala atual. É o nó que nasce daqui; a curva de
+## profundidade escala em cima, então chefe, cliente, VIP e transeunte crescem juntos
+## quando a arte pede gente maior.
+func _figure_base_height() -> float:
+	return STAGE_FIGURE_HEIGHT * _room_figure_scale()
+
+## O descanso da chefe. Ela não anda, então a faixa 1 já está assada no tamanho do
+## próprio nó e o `scale` do palco fica livre para carregar só o multiplicador da
+## sala — e toda pose de inclinação tem de voltar para cá, não para `Vector2.ONE`.
+func _seller_rest_scale() -> Vector2:
+	var room_scale := _room_figure_scale()
+	return Vector2(room_scale, room_scale)
+
 ## (x da chefe, x do cliente) em fração da largura da sala atual.
 func _room_meet() -> Vector2:
 	return STAGE_ROOM_MEET.get(_stage_room, Vector2(0.505, 0.37))
@@ -3335,12 +3367,20 @@ func _layout_stage_figures() -> void:
 		_market_top_guard.custom_minimum_size.y = stage_layer.size.y * SIDE_PANEL_LIFT
 	var host_lane := _lane(1)
 	var seller_floor: float = host_lane["floor_y"]
-	_seller_home = Vector2(_room_meet().x * stage_layer.size.x - stage_seller.size.x * 0.5, seller_floor - stage_seller.size.y)
+	# A chefe carrega o multiplicador da sala no `scale`, e não no nó: o nó nasce uma
+	# vez no `_ready` e a sala troca a cada setor. Com o pivô no meio do corpo a casa
+	# cresce para os dois lados, então o pé só continua no chão pintado se a posição
+	# descontar a meia altura ESCALADA — a mesma conta de `_place_stage_figure`.
+	var rest := _seller_rest_scale()
+	_seller_home = Vector2(
+		_room_meet().x * stage_layer.size.x - stage_seller.size.x * 0.5,
+		seller_floor - stage_seller.size.y * (1.0 + rest.x) * 0.5)
 	if is_instance_valid(stage_seller):
 		stage_seller.z_index = _stage_z_for_depth(_lane_depths[1])
 		# Enquanto o tween da chefe roda, ele é o dono da posição.
 		if _seller_lean_tween == null or not _seller_lean_tween.is_valid():
 			stage_seller.position = _seller_home
+			stage_seller.scale = rest
 		stage_seller.pivot_offset = stage_seller.size / 2.0
 		stage_seller_body.pivot_offset = stage_seller_body.size / 2.0
 	if is_instance_valid(stage_customer):
@@ -12924,16 +12964,19 @@ func _seller_joins_customer() -> void:
 	if _seller_lean_tween != null and _seller_lean_tween.is_valid():
 		_seller_lean_tween.kill()
 	var partner := _room_meet().y * stage_layer.size.x
-	var gap := stage_seller.size.x * 0.30
+	var rest := _seller_rest_scale()
+	# O vão é a largura QUE ELA OCUPA na tela, e não a largura do nó: na guilda o corpo
+	# inteiro vem escalado, e um vão lido do nó deixaria os dois ombros colados.
+	var gap := stage_seller.size.x * rest.x * 0.30
 	# Ela para de lado dele, do lado de casa, sem passar por cima do corpo.
 	var side := partner + gap if partner < _seller_home.x else partner - gap
 	_seller_lean_tween = create_tween()
 	_seller_lean_tween.tween_property(stage_seller, "position", Vector2(side, _seller_home.y), 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	_seller_lean_tween.parallel().tween_property(stage_seller, "rotation_degrees", 0.0, 0.3).set_trans(Tween.TRANS_SINE)
-	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", Vector2(1.05, 1.05), 0.5).set_trans(Tween.TRANS_SINE)
+	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", rest * 1.05, 0.5).set_trans(Tween.TRANS_SINE)
 	_seller_lean_tween.tween_interval(2.2)
 	_seller_lean_tween.tween_property(stage_seller, "position", _seller_home, 0.7).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", Vector2.ONE, 0.7).set_trans(Tween.TRANS_SINE)
+	_seller_lean_tween.parallel().tween_property(stage_seller, "scale", rest, 0.7).set_trans(Tween.TRANS_SINE)
 
 ## Sobe um degrau da escada do freguês convidado: cobra o vínculo e o ouro, põe o
 ## par lado a lado no salão e trava o bônus econômico permanente dele.
