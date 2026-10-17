@@ -10,7 +10,7 @@ extends SceneTree
 ##    arquivo sem a chave acorda como primeira vez;
 ## 4. "o que fazer agora" responde ao estado da casa e não a cabeça: estante vazia, forja
 ##    parada, talento na gaveta, dia um e casa redonda cada um diz a sua linha;
-## 5. o painel monta nas três línguas e nenhuma frase do guia fica sem irmã no catálogo;
+## 5. o painel monta em todas as línguas do catálogo e nenhuma frase do guia fica sem irmã;
 ## 6. o ESC dentro do guia volta para a raiz em vez de fechar a loja, e o relógio da rua
 ##    para com o guia aberto e volta quando ele fecha.
 ##
@@ -148,7 +148,7 @@ func _initialize() -> void:
 	print("   %s" % _retrato(medida))
 	await _fechar(medida)
 
-	print("── o painel fala as três línguas ──")
+	print("── o painel fala todas as línguas do catálogo ──")
 	var multilingue = await _loja("idiomas")
 	for supported in Locales.SUPPORTED:
 		var id := str(supported["id"])
@@ -172,7 +172,7 @@ func _initialize() -> void:
 	print("── nenhuma frase do guia fica sem irmã no catálogo ──")
 	var orfas := _orfãs_do_guia()
 	print("   frases do guia na boca da sonda: %d" % _frases_do_guia().size())
-	print("   órfãs (en × es): %s" % (orfas if orfas != "" else "nenhuma"))
+	print("   órfãs (toda língua × união): %s" % (orfas if orfas != "" else "nenhuma"))
 	_assert("todo texto do guia tem versão em inglês e espanhol", orfas == "", orfas)
 	_assert("a sonda colheu os passos do estado, não de memória",
 		passos_do_guia.size() >= 5, "%d molde(s) de passo" % passos_do_guia.size())
@@ -314,20 +314,21 @@ func _frases_do_guia() -> Array[String]:
 	return frases
 
 
-## Cruza cada frase do guia com as duas tabelas do catálogo: frase sem irmã é painel
-## meio traduzido na loja de outra língua.
+## Cruza cada frase do guia com TODAS as tabelas do catálogo: frase sem irmã é painel meio
+## traduzido na loja de outra língua — e isso vale para a sexta língua tanto quanto para a
+## segunda, por isso a conta é lida de `SUPPORTED`, não de duas irmãs fixas.
 func _orfãs_do_guia() -> String:
-	var en: Dictionary = Locales.MESSAGES["en"]
-	var es: Dictionary = Locales.MESSAGES["es"]
 	var faltando: Array[String] = []
 	for frase in _frases_do_guia():
 		var chave := frase
 		if chave.find("ponto(s) de talento parado(s)") >= 0:
 			chave = _MOLDE_TALENTO
-		if not en.has(chave):
-			faltando.append("en: " + chave.substr(0, 40))
-		if not es.has(chave):
-			faltando.append("es: " + chave.substr(0, 40))
+		for supported in Locales.SUPPORTED:
+			var id := str(supported["id"])
+			if id == Locales.DEFAULT or not Locales.MESSAGES.has(id):
+				continue
+			if not (Locales.MESSAGES[id] as Dictionary).has(chave):
+				faltando.append("%s: %s" % [id, chave.substr(0, 40)])
 	return ", ".join(faltando)
 
 

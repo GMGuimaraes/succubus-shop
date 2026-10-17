@@ -18,14 +18,16 @@ extends SceneTree
 ##   env APPDATA="D:\\Downloads\\tmp-userdata" godot --headless --path . \
 ##     --quit-after 90000 --script res://tools/probes/idioma.gd
 ##
-## Veredito medido nesta rodada: catálogo de 142 chaves, com en 142/142 e es 142/142 e
-## **zero órfãs** entre as duas; a mesma frase sai "Ouro: %d / TALENTOS / ⚒ Forja" em pt,
-## "Gold: %d / TALENTS / ⚒ Forge" em en e "Oro: %d / TAENTOS / ⚒ Forja" em es. Registrar
-## duas vezes deixa 3 tabelas no motor (sem duplicata). A armadilha do melhor-ajuste é
-## real e medida: locale sem tabela ("de") acorda **em inglês** — por isso o português tem
+## Veredito medido nesta rodada: catálogo de 213 chaves com **paridade total** nas cinco
+## línguas traduzidas (en, es, fr, it, de) — `chaves sem irmã` lidas contra a UNIÃO de todas
+## as tabelas, e uma chave vazia conta como órfã; a mesma frase sai
+## "Ouro: %d / TALENTOS / ⚒ Forja" em pt, "Gold: %d / TALENTS / ⚒ Forge" em en,
+## "Oro: %d / TALENTI / ⚒ Fucina" em it e "Or : %d / TALENTE / ⚒ Schmiede" em de. Registrar
+## duas vezes deixa 6 tabelas no motor (sem duplicata). A armadilha do melhor-ajuste é
+## real e medida: locale sem tabela ("zz") acorda **em inglês** — por isso o português tem
 ## tabela identidade; ainda assim `set_locale("pt")` depois de inglês devolve "Ouro: 0".
 ## ESC: menu abre a RAIZ (relógio para; o seletor não mora mais ali, mora na camada 🌐 a um
-## toque, e descendo nela os 3 botões de idioma aparecem com o ✓ na escolha), ESC volta para
+## toque, e descendo nela os 6 botões de idioma aparecem com o ✓ na escolha), ESC volta para
 ## a raiz e fecha (relógio volta), e por
 ## cima do balanço do dia o fechar **não** acorda a rua. Primeira abertura: sem escolha o
 ## jogo não abre menu em headless (não há quem clique) mas `locale_confirmed` está
@@ -68,9 +70,10 @@ func _initialize() -> void:
 			TranslationServer.translate("Ouro: %d"), TranslationServer.translate("TALENTOS"),
 			TranslationServer.translate("⚒ Forja")])
 	print("   frases por idioma no catálogo -> %s" % ", ".join(_cobertura()))
-	print("   uma frase, três bocas -> %s" % "  •  ".join(tabelas))
+	print("   uma frase, todas as bocas -> %s" % "  •  ".join(tabelas))
 	var orfaos := _orfãos()
-	print("   chaves sem irmã (en × es): %s" % (orfaos if orfaos != "" else "nenhuma"))
+	print("   chaves sem irmã (união de %s): %s" % [
+		", ".join(_linguas_com_tabela()), (orfaos if orfaos != "" else "nenhuma")])
 	var antes := TranslationServer.get_translations().size()
 	Locales.register()
 	var depois := TranslationServer.get_translations().size()
@@ -79,7 +82,7 @@ func _initialize() -> void:
 	# O painel de faixa é o caso difícil: nome e presente vêm de listas e a frase é
 	# montada na hora, então só o `tr()` do chamador salva. Lido na loja de verdade,
 	# não traduzido à mão na sonda — copiar o molde aqui seria provar outra coisa.
-	print("── a faixa da casa fala as três línguas ──")
+	print("── a faixa da casa fala todas as línguas do catálogo ──")
 	var casa = (load("res://main.tscn") as PackedScene).instantiate()
 	get_root().add_child(casa)
 	await _frames(4)
@@ -107,16 +110,19 @@ func _initialize() -> void:
 	await _frames(2)
 
 	print("── voltar ao português volta de verdade ──")
-	TranslationServer.set_locale("en")
-	var em_ingles: String = TranslationServer.translate("Ouro: 0")
-	TranslationServer.set_locale("pt")
+	var falas: Array[String] = []
+	for id in _linguas_com_tabela():
+		TranslationServer.set_locale(id)
+		falas.append("%s -> %s" % [id, TranslationServer.translate("Ouro: 0")])
+	TranslationServer.set_locale(Locales.DEFAULT)
 	var de_volta: String = TranslationServer.translate("Ouro: 0")
-	TranslationServer.set_locale("es")
-	var em_castelhano: String = TranslationServer.translate("Ouro: 0")
-	print("   en -> %s • pt -> %s • es -> %s" % [em_ingles, de_volta, em_castelhano])
+	print("   " + " • ".join(falas))
+	print("   pt -> %s" % de_volta)
 	print("   a loja voltou a falar português? %s" % str(de_volta == "Ouro: 0"))
-	TranslationServer.set_locale("de")
-	print("   locale sem tabela (de) acorda: %s" % TranslationServer.translate("Ouro: 0"))
+	## O melhor-ajuste do motor só aparece numa língua que NÃO tem tabela: com tabela, a
+	## tradução vence e a armadilha fica invisível.
+	TranslationServer.set_locale("zz")
+	print("   locale sem tabela (zz) acorda: %s" % TranslationServer.translate("Ouro: 0"))
 	TranslationServer.set_locale(Locales.DEFAULT)
 
 	print("── o ESC abre, fecha e manda na rua ──")
@@ -300,7 +306,7 @@ func _marcado(loja) -> String:
 
 
 func _cobertura() -> Array[String]:
-	var chaves := (Locales.MESSAGES.get("en", {}) as Dictionary).size()
+	var chaves := _uniao_de_chaves().size()
 	var linhas: Array[String] = []
 	for supported in Locales.SUPPORTED:
 		var id := str(supported["id"])
@@ -311,17 +317,41 @@ func _cobertura() -> Array[String]:
 	return linhas
 
 
-## Chave que existe em uma tabela e não na outra: meio catálogo traduzido é meia loja.
+## Toda língua do catálogo que tem tabela própria — o original fica fora porque a tabela
+## dele é identidade, não tradução.
+func _linguas_com_tabela() -> Array[String]:
+	var ids: Array[String] = []
+	for supported in Locales.SUPPORTED:
+		var id := str(supported["id"])
+		if id != Locales.DEFAULT and Locales.MESSAGES.has(id):
+			ids.append(id)
+	return ids
+
+
+func _uniao_de_chaves() -> Dictionary:
+	var uniao := {}
+	for id in _linguas_com_tabela():
+		for key in (Locales.MESSAGES[id] as Dictionary).keys():
+			uniao[str(key)] = true
+	return uniao
+
+
+## Chave que existe em uma tabela e não em outra: meio catálogo traduzido é meia loja.
+## A comparação é contra a união de TODAS as línguas do catálogo (menos o original, que é
+## a tabela identidade), e não contra uma irmã fixa — acrescentar idioma sem paridade é
+## exatamente o tipo de meio-trabalho que esta sonda existe para pegar.
 func _orfãos() -> String:
-	var en: Dictionary = Locales.MESSAGES.get("en", {})
-	var es: Dictionary = Locales.MESSAGES.get("es", {})
+	var uniao := _uniao_de_chaves()
 	var faltando: Array[String] = []
-	for key in en.keys():
-		if not es.has(str(key)):
-			faltando.append("es←%s" % str(key))
-	for key in es.keys():
-		if not en.has(str(key)):
-			faltando.append("en←%s" % str(key))
+	for id in _linguas_com_tabela():
+		var tabela: Dictionary = Locales.MESSAGES[id]
+		## Vazio também é órfã: a chave traduzida para "" some do painel sem dar erro.
+		for key in tabela.keys():
+			if str(tabela[key]).strip_edges() == "":
+				faltando.append("%s vazia: %s" % [id, str(key)])
+		for key in uniao.keys():
+			if not tabela.has(str(key)):
+				faltando.append("%s←%s" % [id, str(key)])
 	return ", ".join(faltando)
 
 

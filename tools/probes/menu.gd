@@ -82,8 +82,10 @@ func _initialize() -> void:
 		_confere(_janelas(loja).size() == janelas_antes,
 				"descer para %s não abriu janela nova" % rotulo)
 		if str(loja.menu_screen) == "idioma":
-			_confere(loja.menu_language_buttons.size() == 3,
-					"a camada de idioma traz os três botões")
+			## Um botão por idioma declarado em `SUPPORTED` — a conta é lida do catálogo,
+			## porque uma língua nova na tabela não pode cobrar edição de sonda.
+			_confere(loja.menu_language_buttons.size() == Locales.SUPPORTED.size(),
+					"a camada de idioma traz %d botão(ões), um por entrada de SUPPORTED" % Locales.SUPPORTED.size())
 		var voltar := _botao(loja, "← Voltar ao menu")
 		_confere(voltar != null, "%s tem botão de voltar" % rotulo)
 		print("   %-26s -> tela %-11s • %2d itens • título %s" % [
