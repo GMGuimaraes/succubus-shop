@@ -37,10 +37,11 @@ em vez de baixar sozinho. Instale uma vez no editor e o script passa a funcionar
 | Conquistas | 100 definições. Na itch.io elas **não** aparecem: só a integração opcional com a Steam as entrega — na vitrine elas contam como conteúdo, não como sistema |
 | Conteúdo | fantasia sombria adulta, **tom sugestivo atrás de um botão**; nenhuma nudez explícita em nenhum modo |
 | Save | arquivo em mesa; no navegador mora no armazenamento do site (IndexedDB) |
-| Massa de arte | 659 PNG, 258 MB na árvore; texturas comprimidas ≈ 155 Mpx → o `.pck` do build web fecha em ~155 MB |
+| Massa de arte | **667 PNG**, 258 MB na árvore, **161,75 Mpx** de textura. O preset web manda comprimir para desktop **e** mobile, então o `.pck` carrega os dois conjuntos: ~0,5 B/px cada → **entre 80 MB (um conjunto só) e 160 MB (como está agora)**. O número real só sai do primeiro export de verdade |
 
 Regra da itch.io que aperta aqui: cada arquivo **descompactado** tem de caber em 200 MB.
-O `.pck` de ~155 MB cabe, mas é o teto — e é pesado para jogar no navegador. Ver §6.
+O `.pck` cabe nos dois cenários, mas o de 160 MB é pesado para jogar no navegador.
+Ver §6.
 
 ---
 
@@ -48,7 +49,7 @@ O `.pck` de ~155 MB cabe, mas é o teto — e é pesado para jogar no navegador.
 
 **Título:** `Succubus Shop`
 
-**Tagline (a linha embaixo do título, ≤ 135 caracteres):**
+**Tagline (a linha curta embaixo do título — 116 e 110 caracteres, cabe no campo):**
 
 - PT: `Gerencie uma loja de relíquias no submundo: forja, fiado, invasões e sete finais — com uma succubus atrás do balcão.`
 - EN: `Run an infernal relic shop: forging, credit, invasions and seven endings — with a succubus behind the counter.`
@@ -206,22 +207,38 @@ Succubus-Shop-0.1.0-alpha.5-web.zip
 
 ## 6. O build web é grande: o que fazer com isso
 
-Medido: 659 PNG, 258 MB na árvore, ~155 Mpx de textura comprimida → `.pck` web em
-torno de **155 MB**. Cabe nos 200 MB por arquivo da itch.io, mas significa que o
-navegador baixa ~155 MB antes do primeiro quadro. Três saídas, da mais honesta para a
-mais arriscada:
+Medido na árvore (`667` PNG, 258 MB, **161,75 Mpx** de textura): cada conjunto de
+compressão VRAM custa ~0,5 byte por pixel, então **um** conjunto ≈ 81 MB e **dois** ≈
+162 MB. O preset web de hoje (`for_desktop=true` **e** `for_mobile=true`) manda os dois.
+Cabe nos 200 MB por arquivo da itch.io nos dois cenários, mas 160 MB é o que o
+navegador baixa antes do primeiro quadro. A distribuição, em pixels:
 
+| Dimensão | O que é | Mpx |
+|---|---|---|
+| 1792×1024 | as salas grandes de perto (`forge_close_scene`, `library_close_scene`, `reception_scene`…) | 38,5 |
+| 1024×1536 | folhas de personagem em pé | 31,5 |
+| 2560×1440 | salas em resolução de tela cheia | 24,6 |
+| 1536×2304 | folhas de personagem grandes | 20,3 |
+| 1280×720 | artes médias e impressos | 7,0 |
+
+Quatro saídas, da mais barata para a mais trabalhosa:
+
+0. **Um conjunto de compressão só** no preset web (`for_desktop=false`,
+   `for_mobile=true`): corta o `.pck` pela metade sem tocar em pixel nenhum de arte.
+   **Custo:** precisa do primeiro export real para conferir se o navegador visado aceita
+   ETC2/ASTC — e isso é decisão de compatibilidade, não de economia.
 1. **Publicar só mesa primeiro** (Windows + Linux) e deixar o HTML5 para quando a arte
    enxugar. A página não promete nada que não aconteça.
 2. **Variantes de assets por export.** O Godot aceita filtro por recurso no preset; uma
-   fatia "web" com as salas em 1280×720 em vez de 2560×1440 (cada sala grande custa
-   3.6 MB de VRAM) e as folhas de personagem em 768×1152 em vez de 1536×2304 (3.4 MB
-   cada) derruba o `.pck` para casa dos 40–60 MB. **Custo:** exige re-verificar o
-   recorte e a linha de chão de cada cenário — é trabalho de sonda, não de slider.
-3. **Deixar como está e avisar.** A página diz "a versão web baixa ~155 MB".
+   fatia "web" com as salas em 1280×720 em vez de 1792×1024 e as folhas em 768×1152 em
+   vez de 1024×1536 derruba os 70 Mpx do topo da tabela para ~26 Mpx — `.pck` na casa dos
+   **40–60 MB** com um conjunto só. **Custo:** exige re-verificar o recorte e a linha de
+   chão de cada cenário (`tools/probes/recorte.gd`, `chao.gd`, `caminhos.gd`) — é trabalho
+   de sonda, não de slider.
+3. **Deixar como está e avisar.** A página diz "a versão web baixa até 160 MB".
 
-Qualquer uma das três mexe em preset e em arte: **nenhuma foi decidida aqui**. A
-escolha é sua, e a nº 2 é a que dá mais trabalho e o melhor jogo.
+Qualquer uma das quatro mexe em preset e às vezes em arte: **nenhuma foi decidida
+aqui**. A escolha é sua, e a nº 2 é a que dá mais trabalho e o melhor jogo.
 
 ---
 

@@ -1925,6 +1925,9 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and is_inside_tree():
+		# Quem fecha pelo ✕ não volta a dar frame: a trilha é parada aqui, enquanto
+		# a árvore ainda existe, em vez de sobrar para a saída do processo.
+		_parar_trilha()
 		_save_game()
 
 func world_speed() -> float:
@@ -5716,13 +5719,35 @@ func _setup_background_music() -> void:
 	music_player.stream = music_stream
 	music_player.volume_db = music_base_db
 	add_child(music_player)
-	music_player.play()
+	# Headless não tem ouvido: ninguém escuta a trilha, mas o `play()` cria no
+	# AudioServer um `AudioStreamPlaybackMP3` que só é destruído pela thread de
+	# áudio, alguns frames depois. Sonda que chama `quit()` no mesmo instante nunca
+	# dá esses frames, e as duas linhas de vazamento (`AudioStreamPlaybackMP3` + o
+	# `AudioStreamMP3` ainda em uso) voltam ao log — parado na saída ou não. Medido
+	# com `tools/probes/musica.gd`: forçando a reprodução, 1 vazamento em 5 rodadas;
+	# nunca tocando, 0 em 6.
+	if DisplayServer.get_name() != "headless":
+		music_player.play()
 	_apply_situation_music()
 
 func _apply_music_settings() -> void:
 	if is_instance_valid(music_player):
 		music_player.stream_paused = audio.muted
 		music_player.volume_db = music_base_db + linear_to_db(maxf(audio.volume, 0.0001))
+
+## Solta a trilha: para a reprodução e tira o `.mp3` do player, para que o processo não
+## chegue ao fim com a música ainda contada como recurso em uso. `stop()` apenas agenda a
+## destruição do playback na thread de áudio, por isso o gesto é feito duas vezes — no
+## pedido de fechar da janela e na saída da árvore: quanto antes ele sai, mais chance a
+## thread tem de executá-lo antes de o processo morrer.
+func _parar_trilha() -> void:
+	if is_instance_valid(music_player):
+		music_player.stop()
+		music_player.stream = null
+	music_player = null
+
+func _exit_tree() -> void:
+	_parar_trilha()
 
 func _show_feedback(message: String, color: Color = Color(1.0, 0.78, 0.9)) -> void:
 	if not is_instance_valid(toast_label):

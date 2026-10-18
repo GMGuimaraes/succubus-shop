@@ -268,15 +268,31 @@ grep -nE "ERROR|SCRIPT ERROR|Cannot|Invalid|assert" /d/Downloads/tmp-userdata/pr
 
 Qualquer linha que sobrar reprova o push: voltar ao passo 4. Saida vazia e aprovacao.
 
-**Nao existe mais baseline tolerada.** Houve uma: todo smoke imprimia
-`WARNING: 2 ObjectDB instances were leaked at exit` + `ERROR: 1 resources still in use
-at exit`, e o portao filtrava essas duas linhas mais `shop_theme_loop.mp3`. A causa nao
-era o MP3. Medida com `--verbose` (que e o unico modo de ver o *nome* do objeto vazado),
-a dupla era `res://audio/rare.wav` e o `AudioStreamPlaybackWAV` que ele deixa vivo quando
-a arvore morre com um efeito tocando. Fechada em 2026-10-17 por `_exit_tree()` em
-`audio.gd`, que para os players e solta o cache de streams antes de o AudioServer fechar.
-Se a linha voltar, e regressao real: rodar a sonda com `--verbose`, ler o nome impresso em
-`Leaked instance:` / `Resource still in use:` e consertar a origem — nunca alargar o
+**Nao existe mais baseline tolerada.** Houve duas. A primeira era diaria: todo smoke
+imprimia `WARNING: 2 ObjectDB instances were leaked at exit` + `ERROR: 1 resources still
+in use at exit`, e o portao filtrava essas duas linhas mais `shop_theme_loop.mp3`. Medida
+com `--verbose` (unico modo de ver o *nome* do objeto vazado) a dupla diaria era
+`res://audio/rare.wav` e o `AudioStreamPlaybackWAV` dele, deixado vivo quando a arvore morre
+com um efeito tocando; fechada em 2026-10-17 por `_exit_tree()` em `audio.gd`. Sobrou a
+segunda, intermitente (1 a 3 rodadas em 5), cujo nome era `AudioStreamPlaybackMP3` +
+`AudioStreamMP3` de `shop_theme_loop.mp3`.
+
+A causa das duas e a mesma, e nao e o arquivo: `AudioStreamPlayer::stop()` apenas *agenda* a
+destruicao do playback na thread de audio. Um processo que chama `quit()` no mesmo instante
+nunca da esses frames, e o playback aparece como instancia orphan. Medido em
+`tools/probes/musica.gd`, lado `tocando`: 3 em 5 antes do corte, 1 em 5 mesmo depois de parar
+a trilha na saida da arvore. Parar nao basta -- o que fecha a conta e **nao iniciar reproducao
+onde nao ha ouvido**: `_setup_background_music()` (main.gd) e `audio.gd::play()` so dao
+`play()` quando `DisplayServer.get_name() != "headless"`, e a contabilidade de resfriamento e
+janela de rajada continua identica porque acontece antes do gesto. Lado `confere`, sem
+reproducao: 0 em 6 rodadas, e a bateria de 6 rodadas de `tools/probes/menu.gd` voltou limpa.
+
+Consequencia honesta: no jogo real (mesa e navegador) a trilha toca, entao o build publicado
+ainda pode imprimir as duas linhas ao fechar a janela. E ruido de console num processo que ja
+esta morrendo, nao perda de save; so desaparece de verdade re-encodando a trilha (OGG/WAV) ou
+atrasando o `quit()` alguns frames -- os dois sao decisao do usuario, nao do portao. Se a
+linha voltar **numa sonda**, e regressao do corte: rodar com `--verbose`, ler o nome impresso
+em `Leaked instance:` / `Resource still in use:` e consertar a origem — nunca alargar o
 `grep -v` ate o gate aprovar tudo.
 
 ## Passo 8 - conferir o save real

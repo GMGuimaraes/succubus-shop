@@ -1,6 +1,6 @@
 ---
 name: headless-tests-overwrite-real-save
-description: Headless Godot probes overwrite the real save unless APPDATA is redirected; since 2026-10-17 there is no tolerated leak baseline any more
+description: Headless Godot probes overwrite the real save unless APPDATA is redirected; no tolerated leak baseline, and headless never starts audio playback
 metadata:
   type: project
 ---
@@ -31,3 +31,17 @@ Fixed by `_exit_tree()` in `audio.gd` (stops the SFX pool and clears the stream 
 A clean run is now a run with **zero** error lines, no `grep -v` exceptions. If a leak line
 comes back, treat it as a real regression and re-measure with `--verbose` instead of
 re-adding a filter.
+
+**Second leak, cut 2026-10-18 by never starting playback in headless.** A remnant,
+intermittent (1 to 3 runs of 5) named `AudioStreamPlaybackMP3` + `AudioStreamMP3`
+(`shop_theme_loop.mp3`). Root cause is not the file: `AudioStreamPlayer.stop()` only
+*schedules* the playback's destruction on the audio thread, and a probe that calls `quit()`
+in the same instant never hands over those frames — so stopping in `_exit_tree()` lowered the
+rate (3/5 → 1/5) without curing it. What closes the account is not starting playback where
+there is no ear: `_setup_background_music()` in `main.gd` and `play()` in `audio.gd` only call
+`play()` when `DisplayServer.get_name() != "headless"`, and probes then read 0 in 6. Measured
+and reproducible with `tools/probes/musica.gd` — its `tocando` mode forces the playback and is
+the reproduction instrument, never part of the push battery. Shipped builds do play the trail,
+so closing the real window can still print the two lines: console noise on a dying process, not
+lost progress; a true cure means re-encoding the MP3 (OGG/WAV) or delaying `quit()`, both user
+decisions.

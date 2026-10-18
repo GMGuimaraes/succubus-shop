@@ -85,7 +85,12 @@ func play(sound: String, force: bool = false) -> bool:
 	player.stream = stream
 	var trim := float(SFX_TRIM_DB.get(sound, SFX_DEFAULT_TRIM_DB))
 	player.volume_db = linear_to_db(maxf(volume, 0.0001)) + trim
-	player.play()
+	# Headless nao tem ouvido: o `play()` criaria um playback na thread de audio que
+	# so e destruido alguns frames depois, e a sonda que chama `quit()` em seguida
+	# devolve essa criacao como vazamento no fim do log. A contabilidade de resfriamento
+	# e de janela de rajada segue identica -- o que falta e apenas o som.
+	if DisplayServer.get_name() != "headless":
+		player.play()
 	_last_play_ms[sound] = now
 	# O clique é o eco do botão, não um concorrente: ele toca e não gasta a janela
 	# que os avisos de verdade disputam pelo ouvido.
