@@ -12,15 +12,34 @@ de conquista) e uma varredura PNG da árvore `assets/`.
 
 | Item | Estado | O que falta |
 |---|---|---|
-| Presets de export (`Windows Desktop`, `Linux`, `Web`) | prontos e conferidos por sonda | — |
+| Presets de export (`Windows Desktop`, `Linux`, `Web`) | prontos, conferidos por sonda, e os três exportam de verdade | — |
 | Ícone do build (`icon.svg`, 128×128, 1127 bytes) | pronto | — |
 | Guarda de plataforma (sem janela de arquivo no navegador) | pronta e medida | — |
-| **Templates de export do Godot 4.7.2** | **NÃO instalados** (`%APPDATA%\Godot\export_templates\` vazio) | Editor → *Manage Export Templates* → *Download* (~1 GB). Ninguém baixou por você: é grande demais para ser efeito colateral de um script. |
-| Build web real | não gerado | depende dos templates acima |
+| Templates de export do Godot 4.7.2 | **instalados** (`%APPDATA%\Godot\export_templates\4.7.2.stable`) | — |
+| Build Windows real | gerado e medido: `.exe` de 154,21 MB descompactado (`.pck` embutido), zip de **82,62 MB** | ver §6 antes de confiar na arte |
+| Build Linux real | gerado e medido: `Succubus Shop.x86_64` de 118,60 MB, zip de **73,88 MB**, com o modo unix `0755` gravado no `.zip` | o zip criado no Windows sairia `-rw----` (sem bit de execução) — `marcar_execucao()` corrige |
+| Build web real | gerado e medido: `.pck` de 43,47 MB, zip de 53,45 MB, `index.html` na raiz | ver §6 antes de confiar na arte |
+| Orçamento de textura do `.pck` | aplicado (`tools/set_texture_budget.py`) | conferir o recorte no olho (§6) |
 | Descrição "About" do repositório GitHub | não alterada | sem `gh` CLI neste ambiente — edição manual na web |
 
-Sem os templates, `tools/build_itch.sh` **para na porta** com a instrução de instalação
-em vez de baixar sozinho. Instale uma vez no editor e o script passa a funcionar.
+`tools/build_itch.sh` ainda **não baixa nada**: sem templates ele para na porta com a
+instrução de instalação. O preflight comparava a versão longa do motor
+(`4.7.2.stable.official.ed1daf0bf`) com a pasta de templates (`4.7.2.stable`) e reprovava
+um build já instalado — corrigido, agora corta a versão curta e exige o `version.txt`.
+
+Duas armadilhas medidas nesta rodada, nenhuma delas com erro honesto na tela:
+
+- **O preset Linux só existe para o motor com `platform="Linux/X11"`.** Com `Linux/*BSD` ou
+  `Linux/bsd` o `export_presets.cfg` carrega sem reclamar nada no boot do editor, o preset é
+  **descartado em silêncio**, e o export responde `Invalid export preset name: Linux` citando
+  como detectados só `"Windows Desktop"` e `"Web"`. Os três candidatos foram rodados um por
+  um; a asserção ficou em `tools/probes/publicar.gd` para ninguém "modernizar" a string.
+- **O exportador procura o template dentro de `$APPDATA/Godot/export_templates`** — a mesma
+  variável que as sondas trocam para `D:\Downloads\tmp-userdata` a fim de não escrever no
+  save real. Com o `APPDATA` descartável, o export diz `Nenhum modelo de exportação
+  encontrado no caminho esperado: D:/Downloads/tmp-userdata/Godot/export_templates/...`. Os
+  três `--export-release` do `build_itch.sh` usam o `%APPDATA%` verdadeiro; só as sondas
+  mudam de pasta.
 
 ---
 
@@ -37,11 +56,12 @@ em vez de baixar sozinho. Instale uma vez no editor e o script passa a funcionar
 | Conquistas | 100 definições. Na itch.io elas **não** aparecem: só a integração opcional com a Steam as entrega — na vitrine elas contam como conteúdo, não como sistema |
 | Conteúdo | fantasia sombria adulta, **tom sugestivo atrás de um botão**; nenhuma nudez explícita em nenhum modo |
 | Save | arquivo em mesa; no navegador mora no armazenamento do site (IndexedDB) |
-| Massa de arte | **667 PNG**, 258 MB na árvore, **161,75 Mpx** de textura. O preset web manda comprimir para desktop **e** mobile, então o `.pck` carrega os dois conjuntos: ~0,5 B/px cada → **entre 80 MB (um conjunto só) e 160 MB (como está agora)**. O número real só sai do primeiro export de verdade |
+| Massa de arte | **667 PNG**, 275 MB na árvore, **169,60 Mpx** de textura. Re-encodeada com perdas por classe (`tools/set_texture_budget.py`): o `.pck` do navegador mede **43,47 MB** no export real |
+| Download do build web | **53,45 MB** compactado. Dentro dele `.pck` 43,47 MB e `.wasm` 39,51 MB descompactado — o `.wasm` é o motor, fixo, não depende da arte |
+| Download dos builds de mesa | Windows **82,62 MB** (um `.exe` de 154,21 MB descompactado, `.pck` embutido); Linux **73,88 MB** (binário `x86_64` de 118,60 MB, `.pck` embutido). Os dois passam o limite de 200 MB por arquivo descompactado |
 
 Regra da itch.io que aperta aqui: cada arquivo **descompactado** tem de caber em 200 MB.
-O `.pck` cabe nos dois cenários, mas o de 160 MB é pesado para jogar no navegador.
-Ver §6.
+O `.pck` sem perdas media 207,33 MB e era reprovado; hoje cabe com folga. Ver §6.
 
 ---
 
@@ -207,38 +227,53 @@ Succubus-Shop-0.1.0-alpha.5-web.zip
 
 ## 6. O build web é grande: o que fazer com isso
 
-Medido na árvore (`667` PNG, 258 MB, **161,75 Mpx** de textura): cada conjunto de
-compressão VRAM custa ~0,5 byte por pixel, então **um** conjunto ≈ 81 MB e **dois** ≈
-162 MB. O preset web de hoje (`for_desktop=true` **e** `for_mobile=true`) manda os dois.
-Cabe nos 200 MB por arquivo da itch.io nos dois cenários, mas 160 MB é o que o
-navegador baixa antes do primeiro quadro. A distribuição, em pixels:
+Medido no primeiro export de verdade, não estimado:
 
-| Dimensão | O que é | Mpx |
-|---|---|---|
-| 1792×1024 | as salas grandes de perto (`forge_close_scene`, `library_close_scene`, `reception_scene`…) | 38,5 |
-| 1024×1536 | folhas de personagem em pé | 31,5 |
-| 2560×1440 | salas em resolução de tela cheia | 24,6 |
-| 1536×2304 | folhas de personagem grandes | 20,3 |
-| 1280×720 | artes médias e impressos | 7,0 |
+| Estado da arte | Cache de textura (`.godot/imported`) | `index.pck` | Veredito |
+|---|---|---|---|
+| sem perdas (`compress/mode=0` — como estava) | 204,3 MB | **207,33 MB** | **reprovado**: a itch.io limita cada arquivo descompactado a 200 MB |
+| WebP com perdas por classe (`tools/set_texture_budget.py`) | 58,5 MB | **43,47 MB** | aprovado, com folga de ~4,6× |
 
-Quatro saídas, da mais barata para a mais trabalhosa:
+Duas crenças desta seção caíram na medição:
 
-0. **Um conjunto de compressão só** no preset web (`for_desktop=false`,
-   `for_mobile=true`): corta o `.pck` pela metade sem tocar em pixel nenhum de arte.
-   **Custo:** precisa do primeiro export real para conferir se o navegador visado aceita
-   ETC2/ASTC — e isso é decisão de compatibilidade, não de economia.
-1. **Publicar só mesa primeiro** (Windows + Linux) e deixar o HTML5 para quando a arte
-   enxugar. A página não promete nada que não aconteça.
-2. **Variantes de assets por export.** O Godot aceita filtro por recurso no preset; uma
-   fatia "web" com as salas em 1280×720 em vez de 1792×1024 e as folhas em 768×1152 em
-   vez de 1024×1536 derruba os 70 Mpx do topo da tabela para ~26 Mpx — `.pck` na casa dos
-   **40–60 MB** com um conjunto só. **Custo:** exige re-verificar o recorte e a linha de
-   chão de cada cenário (`tools/probes/recorte.gd`, `chao.gd`, `caminhos.gd`) — é trabalho
-   de sonda, não de slider.
-3. **Deixar como está e avisar.** A página diz "a versão web baixa até 160 MB".
+1. A distribuição de pixels contava `assets/` e dava 161,75 Mpx; a árvore toda (poses,
+   cenários, impressos) tem **667 PNG e 169,60 Mpx**.
+2. O texto assumia compressão VRAM no `.pck` ("um conjunto ≈ 81 MB, dois ≈ 162 MB").
+   Nenhuma textura do projeto pedia conjunto VRAM: `vram_texture_compression` no preset
+   não reencodeia pixel nenhum, e o `.pck` embarcava WebP **sem perdas**. Por isso ele
+   estourava os 200 MB, e por isso a alavanca tinha de ser o modo de compressão da
+   textura, não o preset.
 
-Qualquer uma das quatro mexe em preset e às vezes em arte: **nenhuma foi decidida
-aqui**. A escolha é sua, e a nº 2 é a que dá mais trabalho e o melhor jogo.
+A conta por classe, que é o que o script usa:
+
+| Classe | Arquivos | Mpx | aplicada |
+|---|---|---|---|
+| opacas (fundos pintados, onde a perda não se vê) | 57 | 123,99 | `compress/mode=1`, q=0,85 |
+| com alfa (recorte de personagem e de objeto) | 610 | 45,61 | `compress/mode=1`, q=0,92 |
+
+O alfa recebe qualidade maior porque a borda recortada é justamente o que o olho pega —
+é o contrato do recorte fiel às curvas, medido em `tools/probes/recorte.gd`.
+
+BPP usados na projeção do script (`BPP_LOSSY_OPAQUE` / `BPP_LOSSY_ALPHA` em
+`tools/set_texture_budget.py`): lossless 1,07 B/texel; lossy q=0,85 em arte opaca **0,21**;
+lossy q=0,92 em arte com alfa **0,37**. Aplicados aos 123,99 + 45,61 Mpx da tabela, isso
+projeta 42,92 MB contra os **43,47 MB** do `.pck` real — 0,55 MB de erro, que é o tipo de
+conta que se revalida antes de prometer a folga. O cache de `.godot/imported` **não** é a
+régua dessa medida: ele ainda carrega entradas dos exports anteriores. Basis/UASTC
+(`mode=3`) custa 3,00 B/texel e foi reprovado na medição: 508 MB.
+
+O `.wasm` custa 39,51 MB e não depende da arte, então o download total é **53,45 MB
+compactados** — um build honesto para o navegador.
+
+O que a mudança **não** é: os PNGs do repositório continuam os mesmos. Quem decide a
+codificação são os 667 `.png.import`, commitados junto. `python tools/set_texture_budget.py
+--reset` devolve tudo para `mode=0` e o próximo `--import` re-encodeia sem perdas.
+
+**O que ainda falta aqui é olho humano.** WebP com perdas em arte pintada é escolha de
+gosto, não de byte: abrir o build no navegador e conferir o recorte dos personagens e o
+ruido nas paredes escuras antes de publicar (§8). As outras saídas da lista antiga
+(publicar só mesa, variantes de assets por export, avisar e deixar) continuam
+disponíveis, mas nenhuma é necessária com o `.pck` em 43,47 MB.
 
 ---
 
@@ -258,6 +293,8 @@ Antes de marcar *Publish*, confira:
 
 - [ ] `bash tools/build_itch.sh` terminou com os três `.zip` listados
 - [ ] o zip web tem `index.html` **na raiz** (o script confere e diz `✓` ou `QUEBRA`)
+- [ ] o zip linux tem o binário em modo `rwxr-xr-x` (`zipinfo` confere; sem
+      `marcar_execucao()` o Windows empacota `-rw----` e o jogador não consegue rodar)
 - [ ] nenhum arquivo descompactado passa de 200 MB
 - [ ] o build web abre no navegador **sem** os botões de exportar/importar save, e com o
       aviso no lugar (isso é medido em `tools/probes/publicar.gd`, dos dois lados)
@@ -276,5 +313,19 @@ Antes de marcar *Publish*, confira:
   o apaga — o jogo avisa isso na própria tela de save.
 - **Nota no mobile.** O build web usa `gl_compatibility` e roda, mas a UI foi desenhada
   para 1280×720 com mouse. Não marque "mobile friendly".
+- **Os ícones emoji não aparecem no navegador.** Medido no primeiro build web aberto no
+  Chrome: **77 glifos emoji distintos, 655 usos** nos `.gd`. No desktop eles saem porque o
+  motor pede a fonte de emoji ao sistema operacional; no navegador não há sistema operacional
+  por trás, e cada um deles vira o tofu `▯` — a barra de setores, os contadores do topo e
+  vários rótulos ficam com caixinhos vazios. O jogo funciona e nenhum número muda; é
+  puramente cosmético, mas é a primeira coisa que se vê na página. Três saídas, todas com custo:
+  embarcar uma fonte de emoji (Noto Color Emoji, OFL, e Godot renderiza emoji colorido por
+  partes), trocar os 77 glifos por ícones desenhados no projeto, ou remover os emoji só no
+  build web (a flag de plataforma já existe — mas os rótulos são chave de tradução nas
+  cinco tabelas de `locales.gd`, então mexer neles é bater na sonda de idioma). **A escolha
+  é sua; nenhuma foi feita aqui.**
+- **A arte com perdas precisa do seu olho.** O `.pck` caiu para 43,47 MB com WebP q=0,85
+  (opacas) e q=0,92 (com alfa). No print do build web a borda dos personagens e as paredes
+  escuras estão limpas, mas isso foi visto por uma máquina, não por você.
 - **Data de "1.0".** Ainda falta balanceamento e a aprovação visual do chão, da oclusão
   e do timing de animação no editor, que só você pode dar.

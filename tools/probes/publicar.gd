@@ -32,7 +32,7 @@ extends SceneTree
 ##
 ## Veredito medido nesta rodada: **60 conferências, 0 quebras**, sem ERROR nem WARNING no
 ## log e com o save real intacto. `.export/` está ignorado e os três presets leem. Os alvos
-## são `Windows Desktop`/`Windows Desktop`, `Linux`/`Linux/bsd` e `Web`/`Web`, todos
+## são `Windows Desktop`/`Windows Desktop`, `Linux`/`Linux/X11` e `Web`/`Web`, todos
 ## `runnable=true`, com saída em `.export/windows/Succubus Shop.exe`,
 ## `.export/linux/Succubus Shop.x86_64` e `.export/web/index.html`. A versão:
 ## `config/version` é `0.1.0-alpha.5`, núcleo `0.1.0`, e só o preset de Windows carrega
@@ -45,6 +45,11 @@ extends SceneTree
 ## 167 • fila 0` — com o painel web aberto antes da corrida mostrando a loja no ponto de
 ## partida (`caixa 1200 • fama 20 • dia 1`). Catálogo com 215 chaves nas cinco línguas
 ## traduzidas, e as duas frases novas respondem em en e de.
+##
+## `Linux/X11` não é typo de manual velho: medido nesta máquina, com `Linux/*BSD` ou
+## `Linux/bsd` o motor **descarta o preset em silêncio** ao carregar o cfg (nenhum erro no
+## boot do editor) e o export responde `Invalid export preset name: Linux` citando só
+## "Windows Desktop" e "Web". Os três candidatos foram rodados um por um.
 
 const SEED_VAL := 20261018
 const GameScript = preload("res://main.gd")
@@ -52,7 +57,7 @@ const Locales = preload("res://locales.gd")
 const TIER_BASE := 0
 const PRESETS := [
 	["preset.0", "Windows Desktop", "Windows Desktop"],
-	["preset.1", "Linux", "Linux/bsd"],
+	["preset.1", "Linux", "Linux/X11"],
 	["preset.2", "Web", "Web"],
 ]
 

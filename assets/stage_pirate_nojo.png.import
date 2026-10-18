@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/stage_pirate_nojo.png-8ae1b67d7fc48a2261f9970
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.92
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

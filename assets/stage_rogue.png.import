@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/stage_rogue.png-41e7ef53b4e2c7f23e772d30fc33f
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.92
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

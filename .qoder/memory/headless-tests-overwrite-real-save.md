@@ -43,5 +43,18 @@ there is no ear: `_setup_background_music()` in `main.gd` and `play()` in `audio
 and reproducible with `tools/probes/musica.gd` — its `tocando` mode forces the playback and is
 the reproduction instrument, never part of the push battery. Shipped builds do play the trail,
 so closing the real window can still print the two lines: console noise on a dying process, not
-lost progress; a true cure means re-encoding the MP3 (OGG/WAV) or delaying `quit()`, both user
-decisions.
+lost progress.
+
+**Cured for real the same day, by dropping MP3.** The user chose WAV over OGG (no converter
+exists in this environment and `tools/generate_audio.py` synthesizes WAV natively).
+`assets/shop_theme_loop.mp3` is deleted; the trail is now `audio/shop_theme_loop.wav`
+(`compress/mode=0` raw — the importer's default `mode=2` shrinks `data` ~5×, which silently
+corrupts any sample-count arithmetic). Two engine facts measured, not guessed, by dumping
+`get_property_list()` in a throwaway probe: the GDScript property is `format`, **not**
+`mix_format` (accessing `mix_format` throws `SCRIPT ERROR: Invalid access to property or key`
+and leaves the player half-built — that single error was the source of the 2 and 22 leaked
+instances the battery was printing), and `AudioStreamWAV.loop_end = 0` is *not* "to the end":
+with `LOOP_FORWARD` the playback wraps at sample 0 and stalls, so `main.gd` sets
+`loop_end = floori(get_length() * mix_rate) - 1`. `tools/probes/musica.gd` now asserts the
+loop point, so this class of bug cannot come back silently. After the fix, `musica`,
+`contrato` and `idioma` all close with zero error lines **and** zero leak lines.

@@ -6,3 +6,7 @@
 - [Headless tests overwrite the real save](headless-tests-overwrite-real-save.md) — isolate probes with `APPDATA=D:\Downloads\tmp-userdata`; no leak tolerance, and headless never starts audio playback
 - [ImageGen quota block](imagegen-quota-block.md) — 403 code 112 means the account's image quota is spent; switch to the code-only backlog instead of retrying
 - [Probes are assets, not junk](probes-are-assets-not-junk.md) — never delete `_tmp_*.gd`; extend them, promote to `res://tools/`, or fold them into the game
+- [Content boundary: no nudity](project-content-boundary-nudity.md) — suggestive tone behind the adult toggle, never explicit; toggle must not change any number
+- [README is a measured contract](project-readme-is-measured-contract.md) — sale-path changes move other features' quoted numbers; re-run the tick battery and reconcile README+headers same commit
+- [Opt-in ladder inertia](project-opt-in-ladder-inertia.md) — new purchasable ladders must be byte-inert at rank 0; prove it by A/B rank 0 vs rank N
+- [Probe measurement validity](project-probe-measurement-validity.md) — four traps that made probes print confident nonsense (empty shelves, rounding floors, skipped --check-only, unmet gate preconditions)

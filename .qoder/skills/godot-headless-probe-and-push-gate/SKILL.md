@@ -287,10 +287,14 @@ onde nao ha ouvido**: `_setup_background_music()` (main.gd) e `audio.gd::play()`
 janela de rajada continua identica porque acontece antes do gesto. Lado `confere`, sem
 reproducao: 0 em 6 rodadas, e a bateria de 6 rodadas de `tools/probes/menu.gd` voltou limpa.
 
-Consequencia honesta: no jogo real (mesa e navegador) a trilha toca, entao o build publicado
-ainda pode imprimir as duas linhas ao fechar a janela. E ruido de console num processo que ja
-esta morrendo, nao perda de save; so desaparece de verdade re-encodando a trilha (OGG/WAV) ou
-atrasando o `quit()` alguns frames -- os dois sao decisao do usuario, nao do portao. Se a
+Consequencia honesta, e o final da historia: no mesmo dia a trilha deixou de ser MP3 e virou
+`res://audio/shop_theme_loop.wav` sintetizado pelo proprio projeto
+(`tools/generate_audio.py`), com `compress/mode=0` no `.wav.import`. WAV nao tem thread de
+decodificacao, entao o playback morre com o no - e as duas linhas sumiram tambem no build
+corrido (0 em 6 rodadas, gate sem nenhuma exclusao). O `loop_end` do laco e fechado em
+codigo com `get_length() * mix_rate`, nunca `data.size()`: com `compress/mode=2` o `data` ja
+vem codificado e encolhe ~5x, cortando a musica no meio. A assercao do laco vive em
+`tools/probes/musica.gd`. Se a
 linha voltar **numa sonda**, e regressao do corte: rodar com `--verbose`, ler o nome impresso
 em `Leaked instance:` / `Resource still in use:` e consertar a origem — nunca alargar o
 `grep -v` ate o gate aprovar tudo.

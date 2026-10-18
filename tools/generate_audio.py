@@ -4,7 +4,7 @@
 Tudo é criado por código, então não há direitos autorais de terceiros.
 Uso: python3 tools/generate_audio.py   (grava em audio/)
 """
-import math, os, random, struct, wave
+import math, os, random, struct, sys, wave
 
 SR = 22050
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "audio")
@@ -120,7 +120,7 @@ MELODY = [
 BASS = [0, -2, 0, -7, -2, 0, -2, 0, 0, -2, -5, -7, 0, -2, -7, 0]
 
 
-def build_music(bpm=84):
+def build_music(name="shop_theme_loop", bpm=84):
     eighth = 60.0 / bpm / 2
     step = int(SR * eighth)
     total = step * 8 * len(MELODY)
@@ -134,9 +134,16 @@ def build_music(bpm=84):
         root = d4 - 12 + BASS[bar]
         mix(buf, pluck(hz(root), 1.6, 0.55, 0.998), t0, wrap=True)
         mix(buf, pluck(hz(root + 7), 1.2, 0.4, 0.998), t0 + 4 * step, wrap=True)
-    save("music_tavern", buf, 0.6)
+    save(name, buf, 0.6)
 
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    build_sfx()  # a musica de fundo e o mp3 do projeto (assets/shop_theme_loop.mp3)
+    alvo = sys.argv[1] if len(sys.argv) > 1 else "tudo"
+    # `music` existe porque o `.wav` da trilha é gerável em segundos e os nove efeitos
+    # já estão commitados: regerar tudo sobre eles arrisca reescrever áudio que o jogo
+    # hoje carrega, e o loop da trilha mudou de formato (era `.mp3` importado de fora).
+    if alvo in ("tudo", "sfx"):
+        build_sfx()
+    if alvo in ("tudo", "music"):
+        build_music()

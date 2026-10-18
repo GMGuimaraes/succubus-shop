@@ -42,7 +42,7 @@ Isto é uma ilustração de visão — não uma captura de funcionalidades já j
 ## Baixar e jogar a alpha
 
 - **Windows 10/11 (64 bits):** [baixar Succubus Shop v0.1.0-alpha.5](https://github.com/GMGuimaraes/succubus-shop/releases/tag/v0.1.0-alpha.5), extrair o ZIP e executar `Succubus Shop.exe`. O build é portátil e não exige Godot instalado.
-- **itch.io:** a vitrine está sendo preparada — copy, avisos de conteúdo, tabela de campos e o passo a passo do build estão em [`docs/itch-io.md`](docs/itch-io.md); os três `.zip` saem de `tools/build_itch.sh`. O link público só entra aqui quando a página existir, e o build web ainda depende dos templates de export do Godot estarem instalados na máquina.
+- **itch.io:** a vitrine está preparada — copy, avisos de conteúdo, tabela de campos e o passo a passo do build estão em [`docs/itch-io.md`](docs/itch-io.md). Os templates de export do Godot 4.7.2 estão instalados e `tools/build_itch.sh` gera e confere os três `.zip` (Windows, Linux e web, com `index.html` na raiz). O link público só entra aqui quando a página existir e os arquivos forem subidos.
 - **Steam:** o executável Windows também pode ser adicionado à biblioteca pelo menu **Adicionar um jogo → Adicionar um jogo não Steam**. O pacote tem formato compatível com um depot Windows; a publicação como aplicativo próprio na loja Steam ainda depende do AppID, configuração de depots e credenciais do parceiro Steam.
 - Para jogar pelo projeto-fonte, instale Godot 4.7.2, abra `project.godot` e execute a cena principal com **F6/F5**.
 
@@ -65,10 +65,10 @@ A camada `commerce.gd` separa catálogo/entitlements da lógica do jogo e a inte
 
 ## Requisitos mínimos estimados
 
-- **Sistema:** Windows 10 ou posterior, 64 bits. O projeto ainda não foi validado em outras plataformas.
+- **Sistema:** Windows 10 ou posterior, 64 bits. O build web foi aberto e validado no Chrome (Godot 4.7.2, `gl_compatibility`, sem threads); o binário Linux é gerado pelo mesmo script, mas **ainda não foi executado em Linux**.
 - **Gráficos:** GPU compatível com OpenGL 3.3; o projeto usa o renderizador GL Compatibility e janela de referência 1280 × 720.
 - **Processador e memória:** estimativa inicial de CPU dual-core e 4 GB de RAM; ainda sem benchmark em hardware de entrada.
-- **Espaço em disco:** **170 MB** para o pacote da alpha (`Succubus-Shop-Windows-Alpha.zip` medido em 169.679.606 bytes na publicação `v0.1.0-alpha.5`), mais alguns KB por save. O número é do arquivo publicado, não uma estimativa.
+- **Espaço em disco:** **82,62 MB** para o pacote da alpha reempacotado agora (`Succubus-Shop-0.1.0-alpha.5-windows.zip`, com a arte comprimida por classe), mais alguns KB por save. O arquivo **publicado** em `v0.1.0-alpha.5` ainda é o build velho, de 169.679.606 bytes — ele precisa ser substituído antes que os dois números coincidam. Os outros alvos medidos: web **53,45 MB** e Linux **73,88 MB**.
 - **Desenvolvimento:** Godot 4.7.2 para abrir e executar o projeto pelo editor. Builds alpha Windows 64-bit são publicados em Releases.
 
 ## Recursos atuais

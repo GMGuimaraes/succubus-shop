@@ -5708,24 +5708,36 @@ func _play_seduction_peak_pose() -> void:
 		_show_feedback("♥ Confiança da casa conquistada!", Color(1.0, 0.62, 0.88))
 
 func _setup_background_music() -> void:
-	var music_path := "res://assets/shop_theme_loop.mp3"
+	var music_path := "res://audio/shop_theme_loop.wav"
 	if not ResourceLoader.exists(music_path):
 		return
 	music_player = AudioStreamPlayer.new()
-	var music_stream := load(music_path) as AudioStreamMP3
+	var music_stream := load(music_path) as AudioStreamWAV
 	if music_stream == null:
 		return
-	music_stream.loop = true
+	# O `.wav` é o próprio sintetizador do projeto (`tools/generate_audio.py`), não um
+	# MP3 importado de fora: WAV não tem thread de decodificação, então o playback morre
+	# quando o nó morre, e não alguns frames depois de `quit()`. O laço é fechado aqui,
+	# em amostras, porque o importador traz `loop_end = 0` e 0 NÃO é "até o fim": com
+	# LOOP_FORWARD ligado o player volta ao início na primeira amostra e emperra.
+	# A conta usa `get_length() * mix_rate`, não `data.size()`, porque `data` é o payload
+	# JA codificado — com `compress/mode=2` (o padrão dos `.wav` de efeito) ele encolhe
+	# ~5x e o laço cortaria a música no meio. Medido nesta árvore: 2.016.000 bytes
+	# brutos = 45,71 s a 22.050 Hz = 1.008.000 amostras.
+	music_stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	music_stream.loop_begin = 0
+	music_stream.loop_end = floori(music_stream.get_length() * float(music_stream.mix_rate)) - 1
 	music_player.stream = music_stream
 	music_player.volume_db = music_base_db
 	add_child(music_player)
 	# Headless não tem ouvido: ninguém escuta a trilha, mas o `play()` cria no
-	# AudioServer um `AudioStreamPlaybackMP3` que só é destruído pela thread de
-	# áudio, alguns frames depois. Sonda que chama `quit()` no mesmo instante nunca
-	# dá esses frames, e as duas linhas de vazamento (`AudioStreamPlaybackMP3` + o
-	# `AudioStreamMP3` ainda em uso) voltam ao log — parado na saída ou não. Medido
-	# com `tools/probes/musica.gd`: forçando a reprodução, 1 vazamento em 5 rodadas;
-	# nunca tocando, 0 em 6.
+	# AudioServer um `AudioStreamPlaybackWAV` que só é destruído pela thread de áudio,
+	# alguns frames depois. Sonda que chama `quit()` no mesmo instante nunca dá esses
+	# frames, e as duas linhas de vazamento (`AudioStreamPlaybackWAV` + o
+	# `AudioStreamWAV` ainda em uso) voltam ao log — parado na saída ou não. Medido com
+	# `tools/probes/musica.gd`: forçando a reprodução, 1 vazamento em 5 rodadas; nunca
+	# tocando, 0 em 6. O `.wav` não traz a thread de decodificação do `.mp3`, mas o
+	# playback continua sendo do AudioServer, então o corte abaixo é o que fecha a conta.
 	if DisplayServer.get_name() != "headless":
 		music_player.play()
 	_apply_situation_music()
@@ -5735,7 +5747,7 @@ func _apply_music_settings() -> void:
 		music_player.stream_paused = audio.muted
 		music_player.volume_db = music_base_db + linear_to_db(maxf(audio.volume, 0.0001))
 
-## Solta a trilha: para a reprodução e tira o `.mp3` do player, para que o processo não
+## Solta a trilha: para a reprodução e tira o `.wav` do player, para que o processo não
 ## chegue ao fim com a música ainda contada como recurso em uso. `stop()` apenas agenda a
 ## destruição do playback na thread de áudio, por isso o gesto é feito duas vezes — no
 ## pedido de fechar da janela e na saída da árvore: quanto antes ele sai, mais chance a

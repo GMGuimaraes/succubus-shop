@@ -2,16 +2,16 @@ extends SceneTree
 
 ## Sonda da trilha e do shutdown. Prova três coisas que a tela não mostra:
 ##
-## 1. Em `--headless` a trilha fica montada (player válido, `.mp3` carregado, volume e
+## 1. Em `--headless` a trilha fica montada (player válido, `.wav` carregado, volume e
 ##    situação aplicados), mas **nenhuma reprodução é iniciada**. Headless não tem
-##    ouvido, e o `play()` criaria no AudioServer um `AudioStreamPlaybackMP3` destruído
+##    ouvido, e o `play()` criaria no AudioServer um `AudioStreamPlaybackWAV` destruído
 ##    só pela thread de áudio, alguns frames depois — num processo que chama `quit()`
 ##    em seguida essa destruição nunca acontece, e as duas linhas de vazamento
-##    (`AudioStreamPlaybackMP3` + `AudioStreamMP3` "ainda em uso") voltam ao log.
+##    (`AudioStreamPlaybackWAV` + `AudioStreamWAV` "ainda em uso") voltam ao log.
 ##    Medido com esta sonda: forçando a reprodução, 3 vazamentos em 5 rodadas antes do
 ##    corte e 1 em 5 depois (o `_parar_trilha()` da saída ajuda, não fecha); nunca
 ##    tocando, 0 em 6.
-## 2. `_parar_trilha()` é idempotente e solta a referência do `.mp3`, então fechar a
+## 2. `_parar_trilha()` é idempotente e solta a referência do `.wav`, então fechar a
 ##    janela pelo ✕ e a saída da árvore não duplicam o gesto nem quebram um ao outro.
 ## 3. O corte de headless muda só o som, não a conta: resfriamento, janela de rajada e
 ##    `_dropped_count` de `audio.gd` continuam rodando identicos, porque a contabilidade
@@ -56,10 +56,21 @@ func _initialize() -> void:
 	var headless := DisplayServer.get_name() == "headless"
 	_confere(is_instance_valid(game.music_player), "a trilha fica montada mesmo sem ouvido")
 	if is_instance_valid(game.music_player):
-		_confere(game.music_player.stream != null, "o .mp3 da casa continua carregado no player")
+		_confere(game.music_player.stream != null, "a trilha da casa continua carregada no player")
 		_confere(not bool(game.music_player.is_playing()), "em headless nenhuma reprodução é iniciada")
 		var esperado_db: float = game.music_base_db + linear_to_db(maxf(game.audio.volume, 0.0001))
 		_confere(is_equal_approx(game.music_player.volume_db, esperado_db), "o volume da situação foi aplicado")
+		# 1b — o laço. `loop_end = 0` nao e "ate o fim": com LOOP_FORWARD ligado o player
+		# volta ao inicio na primeira amostra e a trilha emperra. A sonda confere contra a
+		# conta do motor (comprimento x taxa), nao contra o tamanho de `data` — `data` e o
+		# payload ja codificado e encolhe com compressao, o que cortaria a musica no meio.
+		var trilha := game.music_player.stream as AudioStreamWAV
+		_confere(trilha != null, "a trilha e um AudioStreamWAV")
+		if trilha != null:
+			_confere(int(trilha.loop_mode) == int(AudioStreamWAV.LOOP_FORWARD), "o laço esta em LOOP_FORWARD")
+			var amostras := floori(trilha.get_length() * float(trilha.mix_rate)) - 1
+			_confere(int(trilha.loop_end) == amostras, "o laço fecha na ultima amostra (%d, nao 0)" % amostras)
+			_confere(int(trilha.loop_begin) == 0, "o laço comeca no amostra 0")
 	_confere(is_equal_approx(game.music_base_db, game._music_situation()["db"]), "a trilha situacional le o dB da tabela")
 
 	# 2 — parar a trilha é seguro repetir e solta a referência.

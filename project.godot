@@ -35,3 +35,8 @@ file_logging/log_path="user://logs/godot.log"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 environment/defaults/default_clear_color=Color(0.075, 0.055, 0.11, 1)
+; O preset Web embarca um conjunto de texturas só, o ETC2/ASTC (`vram_texture_compression/for_mobile=true`
+; em export_presets.cfg). Sem esta linha o importador não gera esse conjunto e a validação do export Web
+; devolve "configuration errors" VAZIA — o motor recusa sem dizer por quê. Windows e Linux continuam
+; empacotando só BC: quem escolhe o formato no .pck é o preset, não o importador.
+textures/vram_compression/import_etc2_astc=true
