@@ -659,6 +659,12 @@ var _offline_branch_fraction: float = 0.0
 ## ela que decide se a loja abre direto ou com o seletor de idioma na frente.
 var locale: String = Locales.DEFAULT
 var locale_confirmed: bool = false
+## Plataforma. O navegador não tem `FileDialog`: `ACCESS_FILESYSTEM` no build web só
+## enxerga o `/home/web_user` virtual, então a janela de exportar/importar abriria vazia
+## e prometeria um arquivo que o jogador não pode tocar. O save continua existindo
+## (IndexedDB) e nenhum número da loja muda — o que some é a porta de saída para o disco.
+var web_build: bool = OS.has_feature("web")
+const WEB_SAVE_NOTE := "Neste navegador o save mora no armazenamento do site: nada sai para arquivo, e limpar os dados do navegador apaga a loja."
 var menu_layer: Control
 var menu_start_mode: bool = false
 ## A tela aberta dentro do menu. `root` é a única que fecha com ESC; as outras voltam
@@ -1069,6 +1075,8 @@ var difficulty_button: Button
 var difficulty_label: Label
 var adult_toggle_button: Button
 var save_file_dialog: FileDialog
+var save_transfer_box: HBoxContainer
+var web_save_note: Label
 var hard_reset_dialog: ConfirmationDialog
 var recover_theft_button: Button
 var fury_label: Label
@@ -1894,6 +1902,7 @@ func _ready() -> void:
 	_mark_day_start()
 	_sync_quality_stock()
 	_build_ui()
+	_apply_platform_guards()
 	_apply_sector_visibility()
 	_setup_background_music()
 	_apply_music_settings()
@@ -2307,12 +2316,19 @@ func _menu_screen_save() -> void:
 	menu_box.add_child(menu_status_label)
 	_menu_note(tr("Save da vida: dia %d, nível %d, %d de ouro.") % [shop_day, player_level, gold],
 			Color(0.72, 0.66, 0.8), 12)
-	_menu_button("Exportar save para arquivo", _show_save_dialog.bind(true), 40)
-	_menu_button("Importar save de arquivo", _show_save_dialog.bind(false), 40)
+	if web_build:
+		_menu_note(WEB_SAVE_NOTE, Color(0.66, 0.6, 0.76), 12)
+	else:
+		_menu_button("Exportar save para arquivo", _show_save_dialog.bind(true), 40)
+		_menu_button("Importar save de arquivo", _show_save_dialog.bind(false), 40)
 	_menu_button("Carregar o último save do disco", _reload_from_disk, 40)
 	_menu_button("Apagar todo o progresso", _confirm_full_reset, 40)
-	_menu_note("Importar e apagar reabrem a loja: nada é escrito sem a janela de confirmação aparecer antes.",
-			Color(0.66, 0.6, 0.76), 12)
+	if web_build:
+		_menu_note("Apagar reabre a loja: nada é escrito sem a janela de confirmação aparecer antes.",
+				Color(0.66, 0.6, 0.76), 12)
+	else:
+		_menu_note("Importar e apagar reabrem a loja: nada é escrito sem a janela de confirmação aparecer antes.",
+				Color(0.66, 0.6, 0.76), 12)
 	_menu_back_button()
 
 func _menu_screen_conquistas() -> void:
@@ -5354,6 +5370,7 @@ func _build_ui() -> void:
 	var save_buttons := HBoxContainer.new()
 	save_buttons.add_theme_constant_override("separation", 8)
 	right.add_child(save_buttons)
+	save_transfer_box = save_buttons
 	var export_button := Button.new()
 	export_button.text = "Exportar save"
 	export_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -5365,6 +5382,13 @@ func _build_ui() -> void:
 	import_button.pressed.connect(_show_save_dialog.bind(false))
 	save_buttons.add_child(import_button)
 
+	web_save_note = Label.new()
+	web_save_note.text = WEB_SAVE_NOTE
+	web_save_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	web_save_note.add_theme_font_size_override("font_size", 12)
+	web_save_note.add_theme_color_override("font_color", Color(0.66, 0.6, 0.76))
+	right.add_child(web_save_note)
+
 	var reset_button := Button.new()
 	reset_button.text = "Resetar todo o progresso…"
 	reset_button.custom_minimum_size.y = 40
@@ -5372,7 +5396,7 @@ func _build_ui() -> void:
 	right.add_child(reset_button)
 	hard_reset_dialog = ConfirmationDialog.new()
 	hard_reset_dialog.title = "Apagar todo o progresso?"
-	hard_reset_dialog.dialog_text = "O save local será removido. Esta ação não pode ser desfeita; exporte uma cópia antes se quiser guardá-la."
+	hard_reset_dialog.dialog_text = WEB_SAVE_NOTE if web_build else "O save local será removido. Esta ação não pode ser desfeita; exporte uma cópia antes se quiser guardá-la."
 	hard_reset_dialog.ok_button_text = "Apagar e recomeçar"
 	hard_reset_dialog.confirmed.connect(_reset_all_progress)
 	add_child(hard_reset_dialog)
@@ -13240,6 +13264,15 @@ func _toggle_adult_content() -> void:
 	last_event = "Cenas sensuais ativadas: a arte da recepção, as poses e o tom de flerte voltam para a tela." if adult_content_enabled else "Cenas sensuais desativadas: nenhuma arte provocante, pose ou flerte aparece no balcão. Progressão, economia, servos, momentos e conquistas seguem exatamente as mesmas — o que muda é a voz, nunca a porta."
 	_save_game()
 	_refresh_ui()
+
+## O que a plataforma esconde. No navegador a janela de arquivo não existe, então a
+## fileira de exportar/importar sai de cena e fica só o aviso; em mesa os dois botões
+## aparecem e o aviso some. Nenhum número da loja é tocado aqui — é porta, não conta.
+func _apply_platform_guards() -> void:
+	if is_instance_valid(save_transfer_box):
+		save_transfer_box.visible = not web_build
+	if is_instance_valid(web_save_note):
+		web_save_note.visible = web_build
 
 func _show_save_dialog(exporting: bool) -> void:
 	save_file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE if exporting else FileDialog.FILE_MODE_OPEN_FILE

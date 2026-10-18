@@ -16,7 +16,7 @@ extends RefCounted
 ## reset de run, e é gravado em `user://locale_settings.cfg` além do save.
 ##
 ## A migração em fatias continua verdadeira — falta uma chave e o painel lê o original —
-## mas ela não é mais o estado do catálogo: as cinco tabelas abaixo têm as MESMAS 213
+## mas ela não é mais o estado do catálogo: as cinco tabelas abaixo têm as MESMAS 215
 ## chaves, na MESMA ordem. Essa paridade é contrato medido (`tools/probes/idioma.gd`,
 ## func `_orfãos()`, e `tools/probes/guia.gd` para as frases do guia), então língua nova
 ## entra com o catálogo cheio ou não entra: acrescentar `SUPPORTED` com tabela pela metade
@@ -264,6 +264,8 @@ const MESSAGES: Dictionary = {
 		"As IAs que revisaram este repositório no mesmo ritmo das madrugadas: Claude, ChatGPT, Copilot e Manus.": "The AIs that reviewed this repository at the same pace as the late nights: Claude, ChatGPT, Copilot and Manus.",
 		"Obrigado por jogar — e por relatar o que quebrou.": "Thanks for playing — and for reporting what broke.",
 		"A prosa montada durante a partida — falas de cliente, balanço da virada, eventos — ainda sai no idioma original.": "Prose assembled during the run — customer lines, the turnover report, events — still comes out in the original language.",
+		"Neste navegador o save mora no armazenamento do site: nada sai para arquivo, e limpar os dados do navegador apaga a loja.": "In this browser the save lives in the site's storage: nothing goes out to a file, and clearing browser data erases the shop.",
+		"Apagar reabre a loja: nada é escrito sem a janela de confirmação aparecer antes.": "Erasing reopens the shop: nothing is written until the confirmation window shows up.",
 	},
 	"es": {
 		# ── títulos de sección ──
@@ -488,6 +490,8 @@ const MESSAGES: Dictionary = {
 		"As IAs que revisaram este repositório no mesmo ritmo das madrugadas: Claude, ChatGPT, Copilot e Manus.": "Las IAs que revisaron este repositorio al mismo ritmo que las madrugadas: Claude, ChatGPT, Copilot y Manus.",
 		"Obrigado por jogar — e por relatar o que quebrou.": "Gracias por jugar — y por reportar lo que se rompió.",
 		"A prosa montada durante a partida — falas de cliente, balanço da virada, eventos — ainda sai no idioma original.": "La prosa armada durante la partida — frases de cliente, balance del cambio de día, eventos — todavía sale en el idioma original.",
+		"Neste navegador o save mora no armazenamento do site: nada sai para arquivo, e limpar os dados do navegador apaga a loja.": "En este navegador la partida vive en el almacenamiento del sitio: nada sale a un archivo, y borrar los datos del navegador borra la tienda.",
+		"Apagar reabre a loja: nada é escrito sem a janela de confirmação aparecer antes.": "Borrar vuelve a abrir la tienda: nada se escribe antes de que aparezca la ventana de confirmación.",
 	},
 	"fr": {
 		# ── títulos de seção ──
@@ -716,6 +720,8 @@ const MESSAGES: Dictionary = {
 		"As IAs que revisaram este repositório no mesmo ritmo das madrugadas: Claude, ChatGPT, Copilot e Manus.": "Les IA qui ont relu ce dépôt au même rythme que les nuits blanches : Claude, ChatGPT, Copilot et Manus.",
 		"Obrigado por jogar — e por relatar o que quebrou.": "Merci de jouer — et de signaler ce qui casse.",
 		"A prosa montada durante a partida — falas de cliente, balanço da virada, eventos — ainda sai no idioma original.": "La prose montée pendant la partie — répliques de client, bilan du tournant, événements — sort encore dans la langue d'origine.",
+		"Neste navegador o save mora no armazenamento do site: nada sai para arquivo, e limpar os dados do navegador apaga a loja.": "Dans ce navigateur, la sauvegarde vit dans le stockage du site : rien ne sort vers un fichier, et effacer les données du navigateur efface la boutique.",
+		"Apagar reabre a loja: nada é escrito sem a janela de confirmação aparecer antes.": "Effacer rouvre la boutique : rien n'est écrit avant que la fenêtre de confirmation apparaisse.",
 	},
 	"it": {
 		# ── títulos de seção ──
@@ -944,6 +950,8 @@ const MESSAGES: Dictionary = {
 		"As IAs que revisaram este repositório no mesmo ritmo das madrugadas: Claude, ChatGPT, Copilot e Manus.": "Le IA che hanno revisionato questo repository allo stesso ritmo delle nottate: Claude, ChatGPT, Copilot e Manus.",
 		"Obrigado por jogar — e por relatar o que quebrou.": "Grazie per giocare — e per segnalare ciò che si rompe.",
 		"A prosa montada durante a partida — falas de cliente, balanço da virada, eventos — ainda sai no idioma original.": "La prosa montata durante la partita — battute dei clienti, bilancio del giro, eventi — esce ancora nella lingua originale.",
+		"Neste navegador o save mora no armazenamento do site: nada sai para arquivo, e limpar os dados do navegador apaga a loja.": "In questo browser il salvataggio vive nello spazio del sito: nulla esce su file, e cancellare i dati del browser cancella la bottega.",
+		"Apagar reabre a loja: nada é escrito sem a janela de confirmação aparecer antes.": "Cancellare riapre la bottega: niente viene scritto prima che compaia la finestra di conferma.",
 	},
 	"de": {
 		# ── títulos de seção ──
@@ -1172,6 +1180,8 @@ const MESSAGES: Dictionary = {
 		"As IAs que revisaram este repositório no mesmo ritmo das madrugadas: Claude, ChatGPT, Copilot e Manus.": "Die KIs, die dieses Repository im gleichen Takt wie die langen Nächte geprüft haben: Claude, ChatGPT, Copilot und Manus.",
 		"Obrigado por jogar — e por relatar o que quebrou.": "Danke fürs Spielen — und dafür, dass du meldest, was kaputtgeht.",
 		"A prosa montada durante a partida — falas de cliente, balanço da virada, eventos — ainda sai no idioma original.": "Die Prosa, die während des Spiels entsteht — Kundentexte, Wechselbilanz, Ereignisse — kommt weiterhin in der Ursprungssprache.",
+		"Neste navegador o save mora no armazenamento do site: nada sai para arquivo, e limpar os dados do navegador apaga a loja.": "In diesem Browser liegt der Spielstand im Webspeicher: nichts wird als Datei exportiert, und die Browserdaten zu löschen löscht den Laden.",
+		"Apagar reabre a loja: nada é escrito sem a janela de confirmação aparecer antes.": "Löschen öffnet den Laden neu: nichts wird geschrieben, bevor das Bestätigungsfenster erscheint.",
 	},
 }
 

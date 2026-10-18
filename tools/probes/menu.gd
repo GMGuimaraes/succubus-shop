@@ -31,7 +31,7 @@ extends SceneTree
 ## e o rótulo acompanha; mudo, painel, balanço automático e cenas sensuais trocam estado E
 ## rótulo sem tocar em caixa nem em atendidos. Tela → 2, Escala → 1.25, VSync → 2 sobrevivem
 ## à escrita do idioma e a uma reabertura completa (um `ConfigFile` só, lido antes de
-## escrito). Conquistas listam exatamente as 2 destravadas de 85; créditos fecham com 6
+## escrito). Conquistas listam exatamente as 2 destravadas de 100; créditos fecham com 6
 ## notas. Salvar dá recibo e grava no descartável; exportar abre em modo de gravação e
 ## importar em modo de leitura; "Apagar todo o progresso" só mostra a confirmação e o save
 ## continua no disco; o relatório de bug abre janela própria com publicar travado até a
