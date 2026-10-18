@@ -31,7 +31,8 @@ extends SceneTree
 ## −5 → 0, 900 → 12 pelo teto da contagem, −900 → 0) e save antigo sem as chaves acorda 0/0/0/0
 ## com taxa 0.0000, caixa 1500 → 1500 e cauda idêntica ao controle; (9) reencarnar raspa o
 ## cartaz (3/11/12/777/5/33 → tudo 0); (10) os dois selos acendem no recorde 3 e no cofre 600
-## (599 ainda não), e a lista fecha com 97 definições; (11) a corrida de 200 tiques em três
+## (599 ainda não), e a lista fecha com 100 definições — o trio do topo da escada de cenários
+## entrou nela depois desta leitura; (11) a corrida de 200 tiques em três
 ## lados (degrau 0, 1 e 3) — os três atendem 23 e perdem 229 visitas, e o que muda é só o
 ## caixa: 8516, 8526 e 8559, com cofre 0, 10 e 45.
 ##

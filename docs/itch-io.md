@@ -90,7 +90,7 @@ bate com poder de 22 a 112, e só se resolve com as mãos que a casa já paga.
 do salão, funcionários com salário na conta da manhã. E, quando o caixa aperta
 mesmo, o desfecho de ruína.
 
-**A vida longa.** Sete capítulos, sete desfechos (seis por facção mais a ruína),
+**A vida longa.** Sete capítulos, sete desfechos (cinco de facção, o da casa e o da ruína),
 pedidos escritos das cinco facções que pagam privilégio permanente, árvore de
 talento com dois ofícios concorrentes por trilha — assinar um raspa o outro até a
 próxima vida — e reencarnação do império com aura, dotes e placar por temporada.

@@ -10137,7 +10137,7 @@ func _achievement_definitions() -> Array[Dictionary]:
 		{"id": "branch_all", "name": "Império de esquina a beco (todas as filiais abertas)", "condition": branches.size() >= Branches.size(), "gold": 500, "rep": 15, "pose": "danca"},
 		{"id": "rival_first", "name": "Placa desligada (primeira rival comprada)", "condition": not rivals_absorbed.is_empty(), "gold": 150, "rep": 5},
 		{"id": "rival_all", "name": "A praça é sua (todas as rivais absorvidas)", "condition": rivals_absorbed.size() >= Rivals.size(), "gold": 600, "rep": 12, "pose": "danca"},
-		{"id": "staff_full", "name": "Quadro cheio (as quatro vagas do balcão pagando salário juntas)", "condition": staff_hired.size() >= Staff.size(), "gold": 340, "rep": 12, "pose": "vitoria"},
+		{"id": "staff_full", "name": "Quadro cheio (as cinco vagas do balcão pagando salário juntas)", "condition": staff_hired.size() >= Staff.size(), "gold": 340, "rep": 12, "pose": "vitoria"},
 		{"id": "staff_rounds", "name": "A ronda conhece o beco (três furtos barrados na mesma vida)", "condition": theft_blocked >= 3, "gold": 220, "rep": 8, "pose": "book"},
 		{"id": "servant_first", "name": "Coração atrás do balcão (um freguês apaixonado entrando para a casa)", "condition": not servants.is_empty(), "gold": 140, "rep": 5, "pose": "beijo"},
 		{"id": "servant_three", "name": "A casa tem coração (três servos trabalhando sem salário)", "condition": servants.size() >= 3, "gold": 380, "rep": 12, "pose": "aplausos"},

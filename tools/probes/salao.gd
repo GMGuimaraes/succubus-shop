@@ -19,9 +19,9 @@ extends SceneTree
 ## consome sorteio; (8) as quatro chaves atravessam o arquivo, o degrau é podado para o teto
 ## (9 vira 3), as contagens negativas e textuais viram 0, e save antigo sem as chaves acorda
 ## com o cordão guardado; (9) reencarnar enrola o cordão e apaga as gorjetas da vida; (10) os
-## dois selos acendem exatamente em 1 e 10 servidas, e a lista fecha com 97 definições (91
-## na leitura original do salão; o par do livro de reclamações, #79, e o par do cartaz do
-## combo, #80, entraram depois);
+## dois selos acendem exatamente em 1 e 10 servidas, e a lista fecha com 100 definições (91
+## na leitura original do salão; o par do livro de reclamações, #79, o par do cartaz do
+## combo, #80, e o trio do topo da escada de cenários entraram depois);
 ## (11) na corrida de 200 tiques com a prateleira montada igual nos três lados e a mesma
 ## semente, o cordão guardado não tem UMA capa fina no salão — e os degraus 1 e 3 têm.
 ##

@@ -27,7 +27,8 @@ extends SceneTree
 ## podado, save antigo acorda com a mesa raspada, e reencarnar raspa tudo; (13) os dois selos
 ## novos acendem nas fronteiras e a lista fechava com 91 definições nesta leitura (o par do
 ## salão das capas finas, #78, o par do livro de reclamações, #79, e o par do cartaz do combo,
-## #80, entraram depois; a sonda lê o tamanho real, não este número, e hoje a lista fecha em 97).
+## #80, e o trio do topo da escada de cenários entraram depois; a sonda lê o tamanho real, não
+## este número, e hoje a lista fecha em 100).
 ##
 ## Armadilha medida aqui: ao nível 1 cada acerto dá 12 de experiência e o degrau 2 custa 65,
 ## então seis acertos seguidos subiriam um nível sozinhos — e nível novo entrega receita por
@@ -38,7 +39,7 @@ extends SceneTree
 ## Armadilha de régua: a cauda de 40 `randi()` é sempre lida logo apos `seed(SEED_VAL)`
 ## cravado. Sem o segundo seed, a segunda cauda nasce na casa 80 da stream e a sonda acusaria
 ## "a bancada sorteia" onde a bancada só compara assinatura de dicionario. E as medidas de
-## caixa selam as 97 conquistas: o primeiro acerto paga 60 de ouro e o sétimo paga 300 — sem
+## caixa selam as 100 conquistas: o primeiro acerto paga 60 de ouro e o sétimo paga 300 — sem
 ## a rolha, "carvão cobrado" leria o premio do selo.
 ##
 ## Uso:

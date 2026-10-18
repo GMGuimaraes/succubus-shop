@@ -49,7 +49,8 @@ extends SceneTree
 ## poco_sem_fundo: 7}, ouro 3210 e aura ×2.167; payload lixo (id fantasma, dia −4, dia 0)
 ## sobra só em {juro_alto: 6} e acorda no Calçada; sem as chaves no arquivo a loja abre no
 ## Calçada com caderno vazio e aura ×1.00. O selo *Poço Sem Fundo por 10 dias de balcão* não
-## acende no nono dia e acende no décimo, e o painel fecha com 97 definições. Se qualquer
+## acende no nono dia e acende no décimo, e o painel fecha com 100 definições (o trio do topo
+## da escada de cenários entrou depois desta leitura; a sonda lê o tamanho real). Se qualquer
 ## linha do Calçada se mover, a regra nova virou regressão nas contas de sempre; se a aura
 ## pagar dia não morado, ela virou enfeite de botão.
 
