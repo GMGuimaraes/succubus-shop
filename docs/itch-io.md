@@ -26,7 +26,8 @@ de conquista) e uma varredura PNG da árvore `assets/`.
 `tools/build_itch.sh` ainda **não baixa nada**: sem templates ele para na porta com a
 instrução de instalação. O preflight comparava a versão longa do motor
 (`4.7.2.stable.official.ed1daf0bf`) com a pasta de templates (`4.7.2.stable`) e reprovava
-um build já instalado — corrigido, agora corta a versão curta e exige o `version.txt`.
+um build já instalado — corrigido, agora corta a versão curta e, antes de cada alvo,
+confere o molde de release daquela plataforma (ver a armadilha do `version.txt` acima).
 
 Duas armadilhas medidas nesta rodada, nenhuma delas com erro honesto na tela:
 
@@ -41,6 +42,12 @@ Duas armadilhas medidas nesta rodada, nenhuma delas com erro honesto na tela:
   encontrado no caminho esperado: D:/Downloads/tmp-userdata/Godot/export_templates/...`. Os
   três `--export-release` do `build_itch.sh` usam o `%APPDATA%` verdadeiro; só as sondas
   mudam de pasta.
+- **`version.txt` não prova molde nenhum.** O diretório descartável das sondas tem uma
+  cópia parcial de templates: o `version.txt` e os `.zip` do navegador estão lá, os `.exe`
+  de mesa não. O preflight passava por ele e a cadeia morria no export de mesa, depois de
+  importar a árvore inteira. Desde esta rodada `exportar()` confere o arquivo que cada
+  preset realmente exige (`windows_release_x86_64.exe`, `linux_release.x86_64`,
+  `web_nothreads_release.zip`) e para em dois segundos dizendo o nome que falta.
 
 ---
 
