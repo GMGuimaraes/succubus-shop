@@ -14,18 +14,36 @@ extends SceneTree
 ## real, mesma regra de `tools/probes/trajeto.gd`:
 ##   APPDATA="D:\\Downloads\\tmp-userdata" godot --path . --quit-after 90000 \
 ##     -s res://tools/probes/galeria.gd
+## E nas medidas da vitrine da Epic Games Store, com o argumento depois do `--`:
+##   APPDATA="D:\\Downloads\\tmp-userdata" godot --path . --quit-after 90000 \
+##     -s res://tools/probes/galeria.gd -- 1920
 ##
 ## As sete fotos caem em D:/Downloads/tmp-userdata/galeria/ e são copiadas manualmente para
 ## `res://screenshots/` com os nomes `gallery_*.png` que o README usa.
+##
+## Um argumento depois de `--` muda a janela e a pasta: `-- 1920` fotografa em 1920×1080 em
+## `galeria-1920/`, que são as medidas do carrossel da Epic Games Store. A proporção é a
+## mesma 16:9 do projeto, então com `stretch/mode="canvas_items"` o que muda é só o fator
+## (1,0 → 1,5): o layout não reflui, o quadro fica mais nítido.
 
-const OUT := "D:/Downloads/tmp-userdata/galeria/"
+var pasta := "galeria"
+var saida := "D:/Downloads/tmp-userdata/galeria/"
+var medida := Vector2i.ZERO
 const Regulars := preload("res://regulars.gd")
 const SEED_VAL := 20261025
 
 func _initialize() -> void:
+	var args := OS.get_cmdline_user_args()
+	if not args.is_empty():
+		var largura := int(args[0])
+		if largura != 1280:
+			medida = Vector2i(largura, int(largura * 9.0 / 16.0))
+			pasta = "galeria-%d" % largura
+			saida = "D:/Downloads/tmp-userdata/%s/" % pasta
+
 	var dir := DirAccess.open("D:/Downloads/tmp-userdata/")
-	if dir != null and not dir.dir_exists("galeria"):
-		dir.make_dir("galeria")
+	if dir != null and not dir.dir_exists(pasta):
+		dir.make_dir(pasta)
 
 	var game := (load("res://main.tscn") as PackedScene).instantiate()
 	get_root().add_child(game)
@@ -36,6 +54,14 @@ func _initialize() -> void:
 	if is_instance_valid(game.menu_layer):
 		game._close_menu()
 		await _frames(6)
+	if medida != Vector2i.ZERO:
+		## Medido nesta tela de 1920 × 1080: pedida antes do boot, a troca não segura —
+		## `_apply_player_settings()` (main.gd) reaplica o modo gravado no `_ready()` e a
+		## textura vinha 1920 × 1061, a janela com barra de título não comporta 1080 de
+		## conteúdo. Depois do boot a tela cheia bate os 1920 × 1080 que a Epic exige.
+		DisplayServer.window_set_size(medida)
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		await _frames(12)
 	game.world_timer.stop()
 	game._reset_run()
 	game.gold = 2400
@@ -210,8 +236,12 @@ func _snap(nome: String) -> void:
 	if image == null:
 		print("  %s: SEM TEXTURA — rode sem --headless" % nome)
 		return
-	print("  %s.png salvo (%s) • %dx%d" % [
-		nome, error_string(image.save_png(OUT + nome + ".png")), image.get_width(), image.get_height()])
+	var obtida := Vector2i(image.get_width(), image.get_height())
+	var desvio := ""
+	if medida != Vector2i.ZERO and obtida != medida:
+		desvio = "  ← FORA DA MEDIDA PEDIDA (%d x %d)" % [medida.x, medida.y]
+	print("  %s.png salvo (%s) • %dx%d%s" % [
+		nome, error_string(image.save_png(saida + nome + ".png")), obtida.x, obtida.y, desvio])
 
 
 func _frames(count: int) -> void:

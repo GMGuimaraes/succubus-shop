@@ -158,7 +158,7 @@ Medido nesta árvore em 2026-10-19:
 | Descrição curta ≤ 280 caracteres (Epic) | **feito**: PT 265 caracteres / 270 bytes, EN 277 / 277 (§4.1) | — |
 | Logo 960×540 (Epic) / key art 1920×1080 em camadas (GOG) | `icon.svg` (128×128) | gerar PNG nas duas medidas; o **PSD em camadas da GOG não existe** e HTML renderizado não produz camadas |
 | Trailer MP4 1920×1080 (Epic, recomendado) | nada | gravar do jogo em janela; sem gravação automática no repo |
-| Galeria de screenshots | 7 PNGs em 1280×720 (602 KB–1,79 MB) | renderizar em 1920×1080 (**5 deles já estouram o teto de 1 MB** da Epic para imagens extras do "About" em 1280×720) |
+| Galeria de screenshots | **feito**: sete capturas em 1920×1080 (1,20–3,75 MB) em `marketing/itch/out/galeria-1920/` | virar JPG para caber nos 1 MB da Epic para imagem extra do "About" |
 | Build Windows | `.exe` 153,67 MB, zip 82,10 MB | nenhum |
 | Build Linux | x86_64 `0755` no zip, 73,35 MB | **nunca executado** em Linux real |
 
@@ -200,20 +200,40 @@ EN — 277 caracteres / 277 bytes:
 As duas versões longas que estavam na itch.io (PT 315, EN 312 caracteres) continuam valendo lá
 — a itch não tem esse teto — e o que mudou aqui foi só a poda para a vitrine da Epic.
 
-### Os 1920×1080 **de dentro do jogo** também são triviais, e medir isso é o que autoriza a afirmação
+### 4.2 As sete capturas de dentro do jogo, em 1920×1080 — e os 19 px que quase passaram
 
 `project.godot` tem `viewport 1280×720`, `stretch/mode="canvas_items"`,
 `stretch/aspect="expand"`. Capturar em 1920×1080 é a **mesma proporção 16:9**, então o fator
-sobe de 1,0 para 1,5 e todo o layout escala junto — não há reflow, não há texto cortado, é o
-mesmo quadro mais nítido. Na prática: `DisplayServer.window_set_size(Vector2i(1920, 1080))`
-em `tools/probes/galeria.gd`, que hoje **não tem override nenhum de tamanho de janela** e
-por isso fotografa nos 1280×720 do projeto. A sonda já roda em janela de propósito
-(`get_texture()` devolve null em `--headless`), então é uma linha, não uma reforma.
+sobe de 1,0 para 1,5 e todo o layout escala junto: sem reflow, sem texto cortado, o mesmo
+quadro mais nítido — conferido no olho na primeira captura. `tools/probes/galeria.gd` ganhou
+um argumento depois de `--` para isso (`-- 1920`), que também muda a pasta de saída para
+`galeria-1920/` e não toca no comportamento padrão de 1280×720.
 
-É o único item de asset que sobra e que **precisa do motor aberto**: as sete capturas de
-galeria (01 recepção a 07 estrada) ainda não existem em 1920×1080, e cinco delas já estouram
-o teto de 1 MB da Epic para imagem extra do "About" no tamanho atual. As capas, essas, já
-saíram do HTML — §4.1.
+O que **não** era óbvio é que pedir a medida não é receber a medida. Medido nesta tela de
+1920 × 1080 com área útil de 1920 × 1032:
+
+| Gesto | Janela | Textura salva |
+|---|---|---|
+| `window_set_size(1920, 1080)` antes do boot | 1920 × 1061 | **1920 × 1061** |
+| idem + `WINDOW_MODE_FULLSCREEN` antes do boot | 1920 × 1061 | **1920 × 1061** |
+| `window_set_size` + tela cheia **depois** do `_ready()` | 1920 × 1080 | **1920 × 1080** |
+
+Duas causas, uma em cima da outra. A primeira é do Windows: uma janela com barra de título não
+comporta 1080 de conteúdo numa tela de 1080, e o motor aceita o pedido devolvendo 1061 — sem
+aviso. A segunda é do nosso código: `_apply_player_settings()` (main.gd) reaplica o modo
+gravado durante o `_ready()`, então a tela cheia pedida antes de montar a loja é desfeita
+depois. A sonda hoje troca a janela **depois** do boot e imprime
+`← FORA DA MEDIDA PEDIDA` em qualquer captura que sair do tamanho pedido — sem essa linha no
+log, as sete fotos teriam ido para a Epic 19 px mais baixas e ninguém ia notar antes da rejeição.
+
+```
+marketing/itch/out/galeria-1920/  01_recepcao 3,75 MB · 02_balanco 1,80 MB · 03_forja 3,14 MB
+                                  04_fiado 3,29 MB · 05_combo 3,34 MB · 06_conquistas 1,20 MB
+                                  07_estrada 3,28 MB
+```
+
+Passam nos 4 MB do carrossel como PNG. Para as imagens extras do bloco "About" o teto é
+**1 MB**, e aí as sete precisam virar JPG — o mesmo caminho das capas, §4.1.
 
 ### A fonte das capas continua sendo HTML, e isso é uma escolha
 
@@ -259,10 +279,12 @@ ignorado.
 - [x] Descrições curtas podadas para os 280 caracteres da Epic (PT 265, EN 277) — §4.1.
 - [x] `marketing/` comitado como fonte, com `marketing/*/out/` fora do git.
 
-**Ainda desta máquina, mas exige o motor aberto:**
+- [x] Galeria em 1920×1080 pelo argumento novo de `tools/probes/galeria.gd` (`-- 1920`), com
+      a medida conferida no log — §4.2.
 
-- [ ] Renderizar a galeria em 1920×1080 adicionando o override de janela em
-      `tools/probes/galeria.gd`, e caber nos 1 MB da Epic para imagem extra do "About".
+**Ainda desta máquina:**
+
+- [ ] Virar as sete capturas para JPG e caber nos 1 MB da Epic para imagem extra do "About".
 - [ ] Gerar logo 960×540 e a key art 1920×1080 a partir das artes que já existem.
 - [ ] Escrever as descrições longas nos formatos das duas lojas (a da itch não serve tal qual).
 - [ ] Roteirizar o trailer e definir como ele é gravado.
