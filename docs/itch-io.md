@@ -233,7 +233,7 @@ Medido no primeiro export de verdade, não estimado:
 | Estado da arte | Cache de textura (`.godot/imported`) | `index.pck` | Veredito |
 |---|---|---|---|
 | sem perdas (`compress/mode=0` — como estava) | 204,3 MB | **207,33 MB** | **reprovado**: a itch.io limita cada arquivo descompactado a 200 MB |
-| Com perdas por classe (`tools/set_texture_budget.py`, `compress/mode=1`) | 58,5 MB | **43,47 MB** | aprovado, com folga de ~4,6× |
+| Com perdas por classe (`tools/set_texture_budget.py`, `compress/mode=1` = WebP) | 58,5 MB | **43,47 MB** | aprovado, com folga de ~4,6× |
 | o mesmo, com as duas fontes de símbolo embarcadas (§8) | +3,51 MB de `.fontdata` | **48,61 MB** | aprovado, com folga de ~4,1× |
 
 Duas crenças desta seção caíram na medição:
@@ -280,13 +280,16 @@ codificação são os 667 `.png.import` (659 em `assets/`, 8 em `screenshots/`),
 junto. `python tools/set_texture_budget.py
 --reset` devolve tudo para `mode=0` e o próximo `--import` re-encodeia sem perdas.
 
-**Nome do codificador, conferido na árvore:** o `compress/mode=1` do Godot 4 é a compressão
-com perdas do **próprio motor** (bloco de texel), não WebP — não existe um arquivo `.webp`
-nesta árvore (`find . -name '*.webp'` devolve 0). A palavra "WebP" ficou no vocabulário de um
-doc antigo e atravessou a decisão de publicação; o que se aprova e o que se mede é o modo de
-compressão da textura, com as duas qualidades por classe.
+**Nome do codificador, conferido no contêiner.** O `compress/mode=1` do Godot 4 grava um
+**WebP com perdas** dentro do `.ctex`: nas quatro texturas abertas (as duas classes, tamanhos
+de 144×422 a 2560×1440) a assinatura `WEBP` aparece no mesmo offset 64, depois do cabeçalho
+`GST2` (versão, largura, altura, formato, mipmaps). A árvore continua sem nenhum `.webp`
+**fonte** — os 667 arquivos são PNG, e quem escolhe a codificação é o importador. Nota de
+método, porque o erro aconteceu nesta rodada: concluir "não é WebP" pela ausência de `.webp`
+na árvore é ler o contêiner pelo nome do arquivo. A assinatura se abre nos bytes, não no
+`find`.
 
-**O que ainda falta aqui é olho humano.** Compressão com perdas em arte pintada é escolha de
+**O que ainda falta aqui é olho humano.** WebP com perdas em arte pintada é escolha de
 gosto, não de byte: abrir o build no navegador e conferir o recorte dos personagens e o
 ruido nas paredes escuras antes de publicar (§8). As outras saídas da lista antiga
 (publicar só mesa, variantes de assets por export, avisar e deixar) continuam
@@ -373,8 +376,7 @@ Antes de marcar *Publish*, confira:
   pela frequência (`flat` 4/8, `nested` 5/8, `emoji` 5/8, nenhuma fiação 5/12; com texto ASCII,
   0/12). É caminho do motor no headless do Windows, não do recurso: a rota publicada ficou
   limpa nos 12 processos.
-- **A arte com perdas precisa do seu olho.** O `.pck` caiu para 43,47 MB com compressão
-  q=0,85
+- **A arte com perdas precisa do seu olho.** O `.pck` caiu para 43,47 MB com WebP q=0,85
   (opacas) e q=0,92 (com alfa). No print do build web a borda dos personagens e as paredes
   escuras estão limpas, mas isso foi visto por uma máquina, não por você.
 - **Data de "1.0".** Ainda falta balanceamento e a aprovação visual do chão, da oclusão

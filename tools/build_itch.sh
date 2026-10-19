@@ -10,8 +10,8 @@
 # index.html no topo. Um `web/index.html` dentro de uma pasta dá "Could not find
 # index.html" na página do jogo. E nenhum arquivo descompactado pode passar de
 # 200 MB — medido nesta árvore: com textura sem perdas o `.pck` do navegador deu
-# 207,33 MB e foi reprovado; depois de `tools/set_texture_budget.py` (compressão
-# com perdas por classe, q=0,85 opacas / q=0,92 com alfa) ele mede 43,47 MB, e 48,61 MB com as
+# 207,33 MB e foi reprovado; depois de `tools/set_texture_budget.py` (WebP com
+# perdas por classe, q=0,85 opacas / q=0,92 com alfa) ele mede 43,47 MB, e 48,61 MB com as
 # duas fontes de símbolo do §8 de docs/itch-io.md dentro. O `.wasm` custa 39,51 MB
 # e é fixo; o zip final do navegador mede 58,35 MB.
 #

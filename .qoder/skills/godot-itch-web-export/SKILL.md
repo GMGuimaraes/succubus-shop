@@ -64,9 +64,12 @@ Web crava `thread_support=false`.
   muda**: seguem 667 PNG e 274,87 MB, porque o que encolhe é o `.ctex` gerado pelo import.
   Pese os `.ctex` apontados pelo campo `path` de cada `.import`: **41,46 MB** embarcados
   (21,81 MB das 57 opacas, 0,176 B/texel + 19,65 MB das 610 com alfa, 0,431 B/texel).
-- **Não diga "WebP" para o `compress/mode=1` do Godot 4.** É compressor em bloco do próprio
-  motor; `find . -name '*.webp'` devolve 0 nesta árvore. O nome veio de um doc antigo e
-  atravessou uma decisão de publicação — conferir o mecanismo antes de prometê-lo ao jogador.
+- **`compress/mode=1` é WebP com perdas dentro do `.ctex`.** Conferido nos bytes: as quatro
+  texturas abertas (duas classes, 144×422 a 2560×1440) têm assinatura `WEBP` no offset 64,
+  depois do cabeçalho `GST2` (versão, largura, altura, formato, mipmaps). A árvore não tem
+  nenhum `.webp` **fonte** — os PNG continuam PNG; quem decide a codificação é o importador.
+  **Armadilha cometida nesta sessão:** concluir "não é WebP" porque `find` não acha `.webp` é
+  ler o contêiner pelo nome do arquivo. Se a pergunta é "o que está dentro", abra os bytes.
 - `vram_texture_compression/for_desktop` E `for_mobile=true` no MESMO preset web embarca
   dois conjuntos de compressão e **dobro o `.pck`**. Deixar os dois ligados é decisão
   consciente, não padrão.
