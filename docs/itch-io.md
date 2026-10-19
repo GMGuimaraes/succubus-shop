@@ -720,3 +720,36 @@ descartável das sondas, nem os templates nem o SDK são achados. O save do joga
 tocado pelo export; a asserção continua sendo o hash conferido antes e depois.
 
 Sonda do layout de toque: `tools/probes/toque.gd` (§ regras em `main.gd::_fit_touch`).
+
+### O APK subiu — 2026-10-19
+
+O arquivo está na página como **`Android (arm64-v8a) — v0.1.0-alpha.6`**, plataforma marcada
+`p_android`, tipo *Executable*, posição 5 (última). A itch.io reporta **73 mb** do mesmo
+arquivo que mede 76.789.272 bytes: a casa arredonda em MiB, e 73,2 MiB é o número certo — não
+há truncamento. Conferido na página pública: o selo **Download for Android** aparece ao lado
+do botão.
+
+Duas armadilhas do editor web, medidas na subida:
+
+- **O `<input type=file>` não existe antes do clique.** `document.querySelectorAll('input[type=file]')`
+  devolve lista vazia na página de edição; o botão **Choose files** (`.add_file_btn_outer button.button`)
+  cria o input na hora e o solta dentro de `.add_file_btn_outer`, escondido. Automação que procura
+  o input antes de clicar não acha nada. O botão errado é o `.external_file_btn`, que abre a linha
+  de *External file* — e uma linha dessas, vazia, fica pendurada na página como upload fantasma.
+- **Apagar upload tem dupla confirmação.** O modal exige a caixa *"I confirm I want to delete"* e só
+  então libera **Delete**; sem marcar a caixa o botão fica inerte e o script acha que apagou.
+  `qoder-pipeline-probe.zip` (148 bytes, resíduo da conferência de pipeline) e a linha externa vazia
+  foram removidos assim — a página fica com os quatro arquivos.
+
+## 14. O que ainda não dá para sair desta máquina
+
+- **iOS.** O export `.ipa` do Godot 4 exige macOS com Xcode, um Apple Developer Program pago
+  (US$ 99/ano) e o `codesign` da Apple. Do Windows não há caminho: nem o `.ipa` é gerado, nem o
+  certificado é emitido. O que dá para fazer daqui é preparar o preset e a lista de arquivos, e
+  rodar o export numa máquina Apple.
+- **GOG.** A loja não aceita submissão self-service: é preciso conta de parceiro criada pela
+  pessoa (e-mail verificado), dados fiscais e bancários, e o `gogpartner` ainda pede um build
+  por plataforma com o nome de executável combinando com o que a ficha declara.
+- **Epic Games Store.**idem: conta de desenvolvedor, US$ 100 por estúdio, formulário fiscal e
+  o `epic_games_launcher` build pipeline. Nenhum dos dois pode ser aberto por automação sem que
+  a pessoa assuma a identidade fiscal atrás da conta.
