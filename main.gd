@@ -1716,8 +1716,20 @@ var theft_recovery_available: bool = false
 var seduction_peak_triggered: bool = false
 var ambient_particles: CPUParticles2D
 var music_player: AudioStreamPlayer
-## O volume da trilha antes do ajuste mestre, em dB. A faixa é uma só, mas a situação
-## afina esse número (`_music_situation`) e a config geral continua por cima dele.
+## As duas faixas que a casa tem, cada uma com um turno. A **clássica** é a gravação
+## herdada do protótipo (`assets/shop_theme_loop.mp3`, 91,6 s): anda rápido, sobe o astral
+## e é por isso que ela volta a ser o que toca no dia a dia da loja — o pedido foi este, e
+## o número que a define é o comprimento medido, não a lembrança. A **sombria** é a faixa
+## sintetizada pelo próprio projeto (`audio/shop_theme_loop.wav`, 45,7 s, grave e
+## arrastada): ela não saiu do jogo, mudou de horário, e fica com as três manhãs em que a
+## casa está mal — porta arrombada, ruína no livro-caixa e vigário na calçada.
+var music_classic_stream: AudioStream
+var music_somber_stream: AudioStream
+## O turno que está no ar (`"clássica"` ou `"sombria"`). É esta string que impede a troca
+## de faixa a cada tique: a situação só mexe no player quando cruza de turno.
+var music_track_on_air: String = ""
+## O volume da trilha antes do ajuste mestre, em dB. São duas faixas, mas a situação afina
+## esse número (`_music_situation`) e a config geral continua por cima dele.
 var music_base_db: float = -13.0
 const GameAudio = preload("res://audio.gd")
 var audio: Node
@@ -2641,7 +2653,7 @@ func _menu_screen_creditos() -> void:
 	var engine_version := str(Engine.get_version_info().get("string", "4"))
 	_menu_note(_version_stamp(), Color(0.85, 0.78, 0.95), 14)
 	_menu_note("Motor: Godot %s (gl_compatibility)." % engine_version, Color(0.85, 0.78, 0.95), 14)
-	_menu_note("Trilha e efeitos gravados no próprio projeto; retratos e poses desenhados para a loja, sem arte explícita.",
+	_menu_note("A trilha do salão vem do protótipo; a faixa dos dias ruins, os efeitos, os retratos e as poses são feitos no próprio projeto, sem arte explícita.",
 			Color(0.78, 0.72, 0.86), 13)
 	_menu_note("As IAs que revisaram este repositório no mesmo ritmo das madrugadas: Claude, ChatGPT, Copilot e Manus.",
 			Color(0.72, 0.66, 0.8), 13)
@@ -5883,55 +5895,77 @@ func _play_seduction_peak_pose() -> void:
 		_show_feedback("♥ Confiança da casa conquistada!", Color(1.0, 0.62, 0.88))
 
 func _setup_background_music() -> void:
-	var music_path := "res://audio/shop_theme_loop.wav"
-	if not ResourceLoader.exists(music_path):
+	music_classic_stream = _carregar_trilha("res://assets/shop_theme_loop.mp3")
+	music_somber_stream = _carregar_trilha("res://audio/shop_theme_loop.wav")
+	if music_classic_stream == null and music_somber_stream == null:
 		return
 	music_player = AudioStreamPlayer.new()
-	var music_stream := load(music_path) as AudioStreamWAV
-	if music_stream == null:
-		return
-	# O `.wav` é o próprio sintetizador do projeto (`tools/generate_audio.py`), não um
-	# MP3 importado de fora: WAV não tem thread de decodificação, então o playback morre
-	# quando o nó morre, e não alguns frames depois de `quit()`. O laço é fechado aqui,
-	# em amostras, porque o importador traz `loop_end = 0` e 0 NÃO é "até o fim": com
-	# LOOP_FORWARD ligado o player volta ao início na primeira amostra e emperra.
-	# A conta usa `get_length() * mix_rate`, não `data.size()`, porque `data` é o payload
-	# JA codificado — com `compress/mode=2` (o padrão dos `.wav` de efeito) ele encolhe
-	# ~5x e o laço cortaria a música no meio. Medido nesta árvore: 2.016.000 bytes
-	# brutos = 45,71 s a 22.050 Hz = 1.008.000 amostras.
-	music_stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	music_stream.loop_begin = 0
-	music_stream.loop_end = floori(music_stream.get_length() * float(music_stream.mix_rate)) - 1
-	music_player.stream = music_stream
 	music_player.volume_db = music_base_db
 	add_child(music_player)
 	# Headless não tem ouvido: ninguém escuta a trilha, mas o `play()` cria no
-	# AudioServer um `AudioStreamPlaybackWAV` que só é destruído pela thread de áudio,
-	# alguns frames depois. Sonda que chama `quit()` no mesmo instante nunca dá esses
-	# frames, e as duas linhas de vazamento (`AudioStreamPlaybackWAV` + o
-	# `AudioStreamWAV` ainda em uso) voltam ao log — parado na saída ou não. Medido com
-	# `tools/probes/musica.gd`: forçando a reprodução, 1 vazamento em 5 rodadas; nunca
-	# tocando, 0 em 6. O `.wav` não traz a thread de decodificação do `.mp3`, mas o
-	# playback continua sendo do AudioServer, então o corte abaixo é o que fecha a conta.
-	if DisplayServer.get_name() != "headless":
-		music_player.play()
+	# AudioServer um playback (`AudioStreamPlaybackMP3` ou `AudioStreamPlaybackWAV`) que
+	# só é destruído pela thread de áudio, alguns frames depois. Sonda que chama `quit()`
+	# no mesmo instante nunca dá esses frames, e as duas linhas de vazamento (o playback +
+	# a faixa ainda em uso) voltam ao log — parado na saída ou não. Medido com
+	# `tools/probes/musica.gd`: forçando a reprodução, 1 vazamento em 2 rodadas com a
+	# clássica no ar e 1 em 5 com a sombria sozinha; sem reprodução, 0 em 9. O container não
+	# é a causa — ele só decide qual nome aparece no log. Quem fecha a conta é
+	# `_trilha_audivel()`, consultada por `_apply_situation_music()` antes de cada `play()`.
 	_apply_situation_music()
+
+## Lê uma faixa e fecha o laço dela. O `.wav` é o próprio sintetizador do projeto
+## (`tools/generate_audio.py`): WAV não tem thread de decodificação, e o laço é fechado em
+## amostras porque o importador traz `loop_end = 0` e 0 NÃO é "até o fim" — com
+## LOOP_FORWARD ligado o player volta ao início na primeira amostra e emperra. A conta usa
+## `get_length() * mix_rate`, não `data.size()`, porque `data` é o payload JA codificado:
+## com `compress/mode=2` (o padrão dos `.wav` de efeito) ele encolhe ~5x e o laço cortaria
+## a música no meio. Medido nesta árvore: 2.016.000 bytes brutos = 45,71 s a 22.050 Hz.
+## O `.mp3` herdado tem a outra regra: o decodificador laça no fim do próprio arquivo,
+## então basta ligar `loop`, e o que a sonda confere é o comprimento (91,64 s) e a flag.
+func _carregar_trilha(caminho: String) -> AudioStream:
+	if not ResourceLoader.exists(caminho):
+		return null
+	var stream := load(caminho) as AudioStream
+	if stream is AudioStreamWAV:
+		var wav := stream as AudioStreamWAV
+		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		wav.loop_begin = 0
+		wav.loop_end = floori(wav.get_length() * float(wav.mix_rate)) - 1
+	elif stream is AudioStreamMP3:
+		(stream as AudioStreamMP3).loop = true
+	return stream
+
+## Onde está a cabeça do player: com ouvido, a trilha toca; em headless o player fica
+## montado e mudo, que é o estado que as sondas leem sem deixar vazamento para trás.
+func _trilha_audivel() -> bool:
+	return DisplayServer.get_name() != "headless"
+
+## A faixa de um turno. Turno vazio ou faixa ausente cai na outra: a casa nunca fica
+## muda porque um arquivo não importou.
+func _trilha_do_turno(turno: String) -> AudioStream:
+	if turno == "sombria":
+		return music_somber_stream if music_somber_stream != null else music_classic_stream
+	return music_classic_stream if music_classic_stream != null else music_somber_stream
 
 func _apply_music_settings() -> void:
 	if is_instance_valid(music_player):
 		music_player.stream_paused = audio.muted
 		music_player.volume_db = music_base_db + linear_to_db(maxf(audio.volume, 0.0001))
 
-## Solta a trilha: para a reprodução e tira o `.wav` do player, para que o processo não
+## Solta a trilha: para a reprodução e tira a faixa do player, para que o processo não
 ## chegue ao fim com a música ainda contada como recurso em uso. `stop()` apenas agenda a
 ## destruição do playback na thread de áudio, por isso o gesto é feito duas vezes — no
 ## pedido de fechar da janela e na saída da árvore: quanto antes ele sai, mais chance a
-## thread tem de executá-lo antes de o processo morrer.
+## thread tem de executá-lo antes de o processo morrer. As duas faixas saem juntas: largar
+## só a que estava no ar deixaria a outra contando como recurso vivo até o fim.
 func _parar_trilha() -> void:
 	if is_instance_valid(music_player):
 		music_player.stop()
 		music_player.stream = null
 	music_player = null
+	music_classic_stream = null
+	music_somber_stream = null
+	music_track_on_air = ""
 
 func _exit_tree() -> void:
 	_parar_trilha()
@@ -12786,32 +12820,50 @@ func _gain_standing(faction_id: String, amount: int) -> void:
 		return
 	faction_standing[faction_id] = maxi(0, int(faction_standing.get(faction_id, 0)) + amount)
 
-## Trilha situacional com a única faixa gravada que a casa tem: a mesma gravação,
-## afinada pelo que está acontecendo no salão. Alarme de porta acelera, ruína arrasta,
-## vigário na porta puxa para o grave e cada setor tem o próprio tom. `_music_situation`
-## é a resposta pura, medida na sonda; `_apply_situation_music` é quem move o player.
+## Trilha situacional em duas faixas: o dia a dia da loja anda na clássica, e os três
+## infortúnios grandes caem na sombria. Dentro do turno a situação ainda afina o tom e o
+## volume da própria gravação — alarme de porta acelera, ruína arrasta, vigário na porta
+## puxa para o grave e cada setor tem o próprio tom. `_music_situation` é a resposta pura,
+## medida na sonda; `_apply_situation_music` é quem move o player.
 func _music_situation() -> Dictionary:
 	if music_alarm_until > 0 and shop_day <= music_alarm_until:
-		return {"name": "alarme na porta", "pitch": 1.12, "db": -8.0}
+		return {"name": "alarme na porta", "track": "sombria", "pitch": 1.12, "db": -8.0}
 	if debt >= _debt_limit():
-		return {"name": "casa na ruína", "pitch": 0.84, "db": -18.0}
+		return {"name": "casa na ruína", "track": "sombria", "pitch": 0.84, "db": -18.0}
 	if _vicar_waiting() and vicar_announced_day == shop_day:
-		return {"name": "vigário na porta", "pitch": 0.92, "db": -14.0}
+		return {"name": "vigário na porta", "track": "sombria", "pitch": 0.92, "db": -14.0}
 	match current_sector:
 		"forge":
-			return {"name": "forja", "pitch": 1.06, "db": -11.0}
+			return {"name": "forja", "track": "clássica", "pitch": 1.06, "db": -11.0}
 		"library":
-			return {"name": "biblioteca", "pitch": 0.95, "db": -15.0}
+			return {"name": "biblioteca", "track": "clássica", "pitch": 0.95, "db": -15.0}
 		"sanctum":
-			return {"name": "santuário", "pitch": 0.88, "db": -17.0}
+			return {"name": "santuário", "track": "clássica", "pitch": 0.88, "db": -17.0}
 		"expedition":
-			return {"name": "estrada", "pitch": 1.02, "db": -12.0}
-	return {"name": "salão", "pitch": 1.0, "db": -13.0}
+			return {"name": "estrada", "track": "clássica", "pitch": 1.02, "db": -12.0}
+	return {"name": "salão", "track": "clássica", "pitch": 1.0, "db": -13.0}
 
 func _apply_situation_music() -> void:
 	if not is_instance_valid(music_player):
 		return
 	var tune := _music_situation()
+	var turno := str(tune["track"])
+	var faixa := _trilha_do_turno(turno)
+	# Só troca de faixa quando o turno cruza: a mesma gravação continua rodando enquanto
+	# a loja muda de sala, e o que se move é o tom, não a posição da música.
+	if faixa != null and music_player.stream != faixa:
+		var tocava := bool(music_player.is_playing())
+		if tocava:
+			music_player.stop()
+		music_player.stream = faixa
+		music_track_on_air = turno
+		if _trilha_audivel():
+			music_player.play()
+	elif music_player.stream == null and faixa != null:
+		music_player.stream = faixa
+		music_track_on_air = turno
+		if _trilha_audivel():
+			music_player.play()
 	music_player.pitch_scale = float(tune["pitch"])
 	music_base_db = float(tune["db"])
 	_apply_music_settings()

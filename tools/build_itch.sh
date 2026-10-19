@@ -13,8 +13,9 @@
 # 207,33 MB e foi reprovado; depois de `tools/set_texture_budget.py` (WebP com
 # perdas por classe, q=0,85 opacas / q=0,92 com alfa) ele mede 43,47 MB, e 48,61 MB com as
 # duas fontes de símbolo do §8 de docs/itch-io.md dentro -- e 48,05 MB depois que o
-# `exclude_filter` tirou as sondas de desenvolvimento do pacote do jogador. O `.wasm` custa
-# 39,51 MB e é fixo; o zip final do navegador mede 57,81 MB.
+# `exclude_filter` tirou as sondas de desenvolvimento do pacote do jogador; com o MP3 da
+# trilha clássica de volta (§10) são 50,26 MB. O `.wasm` custa
+# 39,51 MB e é fixo; o zip final do navegador mede 60,01 MB.
 #
 # Uso:
 #   GODOT="/c/Users/gmore/godot/godot" bash tools/build_itch.sh

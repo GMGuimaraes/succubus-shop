@@ -64,9 +64,9 @@ Duas armadilhas medidas nesta rodada, nenhuma delas com erro honesto na tela:
 | Conquistas | 100 definições. Na itch.io elas **não** aparecem: só a integração opcional com a Steam as entrega — na vitrine elas contam como conteúdo, não como sistema |
 | Conteúdo | fantasia sombria adulta, **tom sugestivo atrás de um botão**; nenhuma nudez explícita em nenhum modo |
 | Save | arquivo em mesa; no navegador mora no armazenamento do site (IndexedDB) |
-| Massa de arte | **667 PNG** na árvore: 169,60 Mpx, 274,87 MB. O corte com perdas por classe (`tools/set_texture_budget.py`, `compress/mode=1`) embarca **41,46 MB de `.ctex`** — 21,81 MB das 57 opacas + 19,65 MB das 610 com alfa — e fecha o `.pck` do navegador em 43,47 MB, que viram **48,61 MB** com as fontes e **48,05 MB** depois de as 72 sondas de desenvolvimento saírem do pacote com as duas fontes de símbolo (§8) |
-| Download do build web | **57,81 MB** compactado. Dentro dele `.pck` 48,05 MB e `.wasm` 39,51 MB descompactado — o `.wasm` é o motor, fixo, não depende da arte |
-| Download dos builds de mesa | Windows **82,10 MB** (um `.exe` de 153,67 MB descompactado, `.pck` embutido); Linux **73,35 MB** (binário `x86_64` de 118,06 MB, `.pck` embutido). Os dois passam o limite de 200 MB por arquivo descompactado. As fontes do §8 **não** embarcam neles: `exclude_filter` com `fonts/*.ttf`, conferido no binário |
+| Massa de arte | **667 PNG** na árvore: 169,60 Mpx, 274,87 MB. O corte com perdas por classe (`tools/set_texture_budget.py`, `compress/mode=1`) embarca **41,46 MB de `.ctex`** — 21,81 MB das 57 opacas + 19,65 MB das 610 com alfa — e fecha o `.pck` do navegador em 43,47 MB, que viram **48,61 MB** com as fontes e **48,05 MB** depois de as 72 sondas de desenvolvimento saírem do pacote com as duas fontes de símbolo (§8); com o MP3 da trilha clássica de volta são **50,26 MB** (§10) |
+| Download do build web | **60,01 MB** compactado (`.zip` de 60.008.512 bytes). Dentro dele `.pck` 50,26 MB e `.wasm` 39,51 MB descompactado — o `.wasm` é o motor, fixo, não depende da arte |
+| Download dos builds de mesa | Windows **84,30 MB** (um `.exe` de 155,87 MB descompactado, `.pck` embutido); Linux **75,55 MB** (binário `x86_64` de 120,26 MB, `.pck` embutido). Os dois passam o limite de 200 MB por arquivo descompactado. As fontes do §8 **não** embarcam neles: `exclude_filter` com `fonts/*.ttf`, conferido no binário |
 
 Regra da itch.io que aperta aqui: cada arquivo **descompactado** tem de caber em 200 MB.
 O `.pck` sem perdas media 207,33 MB e era reprovado; hoje cabe com folga. Ver §6.
@@ -277,9 +277,10 @@ régua dessa medida: ele ainda carrega entradas dos exports anteriores. Basis/UA
 (`mode=3`) custa 3,00 B/texel e foi reprovado na medição: 508 MB.
 
 O `.wasm` custa 39,51 MB e não depende da arte. Com as fontes do §8 dentro, o download
-total do navegador é **58,35 MB compactados** (`.zip` de 58.352.045 bytes; hoje **57,81 MB**, `.zip` de 57.811.416, com as sondas excluídas) — eram 53,45 MB
-antes delas, e o `.pck` é o que cresce: 43.469.492 → 48.607.204 → 48.049.800 bytes. Um build honesto
-para o navegador: o maior arquivo extraído (o `.pck`, 48,05 MB) cabe 4,2× no teto de 200 MB
+total do navegador é **58,35 MB compactados** (`.zip` de 58.352.045 bytes; **57,81 MB**, `.zip` de 57.811.416, com as sondas excluídas; **60,01 MB**, `.zip` de 60.008.512, com o MP3 da trilha clássica de volta — §10) — eram 53,45 MB
+antes delas, e o `.pck` é o que cresce: 43.469.492 → 48.607.204 → 48.049.800 → 50.256.952
+bytes. Um build honesto
+para o navegador: o maior arquivo extraído (o `.pck`, 50,26 MB) cabe 4,0× no teto de 200 MB
 por arquivo.
 
 O que a mudança **não** é: os PNGs do repositório continuam os mesmos. Quem decide a
@@ -412,7 +413,7 @@ arquivo é pior que não ter página:
   preset, agora cobrava no arquivo que o jogador baixa — o explorador mostra a versão do
   `.exe`, não a do jogo.
 
-### Medido no build desta rodada (2026-10-19)
+### Medido no build publicado da alpha.6 (trilha só em WAV)
 
 | Arquivo | Bytes | MB |
 |---|---|---|
@@ -421,6 +422,9 @@ arquivo é pior que não ter página:
 | `Succubus-Shop-0.1.0-alpha.6-linux.zip` (após gravar o modo unix) | 73.351.720 | 73,35 |
 | `Succubus-Shop-0.1.0-alpha.6-web.zip` | 57.811.416 | 57,81 |
 | `.export/web/index.pck` | 48.049.800 | 48,05 |
+
+Estes números descrevem o **asset publicado** da `v0.1.0-alpha.6`. A árvore atual tem a
+trilha em duas faixas e mede mais pesado: ver §10.
 
 ### O que o pacote do jogador não leva mais
 
@@ -457,3 +461,87 @@ Sessenta commits. O que muda na mão de quem joga, em prosa:
 - **Registros da casa** (#107): oito seções de marco no menu, que só leem.
 - **README virou contrato medido** (#98): cada número que a página cita tem uma asserção
   no motor, e a sonda reprova quando o texto e o código discordam.
+
+---
+
+## 10. A trilha voltou a ser duas faixas — o que isso custa ao pacote
+
+O pedido do jogador foi explícito: a gravação antiga era mais empolgante e a sintetizada,
+baixo astral demais para o salão. Desde este commit a casa tem **duas faixas e a situação
+escolhe o turno** (`main.gd`, `_music_situation()` com a chave `track`):
+
+| Faixa | Arquivo | Medido | Turno |
+|---|---|---|---|
+| clássica | `assets/shop_theme_loop.mp3` | 2.205.424 bytes, 91,64 s, 192 kbps mono 44,1 kHz, md5 `c27893dde0957857c943ccf8f28a4aea` | salão, forja, biblioteca, santuário, estrada |
+| sombria | `audio/shop_theme_loop.wav` | 2.016.044 bytes, 45,71 s, 22.050 Hz, 2.016.000 amostras | alarme na porta, casa na ruína, vigário na calçada |
+
+O MP3 não foi regenerado: voltou do próprio histórico do repositório com
+`git restore --source=e63a5eb^`, o mesmo blob que saiu em `e63a5eb`. Nenhum pitch, nenhum dB
+mudou — a tabela que o §2 e o README publicam continua a mesma, e é a mesma sonda
+(`tools/probes/porta.gd`) que a imprime.
+
+### Custo real nos três alvos
+
+Reexportados com `GODOT=... bash tools/build_itch.sh` no `%APPDATA%` real (nunca no
+diretório descartável das sondas: lá faltam molde de release e o export morre depois de
+importar a árvore inteira):
+
+| Arquivo | Antes (alpha.6 publicado) | Agora | Delta |
+|---|---|---|---|
+| `.export/web/index.pck` | 48.049.800 | **50.256.952** | +2.207.152 |
+| `Succubus-Shop-0.1.0-alpha.6-web.zip` | 57.811.416 | **60.008.512** | +2.197.096 |
+| `Succubus-Shop-0.1.0-alpha.6-windows.zip` | 82.098.382 | **84.297.687** | +2.199.305 |
+| `.export/windows/Succubus Shop.exe` | 153.665.336 | **155.872.504** | +2.207.168 |
+| `Succubus-Shop-0.1.0-alpha.6-linux.zip` | 73.351.720 | **75.549.335** | +2.197.615 |
+
+O delta do `.pck` é o arquivo cru mais 1,7 KB de índice — áudio não passa por compressão
+VRAM nem por reencode. O maior arquivo extraído segue sendo o `.pck` do navegador, agora com
+**50,26 MB**: cabe 4,0× no teto de 200 MB por arquivo da itch.io. Confiere-se o embarque pelo
+**índice de caminhos** do binário, não pelo grep de string de UI (o script vai compilado):
+`res://assets/shop_theme_loop.mp3` e `res://audio/shop_theme_loop.wav` aparecem os dois no
+`.pck` web, no `.exe` de mesa e no `x86_64` de Linux.
+
+### Ainda não há tag nova
+
+`config/version` segue `0.1.0-alpha.6` e o asset publicado continua no ar: a decisão de
+cortar `alpha.7` é do dono da conta e depende de ele ouvir as duas faixas no editor. Quem
+baixar a alpha.6 hoje recebe o build WAV-only de 82,10 MB descrito no §9; a árvore deste
+commit mede 84,30 MB.
+
+### A licença do MP3 é a dúvida que fica
+
+O arquivo entrou no repositório em `cb5b641` (12/10/2026), autoria **Manus**
+(`Co-authored-by: Manus <dev-agent@manus.ai>`), sem procedência registrada em lugar nenhum.
+O §8 já lista "arte, áudio e animação originais, com licença verificada" como trabalho
+pendente da loja, e foi exatamente essa lacuna que motivou `e63a5eb` a trocar a trilha por
+uma sintetizada pelo projeto. Ela está reposta por pedido do jogador e o blob já é público no
+histórico do próprio repositório, então nada vaza de novo ao embarcá-lo — mas **subir o
+build com o MP3 para a itch.io é decisão de licença, não de build**, e quem a toma é o dono.
+A alternativa medida está no §9: o mesmo jogo com a trilha só em WAV custa 2,20 MB a menos.
+
+### O vazamento do fechamento: o que mudou de verdade
+
+A troca de formato nunca foi a causa do `2 ObjectDB instances were leaked` /
+`1 resources still in use`. A causa é o `AudioStreamPlayer.stop()`: ele **agenda** a
+destruição do playback na thread de áudio, e um processo que chama `quit()` em seguida nunca
+cede os frames que essa destruição precisa. Por isso o corte certo era o de ouvido, não o de
+contêiner — e ele está em `main.gd`:
+
+```gd
+func _trilha_audivel() -> bool:
+    return DisplayServer.get_name() != "headless"
+```
+
+Medido com a dupla faixa no ar:
+
+| Modo da sonda | Rodadas | Linhas de vazamento |
+|---|---|---|
+| `musica.gd` em `confere` + `menu` (headless, nada toca) | 9 | **0** |
+| `musica.gd` em `tocando` (reprodução forçada) | 7 | 2 |
+
+Na rodada forçada com `--verbose`, os dois instâncias nomeadas são `AudioStreamMP3` e
+`AudioStreamPlaybackMP3` e o recurso é `res://assets/shop_theme_loop.mp3`; com o WAV sozinho
+a mesma intermitência apareceu em 1 rodada de 5. Ou seja: **o contêiner só muda o nome que o
+log imprime**. Fechando a janela com o ✕ enquanto a trilha toca, aquelas duas linhas podem
+voltar — nenhum portão de push as vê, porque o portão roda headless e headless não toca. Não
+existe mais baseline tolerada no grep do portão: o que passa é zero.

@@ -8,7 +8,7 @@ extends SceneTree
 ## escudo e o que cada uma faz na chance), a devolução da milícia, as trinta viradas
 ## rodando no `_on_customer_tick` de verdade, o round-trip do save (inclusive
 ## adulterado), o que reencarnar apaga e o que ela não toca, e a tabela da trilha
-## situacional, que afina a única faixa gravada da casa.
+## situacional, que hoje escolhe entre as duas faixas da casa e ainda afina o tom.
 ##
 ## Uso:
 ##   env APPDATA="D:\\Downloads\\tmp-userdata" godot --headless --path . \
@@ -232,7 +232,7 @@ func _initialize() -> void:
 		esperando, dentro, game._vicar_waiting()])
 
 	# ---------- trilha ----------
-	print("── trilha situacional (a única faixa, afinada) ──")
+	print("── trilha situacional (duas faixas, a situação escolhe) ──")
 	_neutral(game)
 	game._reset_run()
 	_neutral(game)
@@ -249,14 +249,16 @@ func _initialize() -> void:
 		if caso[2] == "porta":
 			game.vicar_announced_day = 20
 		var tune: Dictionary = game._music_situation()
-		print("   %-8s -> %-16s pitch %.2f • %.1f dB" % [caso[0], str(tune["name"]), float(tune["pitch"]), float(tune["db"])])
+		print("   %-8s -> %-16s %-9s pitch %.2f • %.1f dB" % [
+			caso[0], str(tune["name"]), str(tune["track"]), float(tune["pitch"]), float(tune["db"])])
 	for sala in ["reception", "forge", "library", "expedition", "sanctum"]:
 		game._reset_run()
 		_neutral(game)
 		game.music_alarm_until = 0
 		game._set_sector(sala)
 		var tune2: Dictionary = game._music_situation()
-		print("   setor %-11s -> %-16s pitch %.2f • %.1f dB" % [sala, str(tune2["name"]), float(tune2["pitch"]), float(tune2["db"])])
+		print("   setor %-11s -> %-16s %-9s pitch %.2f • %.1f dB" % [
+			sala, str(tune2["name"]), str(tune2["track"]), float(tune2["pitch"]), float(tune2["db"])])
 
 	# ---------- painel ----------
 	print("── painel da recepção ──")

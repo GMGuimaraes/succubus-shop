@@ -45,9 +45,10 @@ the reproduction instrument, never part of the push battery. Shipped builds do p
 so closing the real window can still print the two lines: console noise on a dying process, not
 lost progress.
 
-**Cured for real the same day, by dropping MP3.** The user chose WAV over OGG (no converter
-exists in this environment and `tools/generate_audio.py` synthesizes WAV natively).
-`assets/shop_theme_loop.mp3` is deleted; the trail is now `audio/shop_theme_loop.wav`
+**Swapping MP3 for WAV was not the cure.** The user chose WAV over OGG (no converter exists
+in this environment and `tools/generate_audio.py` synthesizes WAV natively), so
+`assets/shop_theme_loop.mp3` was deleted on 2026-10-18 and the trail became
+`audio/shop_theme_loop.wav`
 (`compress/mode=0` raw — the importer's default `mode=2` shrinks `data` ~5×, which silently
 corrupts any sample-count arithmetic). Two engine facts measured, not guessed, by dumping
 `get_property_list()` in a throwaway probe: the GDScript property is `format`, **not**
@@ -58,3 +59,19 @@ with `LOOP_FORWARD` the playback wraps at sample 0 and stalls, so `main.gd` sets
 `loop_end = floori(get_length() * mix_rate) - 1`. `tools/probes/musica.gd` now asserts the
 loop point, so this class of bug cannot come back silently. After the fix, `musica`,
 `contrato` and `idioma` all close with zero error lines **and** zero leak lines.
+
+**Restored 2026-10-19 — and the leak stayed exactly where the headless cut had left it.**
+The player asked for the older, brighter track back, so `assets/shop_theme_loop.mp3` returned
+from the repo's own history (`git restore --source=e63a5eb^`, md5
+`c27893dde0957857c943ccf8f28a4aea`) as the salon theme, with the WAV kept for the three
+misfortune situations. Measured after the restore: 9 headless rounds of `musica` + `menu`
+still print **0** leak lines, and the forced-`tocando` instrument prints 2 in 7 — naming
+`AudioStreamMP3` + `AudioStreamPlaybackMP3` under `--verbose`, the same intermittence WAV
+showed at 1 in 5. The container only decides which filename the log prints; `stop()`
+scheduling is the cause. Two loop rules, both asserted in `tools/probes/musica.gd`: WAV needs
+`loop_mode = LOOP_FORWARD` with `loop_end` in samples; MP3 needs only `loop = true` set at
+runtime, because the `.import` writes `loop=false` and the player's value before `play()` is
+what counts. Cost of the decision: +2,20 MB in each of the three packages (`.pck` web 48,05 →
+50,26 MB) and an unresolved **licence question** — the MP3 entered via commit `cb5b641`
+authored by Manus with no documented provenance, so shipping it to itch.io is the owner's
+call, not a build detail. Recorded in `docs/itch-io.md` §10.
