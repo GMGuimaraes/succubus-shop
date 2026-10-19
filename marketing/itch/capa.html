@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Succubus Shop — capas itch.io</title>
+<style>
+  :root { --s: 1; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #000; overflow: hidden; }
+
+  .stage {
+    position: relative;
+    width: 1280px;
+    height: calc(var(--h, 720) * 1px);
+    overflow: hidden;
+    font-family: Georgia, "Times New Roman", serif;
+    color: #f6dcef;
+  }
+  .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+  .scrim-l {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg,
+      rgba(21,15,34,.95) 0%, rgba(21,15,34,.86) 26%,
+      rgba(21,15,34,.46) 52%, rgba(21,15,34,0) 74%);
+  }
+  .scrim-b {
+    position: absolute; inset: 0;
+    background: linear-gradient(0deg, rgba(21,15,34,.72) 0%, rgba(21,15,34,0) 42%);
+  }
+  .vignette {
+    position: absolute; inset: 0;
+    background: radial-gradient(120% 90% at 62% 46%, rgba(0,0,0,0) 42%, rgba(0,0,0,.62) 100%);
+  }
+
+  .copy { position: absolute; left: calc(70px * var(--s)); top: 27%; width: calc(660px * var(--s)); }
+  .emblem { width: calc(58px * var(--s)); height: calc(58px * var(--s)); display: block; margin-bottom: calc(22px * var(--s)); filter: drop-shadow(0 0 calc(14px * var(--s)) rgba(217,79,176,.55)); }
+
+  .eyebrow {
+    font-size: calc(16px * var(--s));
+    letter-spacing: calc(5px * var(--s));
+    text-transform: uppercase;
+    color: #e8b34b;
+    margin-bottom: calc(16px * var(--s));
+  }
+  h1 {
+    font-size: calc(66px * var(--s));
+    line-height: 1.02;
+    font-weight: 700;
+    letter-spacing: calc(7px * var(--s));
+    color: #fbe7f5;
+    text-shadow: 0 0 calc(30px * var(--s)) rgba(217,79,176,.62),
+                 0 calc(3px * var(--s)) calc(10px * var(--s)) rgba(0,0,0,.85);
+  }
+  .rule {
+    width: calc(210px * var(--s)); height: calc(2px * var(--s));
+    margin: calc(22px * var(--s)) 0 calc(18px * var(--s));
+    background: linear-gradient(90deg, #e8b34b 0%, rgba(217,79,176,.85) 55%, rgba(217,79,176,0) 100%);
+  }
+  .tagline {
+    font-size: calc(25px * var(--s)); line-height: 1.34; font-style: italic;
+    color: #ecd4e8; max-width: calc(560px * var(--s));
+    text-shadow: 0 calc(2px * var(--s)) calc(8px * var(--s)) rgba(0,0,0,.9);
+  }
+  .features {
+    margin-top: calc(24px * var(--s));
+    font-size: calc(16px * var(--s)); letter-spacing: calc(2.6px * var(--s));
+    text-transform: uppercase; color: #f0c4e4;
+    text-shadow: 0 calc(2px * var(--s)) calc(8px * var(--s)) rgba(0,0,0,.9);
+  }
+  .corner {
+    position: absolute; right: calc(28px * var(--s)); bottom: calc(20px * var(--s));
+    font-size: calc(14px * var(--s)); letter-spacing: calc(2.4px * var(--s));
+    text-transform: uppercase; color: rgba(232,179,75,.92);
+    text-shadow: 0 calc(2px * var(--s)) calc(8px * var(--s)) rgba(0,0,0,.9);
+  }
+  .langs {
+    position: absolute; left: calc(70px * var(--s)); bottom: calc(20px * var(--s));
+    font-size: calc(14px * var(--s)); letter-spacing: calc(2.4px * var(--s));
+    text-transform: uppercase; color: rgba(236,212,232,.72);
+    text-shadow: 0 calc(2px * var(--s)) calc(8px * var(--s)) rgba(0,0,0,.9);
+  }
+
+  .stage[data-v="B"] .copy { top: 24%; width: calc(600px * var(--s)); }
+  .stage[data-v="B"] h1 { font-size: calc(74px * var(--s)); letter-spacing: calc(6px * var(--s)); }
+  .stage[data-v="B"] .scrim-l {
+    background: linear-gradient(90deg,
+      rgba(21,15,34,.96) 0%, rgba(21,15,34,.93) 34%,
+      rgba(21,15,34,.62) 54%, rgba(21,15,34,.05) 78%);
+  }
+
+  /* Nas artes com personagem, o selo quadrado compete com o neon do coracao: so a variante C o usa. */
+  .stage[data-v="A"] .emblem, .stage[data-v="B"] .emblem { display: none; }
+
+  /* Tile 625x322: proporcao baixa nao comporta a tagline, e la que a itch.io mostra a capa menor. */
+  .stage.compact .copy { top: 21%; }
+  .stage.compact .tagline { display: none; }
+  .stage.compact h1 { font-size: calc(88px * var(--s)); }
+  .stage.compact .eyebrow { font-size: calc(19px * var(--s)); }
+  .stage.compact .features { font-size: calc(19px * var(--s)); }
+  .stage.compact .corner, .stage.compact .langs { font-size: calc(16px * var(--s)); }
+
+  .stage[data-v="C"] { background: #150f22; }
+  .stage[data-v="C"] .glow {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(60% 70% at 50% 42%, rgba(217,79,176,.30) 0%, rgba(138,63,184,.12) 40%, rgba(21,15,34,0) 72%),
+      linear-gradient(160deg, #241634 0%, #150f22 55%, #0d0916 100%);
+  }
+  .stage[data-v="C"] .copy { left: 0; right: 0; width: auto; text-align: center; top: 30%; }
+  .stage[data-v="C"] .emblem { margin-left: auto; margin-right: auto; width: calc(84px * var(--s)); height: calc(84px * var(--s)); }
+  .stage[data-v="C"] h1 { font-size: calc(78px * var(--s)); }
+  .stage[data-v="C"] .rule { margin-left: auto; margin-right: auto; background: linear-gradient(90deg, rgba(232,179,75,0) 0%, #e8b34b 50%, rgba(232,179,75,0) 100%); }
+  .stage[data-v="C"] .tagline { margin-left: auto; margin-right: auto; }
+  .stage[data-v="C"] .langs { left: 50%; transform: translateX(-50%); }
+  .stage[data-v="C"] .corner { right: 50%; transform: translateX(50%); bottom: calc(46px * var(--s)); }
+</style>
+</head>
+<body>
+<div class="stage" id="stage" data-v="A">
+  <div class="glow"></div>
+  <img class="bg" id="bg" alt="">
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <g id="selo">
+      <rect width="128" height="128" rx="22" fill="#150f22"/>
+      <rect x="12" y="42" width="104" height="6" rx="3" fill="#43265c"/>
+      <g fill="#8a3fb8"><rect x="16" y="48" width="18" height="20"/><rect x="52" y="48" width="18" height="20"/><rect x="88" y="48" width="18" height="20"/></g>
+      <g fill="#d94fb0"><rect x="34" y="48" width="18" height="20"/><rect x="70" y="48" width="18" height="20"/></g>
+      <path d="M16 68h18a9 9 0 0 1-18 0z" fill="#8a3fb8"/><path d="M52 68h18a9 9 0 0 1-18 0z" fill="#8a3fb8"/><path d="M88 68h18a9 9 0 0 1-18 0z" fill="#8a3fb8"/>
+      <path d="M34 68h18a9 9 0 0 1-18 0z" fill="#d94fb0"/><path d="M70 68h18a9 9 0 0 1-18 0z" fill="#d94fb0"/>
+      <circle cx="64" cy="94" r="24" fill="#e8b34b"/><circle cx="64" cy="94" r="24" fill="none" stroke="#8a6018" stroke-width="3"/>
+      <path d="M64 104c-6-7-14-11-14-18 0-5 4-8 8-6 3 1 5 4 6 6 1-2 3-5 6-6 4-2 8 1 8 6 0 7-8 11-14 18z" fill="#7a3510"/>
+    </g>
+  </defs></svg>
+
+  <div class="scrim-l"></div>
+  <div class="scrim-b"></div>
+  <div class="vignette"></div>
+
+  <div class="copy">
+    <svg class="emblem" viewBox="0 0 128 128"><use href="#selo"></use></svg>
+    <p class="eyebrow" id="eyebrow">Alpha jogável · Godot 4.7</p>
+    <h1>SUCCUBUS SHOP</h1>
+    <div class="rule"></div>
+    <p class="tagline" id="tagline">Uma succubus herdou a loja de relíquias da família — e o buraco no caixa.</p>
+    <p class="features" id="features">Forja · Fiado · Invasões · 7 capítulos · 7 finais</p>
+  </div>
+
+  <p class="langs" id="langs">pt · en · es · fr · it · de</p>
+  <p class="corner" id="corner">Simulador de gestão em fantasia sombria</p>
+</div>
+
+<script>
+  const ART = {
+    A: "../../assets/reception_scene.png",
+    B: "../../assets/seller_demonic.png",
+    C: null
+  };
+  const COPY = {
+    "pt": {
+      A: { eyebrow: "Alpha jogável · Godot 4.7", tagline: "Uma succubus herdou a loja de relíquias da família — e o buraco no caixa.", features: "Forja · Fiado · Invasões · 7 capítulos · 7 finais", corner: "Simulador de gestão em fantasia sombria", langs: "pt · en · es · fr · it · de" },
+      B: { eyebrow: "Fantasia sombria adulta", tagline: "O balcão atende, a rua cobra, e a chefe lembra do seu nome.", features: "Gestão · Campanha em 7 capítulos · 6 idiomas", corner: "Tom sugestivo · sem nudez explícita", langs: "Alpha 0.1.0" },
+      C: { eyebrow: "Simulador de gestão", tagline: "Faça a loja pagar — antes que ela cobre você.", features: "7 capítulos · 7 finais · reencarnação do império", corner: "Alpha jogável · Godot 4.7", langs: "pt · en · es · fr · it · de" }
+    },
+    "en": {
+      A: { eyebrow: "Playable alpha · Godot 4.7", tagline: "A succubus inherited the family's relic shop — and the hole in the till.", features: "Forging · Credit · Invasions · 7 chapters · 7 endings", corner: "A dark fantasy management sim", langs: "pt · en · es · fr · it · de" },
+      B: { eyebrow: "Adult dark fantasy", tagline: "The counter serves, the street charges, and the boss remembers your name.", features: "Management · 7-chapter campaign · 6 languages", corner: "Suggestive tone · no explicit nudity", langs: "Alpha 0.1.0" },
+      C: { eyebrow: "Management sim", tagline: "Make the shop pay — before it bills you.", features: "7 chapters · 7 endings · a dynasty you reincarnate", corner: "Playable alpha · Godot 4.7", langs: "pt · en · es · fr · it · de" }
+    }
+  };
+
+  const q = new URLSearchParams(location.search);
+  const v = (q.get("v") || "A").toUpperCase();
+  const lang = q.get("lang") === "en" ? "en" : "pt";
+  const W = parseInt(q.get("w") || "1280", 10);
+  const H = parseInt(q.get("h") || "720", 10);
+
+  const stage = document.getElementById("stage");
+  stage.dataset.v = v;
+  stage.classList.toggle("compact", H / W < 0.55);
+  const s = W / 1280;
+  // O canvas de design tem sempre 1280 de largura; a altura acompanha a proporcao
+  // pedida e o conjunto inteiro desce para W x H via transform, sem refluixo de tipo.
+  stage.style.setProperty("--h", H / s);
+  stage.style.width = "1280px";
+  stage.style.height = (H / s) + "px";
+  stage.style.transform = "scale(" + s + ")";
+  stage.style.transformOrigin = "top left";
+  document.body.style.width = W + "px";
+  document.body.style.height = H + "px";
+
+  const bg = document.getElementById("bg");
+  if (ART[v]) { bg.src = ART[v]; bg.style.objectPosition = v === "B" ? "72% 30%" : "62% 50%"; }
+  else { bg.style.display = "none"; }
+
+  const c = COPY[lang][v];
+  document.getElementById("eyebrow").textContent = c.eyebrow;
+  document.getElementById("tagline").textContent = c.tagline;
+  document.getElementById("features").textContent = c.features;
+  document.getElementById("corner").textContent = c.corner;
+  document.getElementById("langs").textContent = c.langs;
+</script>
+</body>
+</html>

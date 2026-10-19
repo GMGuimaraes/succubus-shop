@@ -7,3 +7,6 @@
 *.bak
 .DS_Store
 Thumbs.db
+
+# Arte renderizada: sai do marketing/itch/renderar.sh, nunca entra no git
+marketing/*/out/

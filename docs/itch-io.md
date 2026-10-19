@@ -747,9 +747,22 @@ Duas armadilhas do editor web, medidas na subida:
   (US$ 99/ano) e o `codesign` da Apple. Do Windows não há caminho: nem o `.ipa` é gerado, nem o
   certificado é emitido. O que dá para fazer daqui é preparar o preset e a lista de arquivos, e
   rodar o export numa máquina Apple.
-- **GOG.** A loja não aceita submissão self-service: é preciso conta de parceiro criada pela
-  pessoa (e-mail verificado), dados fiscais e bancários, e o `gogpartner` ainda pede um build
-  por plataforma com o nome de executável combinando com o que a ficha declara.
-- **Epic Games Store.**idem: conta de desenvolvedor, US$ 100 por estúdio, formulário fiscal e
-  o `epic_games_launcher` build pipeline. Nenhum dos dois pode ser aberto por automação sem que
-  a pessoa assuma a identidade fiscal atrás da conta.
+- **GOG.** A loja não aceita submissão self-service: é formulário de candidatura com revisão
+  humana, e a FAQ coloca *"Adult sexual content"* entre os itens não elegíveis — a nossa zona
+  cinzenta (tema adulto, zero nudez) precisa de uma resposta deles antes de qualquer
+  investimento. O Developer Portal, onde se sobe build, é por convite. A lista completa, com o
+  que foi lido e o que não foi, está em [`gog-epic.md`](gog-epic.md).
+- **Epic Games Store.** Autocadastro que aceita pessoa física (18+, com verificação de
+  documento), **US$ 100 por produto** — não por estúdio —, entrevista fiscal que gera o
+  formulário W-8 e build sobe pela BuildPatch Tool, não pelo `.zip` da itch. Nada disso pode
+  ser aberto por automação sem que a pessoa assuma a identidade fiscal atrás da conta; o
+  checklist e as medidas exatas dos assets estão em [`gog-epic.md`](gog-epic.md).
+
+### Correção de copy na página — 2026-10-19
+
+A descrição em inglês afirmava *"...seven endings (six by faction plus ruin)"*. **Estava
+errada**, e o erro era nosso, não da ferramenta: `endings.gd` declara sete finais — cinco com
+`faction` preenchida (`guildas`, `nobres`, `aventureiros`, `mercadores`, `submundo`), mais
+`casa` e `ruina` com `faction: ""`. O português já dizia o certo ("cinco de facção, o da casa
+e o da ruína"). Corrigido no editor web para *"five by faction, the house one and the ruin"* e
+conferido na página pública depois do reload do formulário de edição.
