@@ -158,7 +158,7 @@ Medido nesta árvore em 2026-10-19:
 | Descrição curta ≤ 280 caracteres (Epic) | **feito**: PT 265 caracteres / 270 bytes, EN 277 / 277 (§4.1) | — |
 | Logo 960×540 (Epic) / key art 1920×1080 em camadas (GOG) | `icon.svg` (128×128) | gerar PNG nas duas medidas; o **PSD em camadas da GOG não existe** e HTML renderizado não produz camadas |
 | Trailer MP4 1920×1080 (Epic, recomendado) | nada | gravar do jogo em janela; sem gravação automática no repo |
-| Galeria de screenshots | **feito**: sete capturas em 1920×1080 (1,20–3,75 MB) em `marketing/itch/out/galeria-1920/` | virar JPG para caber nos 1 MB da Epic para imagem extra do "About" |
+| Galeria de screenshots | **feito**: sete capturas em 1920×1080, PNG (1,20–3,75 MB) e JPG (236–756 KB), em `marketing/itch/out/galeria-1920/` | — |
 | Build Windows | `.exe` 153,67 MB, zip 82,10 MB | nenhum |
 | Build Linux | x86_64 `0755` no zip, 73,35 MB | **nunca executado** em Linux real |
 
@@ -227,13 +227,16 @@ depois. A sonda hoje troca a janela **depois** do boot e imprime
 log, as sete fotos teriam ido para a Epic 19 px mais baixas e ninguém ia notar antes da rejeição.
 
 ```
-marketing/itch/out/galeria-1920/  01_recepcao 3,75 MB · 02_balanco 1,80 MB · 03_forja 3,14 MB
-                                  04_fiado 3,29 MB · 05_combo 3,34 MB · 06_conquistas 1,20 MB
-                                  07_estrada 3,28 MB
+marketing/itch/out/galeria-1920/  PNG  01_recepcao 3,75 MB · 02_balanco 1,80 MB · 03_forja 3,14 MB
+                                       04_fiado 3,29 MB · 05_combo 3,34 MB · 06_conquistas 1,20 MB
+                                       07_estrada 3,28 MB
+                          JPG (0,92)  754 KB · 314 KB · 600 KB · 735 KB · 756 KB · 236 KB · 657 KB
 ```
 
-Passam nos 4 MB do carrossel como PNG. Para as imagens extras do bloco "About" o teto é
-**1 MB**, e aí as sete precisam virar JPG — o mesmo caminho das capas, §4.1.
+Os PNG passam nos **4 MB do carrossel**. As sete também saem em JPG do mesmo `save_png` da
+sonda — é o caminho para o bloco "About", que aceita uma imagem de até 4 MB e mais vinte de
+até **1 MB**: em PNG seis das sete estouravam o MB, em JPG a maior são 756 KB, com o texto
+nítido conferido no olho.
 
 ### A fonte das capas continua sendo HTML, e isso é uma escolha
 
@@ -279,12 +282,11 @@ ignorado.
 - [x] Descrições curtas podadas para os 280 caracteres da Epic (PT 265, EN 277) — §4.1.
 - [x] `marketing/` comitado como fonte, com `marketing/*/out/` fora do git.
 
-- [x] Galeria em 1920×1080 pelo argumento novo de `tools/probes/galeria.gd` (`-- 1920`), com
-      a medida conferida no log — §4.2.
+- [x] Galeria em 1920×1080 pelo argumento novo de `tools/probes/galeria.gd` (`-- 1920`), em
+      PNG e JPG, com a medida conferida no log — §4.2.
 
 **Ainda desta máquina:**
 
-- [ ] Virar as sete capturas para JPG e caber nos 1 MB da Epic para imagem extra do "About".
 - [ ] Gerar logo 960×540 e a key art 1920×1080 a partir das artes que já existem.
 - [ ] Escrever as descrições longas nos formatos das duas lojas (a da itch não serve tal qual).
 - [ ] Roteirizar o trailer e definir como ele é gravado.

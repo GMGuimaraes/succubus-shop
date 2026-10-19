@@ -242,6 +242,11 @@ func _snap(nome: String) -> void:
 		desvio = "  ← FORA DA MEDIDA PEDIDA (%d x %d)" % [medida.x, medida.y]
 	print("  %s.png salvo (%s) • %dx%d%s" % [
 		nome, error_string(image.save_png(saida + nome + ".png")), obtida.x, obtida.y, desvio])
+	if medida != Vector2i.ZERO:
+		## O bloco "About" da Epic aceita uma imagem de até 4 MB e mais vinte de até 1 MB.
+		## Em PNG, seis das sete estouram o MB; em JPG a mesma foto cabe folgado, e o
+		## arquivo continua ao lado do PNG que o README usa.
+		print("  %s.jpg salvo (%s)" % [nome, error_string(image.save_jpg(saida + nome + ".jpg", 0.92))])
 
 
 func _frames(count: int) -> void:
