@@ -59,9 +59,14 @@ Web crava `thread_support=false`.
   cada PNG (sem decodificar).
 - Estimativa antes da medida não é confiável: a primeira conta (≈155 MB) ficou na metade da
   medida real (274,87 MB em disco).
-- Antes da WebP, os PNGs re-encodeados por classe davam **667 PNG, 169,60 Mpx, 274,87 MB**
-  em disco (só `assets`: 659 PNG / 162,23 Mpx / 263,1 MB). Re-medidos nesta rodada após o
-  corte em WebP: **602 PNG** (61,81 Mpx / 97,9 MB) **+ 66 WebP** (107,79 Mpx / 13,2 MB).
+- Antes do corte por classe, os PNGs davam **667 arquivos, 169,60 Mpx, 274,87 MB**
+  em disco (só `assets`: 659 PNG / 162,23 Mpx / 263,1 MB). Depois do corte, a árvore **não
+  muda**: seguem 667 PNG e 274,87 MB, porque o que encolhe é o `.ctex` gerado pelo import.
+  Pese os `.ctex` apontados pelo campo `path` de cada `.import`: **41,46 MB** embarcados
+  (21,81 MB das 57 opacas, 0,176 B/texel + 19,65 MB das 610 com alfa, 0,431 B/texel).
+- **Não diga "WebP" para o `compress/mode=1` do Godot 4.** É compressor em bloco do próprio
+  motor; `find . -name '*.webp'` devolve 0 nesta árvore. O nome veio de um doc antigo e
+  atravessou uma decisão de publicação — conferir o mecanismo antes de prometê-lo ao jogador.
 - `vram_texture_compression/for_desktop` E `for_mobile=true` no MESMO preset web embarca
   dois conjuntos de compressão e **dobro o `.pck`**. Deixar os dois ligados é decisão
   consciente, não padrão.
@@ -116,15 +121,17 @@ Web crava `thread_support=false`.
   Montar a UI e ligar a fonte depois deixa tudo que já existe em tofu.
 - Arquivo oficial ~25,3 MB não é o que vai no build: desmonte a tabela `SVG ` (oCOLR só) e
   o embarque cai para ~5 MB. Medido: oficial 25.332.736 B → embarcado 5.044.436 B.
-- **O `.pck` do navegador carrega a `.fontdata` importada E o `.ttf` fonte.** Não confie na
+- **O `.pck` do navegador carrega a `.fontdata` importada E o `.ttf` cru.** Não confie na
   soma da cache `.godot/imported`: o pacote cresce mais que ela. Medido: `.fontdata` do
-  emoji 3.082.128 B + DejaVu 429.187 B, mas o `.pck` subiu 5.144.764 B.
+  emoji 3.082.128 B + DejaVu 429.187 B, e o `.pck` fechou 43.469.492 → 48.607.204 B
+  (+5.137.712 B).
 - Nos presets de mesa, `exclude_filter="*.tmp,*.bak,fonts/*.ttf"` tira o `.ttf` **e** o
   artefato importado dele. Provar com grep no binário, não com o tamanho: `.exe` de
-  154.229.792 B e `x86_64` com **0** ocorrências de `NotoColorEmoji`. Licença `.txt` não é
+  154.222.744 B e `x86_64` de 118.614.472 B com **0** ocorrências de `NotoColorEmoji`.
+  Licença `.txt` não é
   pega pelo filtro e embarca (+0,02 MB — aceitável, é o preço de distribuir a OFL).
 - **Custo real do download, medido, não estimado:** prometi "~+10 MB" e a subida do zip
-  web foi 53,45 → **58,36 MB** (+4,91 MB). Refazer a conta por projeto antes de prometer
+  web foi 53,45 → **58,35 MB** (+4,90 MB). Refazer a conta por projeto antes de prometer
   número ao jogador.
 - Licença: Noto Color Emoji é OFL 1.1, DejaVu é licença própria (bitstream-ish) — os `.txt`
   entram no repo e no build.
@@ -143,17 +150,19 @@ Web crava `thread_support=false`.
 
 ## Valores de referência (medidos numa sessão — ordem de grandeza, revalidar)
 
-- Arte: **602 PNG** (61,81 Mpx / 97,9 MB) + **66 WebP** (107,79 Mpx / 13,2 MB) = 169,60 Mpx
-  no total, depois do corte por classe. Antes do corte em WebP eram 667 PNG / 274,87 MB.
+- Arte: **667 PNG / 169,60 Mpx / 274,87 MB** na árvore (659 em `assets/`, 8 em
+  `screenshots/`). O corte por classe não toca os PNG: pesa 41,46 MB de `.ctex` embarcados.
 - Orçamento de textura por classe: 57 opacos = 123,99 Mpx em q=0,85; 610 com alfa =
   45,61 Mpx em q=0,92. BPP da projeção: lossless 1,07; lossy opaco **0,21**; lossy alfa
-  **0,37**. A projeção bateu com o `.pck` real em 0,55 MB na conta sem fontes.
+  **0,37**. A projeção bateu com o `.pck` real em 0,55 MB na conta sem fontes — mas por
+  classe o erro é de sinal contrário: medido 0,176 B/texel no opaco e 0,431 no alfa.
 - Build com arte sem perdas: `.pck` 207,33 MB → **reprovado** (limite de 200 MB por arquivo
   descompactado). Com perdas por classe e **sem** fontes: `.pck` 43,47 MB, `.wasm` 39,51 MB
   (motor, fixo), zip web **53,45 MB**. Mesa: `.exe` 154,21 MB descompactado → zip 82,62 MB;
   binário Linux 118,60 MB → zip 73,88 MB.
-- Mesmo build **com** a cadeia de símbolo do §7: `.pck` **48,61 MB** (+5,14 MB), zip web
-  **58,36 MB** (58.358.890 bytes). Mesa: zip Windows **82,65 MB**, zip Linux **73,90 MB**
+- Mesmo build **com** a cadeia de símbolo do §7: `.pck` **48,61 MB** (48.607.204 B,
+  +5.137.712 B sobre o build sem fontes), zip web
+  **58,35 MB** (58.352.045 bytes). Mesa: zip Windows **82,64 MB**, zip Linux **73,89 MB**
   (+0,02 MB cada um — só as licenças `.txt`; os `.ttf` ficam de fora, provado por grep).
 - Limite da itch.io: arquivo extraído ≤ 200 MB, zip com `index.html` na raiz.
 - A/B de 200 tiques na mesma semente: nenhum número do jogo muda quando a porta de save

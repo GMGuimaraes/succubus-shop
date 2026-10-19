@@ -37,8 +37,9 @@ MODE_LOSSY = 1
 MODE_LOSSLESS = 0
 Q_OPAQUE = "0.85"
 Q_ALPHA = "0.92"
-# Médias das faixas medidas acima. Sprite pequeno paga mais por texel (o cabeçalho do
-# WebP é custo fixo por arquivo), então a classe com alfa fica mais alta. Revalidar com o
+# Médias das faixas medidas acima. Sprite pequeno paga mais por texel (o bloco do
+# compressor é tamanho fixo e a sobra é preenchida), então a classe com alfa fica mais alta.
+# Revalidar com o
 # export real antes de publicar número novo em README ou doc.
 BPP_LOSSLESS = 1.07
 BPP_LOSSY_OPAQUE = 0.21

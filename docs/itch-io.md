@@ -16,9 +16,9 @@ de conquista) e uma varredura PNG da árvore `assets/`.
 | Ícone do build (`icon.svg`, 128×128, 1127 bytes) | pronto | — |
 | Guarda de plataforma (sem janela de arquivo no navegador) | pronta e medida | — |
 | Templates de export do Godot 4.7.2 | **instalados** (`%APPDATA%\Godot\export_templates\4.7.2.stable`) | — |
-| Build Windows real | gerado e medido: `.exe` de 154,23 MB descompactado (`.pck` embutido), zip de **82,65 MB** | ver §6 antes de confiar na arte |
-| Build Linux real | gerado e medido: `Succubus Shop.x86_64` de 118,60 MB, zip de **73,90 MB**, com o modo unix `0755` gravado no `.zip` | o zip criado no Windows sairia `-rw----` (sem bit de execução) — `marcar_execucao()` corrige |
-| Build web real | gerado e medido: `.pck` de 48,61 MB, zip de **58,36 MB**, `index.html` na raiz | ver §6 antes de confiar na arte |
+| Build Windows real | gerado e medido: `.exe` de 154,22 MB descompactado (`.pck` embutido), zip de **82,64 MB** | ver §6 antes de confiar na arte |
+| Build Linux real | gerado e medido: `Succubus Shop.x86_64` de 118,61 MB, zip de **73,89 MB**, com o modo unix `0755` gravado no `.zip` | o zip criado no Windows sairia `-rw----` (sem bit de execução) — `marcar_execucao()` corrige |
+| Build web real | gerado e medido: `.pck` de 48,61 MB, zip de **58,35 MB**, `index.html` na raiz | ver §6 antes de confiar na arte |
 | Fontes de símbolo embarcadas (§8) | prontas e medidas **só no navegador**: os presets de mesa filtram `fonts/*.ttf` e o binário de mesa não tem uma ocorrência da Noto | — |
 | Orçamento de textura do `.pck` | aplicado (`tools/set_texture_budget.py`) | conferir o recorte no olho (§6) |
 | Descrição "About" do repositório GitHub | não alterada | sem `gh` CLI neste ambiente — edição manual na web |
@@ -57,9 +57,9 @@ Duas armadilhas medidas nesta rodada, nenhuma delas com erro honesto na tela:
 | Conquistas | 100 definições. Na itch.io elas **não** aparecem: só a integração opcional com a Steam as entrega — na vitrine elas contam como conteúdo, não como sistema |
 | Conteúdo | fantasia sombria adulta, **tom sugestivo atrás de um botão**; nenhuma nudez explícita em nenhum modo |
 | Save | arquivo em mesa; no navegador mora no armazenamento do site (IndexedDB) |
-| Massa de arte | **667 PNG**, 275 MB na árvore, **169,60 Mpx** de textura. Re-encodeada com perdas por classe (`tools/set_texture_budget.py`): 43,47 MB do `.pck` do navegador, que fecha em **48,61 MB** com as duas fontes de símbolo (§8) |
-| Download do build web | **58,36 MB** compactado. Dentro dele `.pck` 48,61 MB e `.wasm` 39,51 MB descompactado — o `.wasm` é o motor, fixo, não depende da arte |
-| Download dos builds de mesa | Windows **82,65 MB** (um `.exe` de 154,23 MB descompactado, `.pck` embutido); Linux **73,90 MB** (binário `x86_64` de 118,60 MB, `.pck` embutido). Os dois passam o limite de 200 MB por arquivo descompactado. As fontes do §8 **não** embarcam neles: `exclude_filter` com `fonts/*.ttf`, conferido no binário |
+| Massa de arte | **667 PNG** na árvore: 169,60 Mpx, 274,87 MB. O corte com perdas por classe (`tools/set_texture_budget.py`, `compress/mode=1`) embarca **41,46 MB de `.ctex`** — 21,81 MB das 57 opacas + 19,65 MB das 610 com alfa — e fecha o `.pck` do navegador em 43,47 MB, que viram **48,61 MB** com as duas fontes de símbolo (§8) |
+| Download do build web | **58,35 MB** compactado. Dentro dele `.pck` 48,61 MB e `.wasm` 39,51 MB descompactado — o `.wasm` é o motor, fixo, não depende da arte |
+| Download dos builds de mesa | Windows **82,64 MB** (um `.exe` de 154,22 MB descompactado, `.pck` embutido); Linux **73,89 MB** (binário `x86_64` de 118,61 MB, `.pck` embutido). Os dois passam o limite de 200 MB por arquivo descompactado. As fontes do §8 **não** embarcam neles: `exclude_filter` com `fonts/*.ttf`, conferido no binário |
 
 Regra da itch.io que aperta aqui: cada arquivo **descompactado** tem de caber em 200 MB.
 O `.pck` sem perdas media 207,33 MB e era reprovado; hoje cabe com folga. Ver §6.
@@ -233,7 +233,7 @@ Medido no primeiro export de verdade, não estimado:
 | Estado da arte | Cache de textura (`.godot/imported`) | `index.pck` | Veredito |
 |---|---|---|---|
 | sem perdas (`compress/mode=0` — como estava) | 204,3 MB | **207,33 MB** | **reprovado**: a itch.io limita cada arquivo descompactado a 200 MB |
-| WebP com perdas por classe (`tools/set_texture_budget.py`) | 58,5 MB | **43,47 MB** | aprovado, com folga de ~4,6× |
+| Com perdas por classe (`tools/set_texture_budget.py`, `compress/mode=1`) | 58,5 MB | **43,47 MB** | aprovado, com folga de ~4,6× |
 | o mesmo, com as duas fontes de símbolo embarcadas (§8) | +3,51 MB de `.fontdata` | **48,61 MB** | aprovado, com folga de ~4,1× |
 
 Duas crenças desta seção caíram na medição:
@@ -242,16 +242,18 @@ Duas crenças desta seção caíram na medição:
    cenários, impressos) tem **667 PNG e 169,60 Mpx**.
 2. O texto assumia compressão VRAM no `.pck` ("um conjunto ≈ 81 MB, dois ≈ 162 MB").
    Nenhuma textura do projeto pedia conjunto VRAM: `vram_texture_compression` no preset
-   não reencodeia pixel nenhum, e o `.pck` embarcava WebP **sem perdas**. Por isso ele
+   não reencodeia pixel nenhum, e o `.pck` embarcava a arte **sem perdas** (`mode=0`). Por
+   isso ele
    estourava os 200 MB, e por isso a alavanca tinha de ser o modo de compressão da
    textura, não o preset.
 
 A conta por classe, que é o que o script usa:
 
-| Classe | Arquivos | Mpx | aplicada |
-|---|---|---|---|
-| opacas (fundos pintados, onde a perda não se vê) | 57 | 123,99 | `compress/mode=1`, q=0,85 |
-| com alfa (recorte de personagem e de objeto) | 610 | 45,61 | `compress/mode=1`, q=0,92 |
+| Classe | Arquivos | Mpx | MB na árvore | `.ctex` embarcado | aplicada |
+|---|---|---|---|---|---|
+| opacas (fundos pintados, onde a perda não se vê) | 57 | 123,99 | 199,84 | 21,81 MB (0,176 B/texel) | `compress/mode=1`, q=0,85 |
+| com alfa (recorte de personagem e de objeto) | 610 | 45,61 | 75,03 | 19,65 MB (0,431 B/texel) | `compress/mode=1`, q=0,92 |
+| **total** | **667** | **169,60** | **274,87** | **41,46 MB** | — |
 
 O alfa recebe qualidade maior porque a borda recortada é justamente o que o olho pega —
 é o contrato do recorte fiel às curvas, medido em `tools/probes/recorte.gd`.
@@ -260,20 +262,31 @@ BPP usados na projeção do script (`BPP_LOSSY_OPAQUE` / `BPP_LOSSY_ALPHA` em
 `tools/set_texture_budget.py`): lossless 1,07 B/texel; lossy q=0,85 em arte opaca **0,21**;
 lossy q=0,92 em arte com alfa **0,37**. Aplicados aos 123,99 + 45,61 Mpx da tabela, isso
 projeta 42,92 MB contra os **43,47 MB** do `.pck` real — 0,55 MB de erro, que é o tipo de
-conta que se revalida antes de prometer a folga. O cache de `.godot/imported` **não** é a
+conta que se revalida antes de prometer a folga. Pesados os 667 `.ctex` um por um, o erro por
+classe é maior do que o total sugere: as opacas saem 0,176 B/texel (a projeção cobrava 0,21)
+e as com alfa 0,431 (cobrava 0,37); os dois lados se cancelam e fecham em **41,46 MB** de
+textura embarcada. O cache de `.godot/imported` **não** é a
 régua dessa medida: ele ainda carrega entradas dos exports anteriores. Basis/UASTC
 (`mode=3`) custa 3,00 B/texel e foi reprovado na medição: 508 MB.
 
 O `.wasm` custa 39,51 MB e não depende da arte. Com as fontes do §8 dentro, o download
-total do navegador é **58,36 MB compactados** (`.zip` de 58.358.890 bytes) — eram 53,45 MB
-antes delas, e o `.pck` é o que cresce: 43.469.492 → 48.614.256 bytes. Um build honesto
-para o navegador, ainda a ~4,1× do teto de 200 MB por arquivo.
+total do navegador é **58,35 MB compactados** (`.zip` de 58.352.045 bytes) — eram 53,45 MB
+antes delas, e o `.pck` é o que cresce: 43.469.492 → 48.607.204 bytes. Um build honesto
+para o navegador: o maior arquivo extraído (o `.pck`, 48,61 MB) cabe 4,1× no teto de 200 MB
+por arquivo.
 
 O que a mudança **não** é: os PNGs do repositório continuam os mesmos. Quem decide a
-codificação são os 667 `.png.import`, commitados junto. `python tools/set_texture_budget.py
+codificação são os 667 `.png.import` (659 em `assets/`, 8 em `screenshots/`), commitados
+junto. `python tools/set_texture_budget.py
 --reset` devolve tudo para `mode=0` e o próximo `--import` re-encodeia sem perdas.
 
-**O que ainda falta aqui é olho humano.** WebP com perdas em arte pintada é escolha de
+**Nome do codificador, conferido na árvore:** o `compress/mode=1` do Godot 4 é a compressão
+com perdas do **próprio motor** (bloco de texel), não WebP — não existe um arquivo `.webp`
+nesta árvore (`find . -name '*.webp'` devolve 0). A palavra "WebP" ficou no vocabulário de um
+doc antigo e atravessou a decisão de publicação; o que se aprova e o que se mede é o modo de
+compressão da textura, com as duas qualidades por classe.
+
+**O que ainda falta aqui é olho humano.** Compressão com perdas em arte pintada é escolha de
 gosto, não de byte: abrir o build no navegador e conferir o recorte dos personagens e o
 ruido nas paredes escuras antes de publicar (§8). As outras saídas da lista antiga
 (publicar só mesa, variantes de assets por export, avisar e deixar) continuam
@@ -336,11 +349,11 @@ Antes de marcar *Publish*, confira:
   **A promessa de tamanho estava errada, e o erro foi a favor do jogador:** o arquivo oficial
   da Noto tem 25.332.736 bytes; a tabela `SVG ` (só para navegador, 20.288.281 B) é arrancada
   por `tools/strip_font_svg.py` e o que embarca mede 5.044.436 B. No `.pck`, o `.fontdata`
-  importado custa 3.082.128 B (emoji) + 429.187 B (DejaVu). O `.pck` web cresceu 5.144.764 B
-  porque leva também o `.ttf` fonte.-download subiu de 53,45 MB para **58,36 MB** — não os
+  importado custa 3.082.128 B (emoji) + 429.187 B (DejaVu). O `.pck` web cresceu 5.137.712 B
+  porque leva também o `.ttf` cru. **O download** subiu de 53,45 MB para **58,35 MB** — não os
   "~64 MB" prometidos. Nos dois presets de mesa `exclude_filter` tem `fonts/*.ttf`, e o
   resultado foi conferido no binário: **0** ocorrências de `NotoColorEmoji` no `.exe` de
-  154.229.792 B e no `.x86_64`; as mesas cresceram só 0,02 MB (os `.txt` de licença, que o
+  154.222.744 B e no `.x86_64` de 118.614.472 B; as mesas cresceram só 0,02 MB (os `.txt` de licença, que o
   filtro não alcança).
   **Prova, não aparência:** união 84/84 conferida glifo por glifo; a A/B de 200 tiques na
   mesma semente rodou 6 processos com a cadeia e 6 sem, `MEDIDA` byte por byte idêntica
@@ -348,9 +361,11 @@ Antes de marcar *Publish*, confira:
   nos 12; no Chrome aberto pelo servidor local o `♥` saiu vermelho, o `★` dourado, o `☰` e o
   `▶` desenhados, sem nenhum `▯` na tela, e o console limpo. Licenças no repo em
   `fonts/OFL-NotoColorEmoji.txt` e `fonts/LICENSE-DejaVuSans.txt`.
-  **O que ainda não foi visto:** só a tela inicial e a HUD do build web. O clique sintético
-  no `☰` não chegou ao canvas (o Godot ignora evento não-confiável), então menu, conquistas
-  e painéis internos continuam sem print do navegador — vale abrir o `.zip` no itch.io e
+  **O que ainda não foi visto:** o build final foi reaberto no Chrome e a primeira tela — o
+  seletor de idioma, que é a mesma camada do menu — saiu com o rodapé `Versão: 0.1.0-alpha.5`
+  desenhado, os glifos coloridos e o console limpo. Mas o clique sintético no `☰` não chega
+  ao canvas (o Godot ignora evento não-confiável), então as telas internas (opções,
+  conquistas, salvar) continuam sem print do navegador — vale abrir o `.zip` no itch.io e
   bater o olho antes de marcar *Publish*. E o harness que mediu os crashes (`_tmp_flaky.gd`,
   promovido a `tools/probes/fonte_frequencia.gd`) deixou um achado registrado: um FATAL
   intermitente do TextServer cai em ~metade dos processos quando um `Label` novo com esses
@@ -358,7 +373,8 @@ Antes de marcar *Publish*, confira:
   pela frequência (`flat` 4/8, `nested` 5/8, `emoji` 5/8, nenhuma fiação 5/12; com texto ASCII,
   0/12). É caminho do motor no headless do Windows, não do recurso: a rota publicada ficou
   limpa nos 12 processos.
-- **A arte com perdas precisa do seu olho.** O `.pck` caiu para 43,47 MB com WebP q=0,85
+- **A arte com perdas precisa do seu olho.** O `.pck` caiu para 43,47 MB com compressão
+  q=0,85
   (opacas) e q=0,92 (com alfa). No print do build web a borda dos personagens e as paredes
   escuras estão limpas, mas isso foi visto por uma máquina, não por você.
 - **Data de "1.0".** Ainda falta balanceamento e a aprovação visual do chão, da oclusão
