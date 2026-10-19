@@ -12,8 +12,9 @@
 # 200 MB — medido nesta árvore: com textura sem perdas o `.pck` do navegador deu
 # 207,33 MB e foi reprovado; depois de `tools/set_texture_budget.py` (WebP com
 # perdas por classe, q=0,85 opacas / q=0,92 com alfa) ele mede 43,47 MB, e 48,61 MB com as
-# duas fontes de símbolo do §8 de docs/itch-io.md dentro. O `.wasm` custa 39,51 MB
-# e é fixo; o zip final do navegador mede 58,35 MB.
+# duas fontes de símbolo do §8 de docs/itch-io.md dentro -- e 48,05 MB depois que o
+# `exclude_filter` tirou as sondas de desenvolvimento do pacote do jogador. O `.wasm` custa
+# 39,51 MB e é fixo; o zip final do navegador mede 57,81 MB.
 #
 # Uso:
 #   GODOT="/c/Users/gmore/godot/godot" bash tools/build_itch.sh
@@ -73,7 +74,7 @@ empacotar() {
 	esac
 	[ -s "$destino" ] || { echo "FALHA: '$destino' não foi gerado (zip ausente ou vazio)."; exit 1; }
 	# `du` mede o que o disco ocupa, e com compressão transparente do NTFS ele devolve
-	# menos do que o arquivo é: o .zip de mesa mediu "71M" no du e 82.623.209 bytes no
+	# menos do que o arquivo é: o .zip de mesa mediu "71M" no du e 82.098.382 bytes no
 	# `stat`. O número que a itch mostra e o que o jogador baixa é o lógico, então é ele
 	# que se imprime aqui.
 	local bytes
@@ -106,6 +107,11 @@ os.replace(tmp, src)
 print("  modo unix 0755 gravado nas entradas de %s" % os.path.basename(src))
 PYEOF
 	[ -s "$destino" ] || { echo "FALHA: a reescrita de modo corrompeu '$destino'."; exit 1; }
+	# O `empacotar` de cima anunciou o tamanho dele; esta reescrita é um novo arquivo
+	# (Python recomprime tudo) e o número que a itch.io e o README citam é o deste, final.
+	local bytes
+	bytes="$(stat -c %s "$destino")"
+	echo "  -> tamanho final apos o modo unix: $destino ($bytes bytes, $(awk -v b="$bytes" 'BEGIN{printf "%.2f MB", b/1e6}'))"
 }
 
 preflight() {
@@ -135,13 +141,31 @@ preflight() {
 		echo "       (O script não baixa: é ~1 GB e a decisão é sua.)"
 		exit 1
 	fi
+	TEMPLATES_DIR="$achou"
 	echo "Godot $versao_motor • templates em $achou"
 	echo "Projeto '$NOME' v$SO_VERSAO"
 }
 
 exportar() {
 	local preset="$1"
-	echo "── export: $preset ──"
+	# `version.txt` existe em cópia parcial de template e o preflight passa: medido aqui,
+	# com APPDATA apontando para o tmp de sonda, o web tinha os `.zip` mas faltavam os
+	# `.exe` de mesa, e o export morria no meio da cadeia depois de importar tudo.
+	# A conta é feita pelo arquivo que cada preset realmente exige.
+	local molde
+	case "$preset" in
+		"Windows Desktop") molde="windows_release_x86_64.exe" ;;
+		Linux) molde="linux_release.x86_64" ;;
+		Web) molde="web_nothreads_release.zip" ;;
+		*) echo "FALHA: preset desconhecido '$preset'."; exit 1 ;;
+	esac
+	if [ ! -f "$TEMPLATES_DIR/$molde" ]; then
+		echo "FALHA: falta o molde '$molde' em $TEMPLATES_DIR."
+		echo "       Ou APPDATA está apontando para uma cópia parcial de templates,"
+		echo "       ou os templates deste alvo não foram instalados."
+		exit 1
+	fi
+	echo "── export: $preset (molde $molde) ──"
 	# O exportador web exige a PASTA de destino já existente: `DirAccess::exists(base_dir)`
 	# falha com "Target folder does not exist" e o export morre antes de escrever o primeiro
 	# byte. Como o preset grava dentro de `.export/<alvo>/`, a pasta é criada aqui.

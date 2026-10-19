@@ -57,10 +57,26 @@ jobs:
             if (Test-Path $exportLog) { Get-Content $exportLog -Tail 100 }
             throw "Godot did not produce a valid Windows executable."
           }
+          # O explorador do Windows mostra a versão do .exe, não a do jogo. Conferir o
+          # recurso de versão aqui é o que impede o jogador de baixar jurando rodar o
+          # build novo e receber o velho — a mesma regra que `tools/probes/publicar.gd`
+          # cobra no preset, cobrada agora no binário que sai da CI.
+          $coreVersion = (Select-String -Path project.godot -Pattern '^config/version="([^"]+)"').Matches[0].Groups[1].Value
+          if (-not $coreVersion) { throw "project.godot has no config/version." }
+          $core = ($coreVersion -replace '^(\d+\.\d+\.\d+).*', '$1')
+          $fileVersion = $executable.VersionInfo.FileVersion
+          if (-not $fileVersion -or -not $fileVersion.StartsWith($core)) {
+            throw "The exported .exe reports FileVersion '$fileVersion', which is not the core '$core' of config/version '$coreVersion'."
+          }
+          Write-Host "exe exporta FileVersion $fileVersion (nucleo $core, jogo $coreVersion)"
       - name: Package alpha
         shell: pwsh
         run: |
-          $package = Join-Path $env:RUNNER_TEMP "Succubus-Shop-Windows-Alpha.zip"
+          # Mesmo nome que `tools/build_itch.sh` dá ao pacote local: o arquivo publicado
+          # e o arquivo descrito no README têm de ser o mesmo arquivo, senão a vitrine
+          # cita um nome que ninguém encontra na página da release.
+          $gameVersion = (Select-String -Path project.godot -Pattern '^config/version="([^"]+)"').Matches[0].Groups[1].Value
+          $package = Join-Path $env:RUNNER_TEMP "Succubus-Shop-$gameVersion-windows.zip"
           Compress-Archive -Path ".export\windows\Succubus Shop.exe", "README.md", "LICENSE" -DestinationPath $package
           "PACKAGE=$package" | Out-File $env:GITHUB_ENV -Append
       - name: Publish GitHub prerelease

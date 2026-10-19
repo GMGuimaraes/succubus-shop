@@ -34,13 +34,14 @@ extends SceneTree
 ## rótulo sem tocar em caixa nem em atendidos. Tela → 2, Escala → 1.25, VSync → 2 sobrevivem
 ## à escrita do idioma e a uma reabertura completa (um `ConfigFile` só, lido antes de
 ## escrito). Conquistas listam exatamente as 2 destravadas de 100; créditos fecham com 7
-## notas, a segunda sendo o selo `Versão: 0.1.0-alpha.5`, que também aparece no rodapé do
-## menu raiz e segue o idioma (em espanhol: `Versión: 0.1.0-alpha.5`). Salvar dá recibo e
+## notas, a segunda sendo o selo `Versão: 0.1.0-alpha.6`, que também aparece no rodapé do
+## menu raiz e segue o idioma (em espanhol: `Versión: 0.1.0-alpha.6`). Salvar dá recibo e
 ## grava no descartável; exportar abre em modo de gravação e
 ## importar em modo de leitura; "Apagar todo o progresso" só mostra a confirmação e o save
 ## continua no disco; o relatório de bug abre janela própria com publicar travado até a
 ## caixa de consentimento. A rua, medida em tiques de verdade em janelas de 600 quadros a
-## 4x: +8 sem menu, **+0** com as seis camadas navegadas, +8 depois de fechar.
+## 4x: entre +6 e +8 tiques com o balcão livre (a parede do relógio manda, o laço é o
+## mesmo), **+0** com as seis camadas navegadas, e a rua volta ao fechar.
 
 const SEED_VAL := 20261016
 const Locales = preload("res://locales.gd")

@@ -16,9 +16,9 @@ de conquista) e uma varredura PNG da árvore `assets/`.
 | Ícone do build (`icon.svg`, 128×128, 1127 bytes) | pronto | — |
 | Guarda de plataforma (sem janela de arquivo no navegador) | pronta e medida | — |
 | Templates de export do Godot 4.7.2 | **instalados** (`%APPDATA%\Godot\export_templates\4.7.2.stable`) | — |
-| Build Windows real | gerado e medido: `.exe` de 154,22 MB descompactado (`.pck` embutido), zip de **82,64 MB** | ver §6 antes de confiar na arte |
-| Build Linux real | gerado e medido: `Succubus Shop.x86_64` de 118,61 MB, zip de **73,89 MB**, com o modo unix `0755` gravado no `.zip` | o zip criado no Windows sairia `-rw----` (sem bit de execução) — `marcar_execucao()` corrige |
-| Build web real | gerado e medido: `.pck` de 48,61 MB, zip de **58,35 MB**, `index.html` na raiz | ver §6 antes de confiar na arte |
+| Build Windows real | gerado e medido: `.exe` de 153,67 MB descompactado (`.pck` embutido), zip de **82,10 MB** | ver §6 antes de confiar na arte |
+| Build Linux real | gerado e medido: `Succubus Shop.x86_64` de 118,06 MB, zip de **73,35 MB**, com o modo unix `0755` gravado no `.zip` | o zip criado no Windows sairia `-rw----` (sem bit de execução) — `marcar_execucao()` corrige |
+| Build web real | gerado e medido: `.pck` de 48,05 MB, zip de **57,81 MB**, `index.html` na raiz | ver §6 antes de confiar na arte |
 | Fontes de símbolo embarcadas (§8) | prontas e medidas **só no navegador**: os presets de mesa filtram `fonts/*.ttf` e o binário de mesa não tem uma ocorrência da Noto | — |
 | Orçamento de textura do `.pck` | aplicado (`tools/set_texture_budget.py`) | conferir o recorte no olho (§6) |
 | Descrição "About" do repositório GitHub | não alterada | sem `gh` CLI neste ambiente — edição manual na web |
@@ -49,7 +49,7 @@ Duas armadilhas medidas nesta rodada, nenhuma delas com erro honesto na tela:
 | Campo | Valor medido |
 |---|---|
 | Motor | Godot 4.7.2.stable |
-| Versão | `0.1.0-alpha.5` (núcleo `0.1.0`). A loja anuncia o próprio número no rodapé de toda tela do menu e na primeira linha dos créditos — no navegador e em Linux não há `.exe` para olhar no explorador |
+| Versão | `0.1.0-alpha.6` (núcleo `0.1.0`). A loja anuncia o próprio número no rodapé de toda tela do menu e na primeira linha dos créditos — no navegador e em Linux não há `.exe` para olhar no explorador |
 | Janela | 1280×720, escala `canvas_items` |
 | Renderizador | `gl_compatibility` — escolhida de propósito: é a que roda em navegador e em GPU antiga |
 | Threads no build web | **desligadas** (`variant/thread_support=false`) → não exige `SharedArrayBuffer`, então roda em qualquer hospedagem, inclusive a da itch.io, sem cabeçalho cruzado |
@@ -57,9 +57,9 @@ Duas armadilhas medidas nesta rodada, nenhuma delas com erro honesto na tela:
 | Conquistas | 100 definições. Na itch.io elas **não** aparecem: só a integração opcional com a Steam as entrega — na vitrine elas contam como conteúdo, não como sistema |
 | Conteúdo | fantasia sombria adulta, **tom sugestivo atrás de um botão**; nenhuma nudez explícita em nenhum modo |
 | Save | arquivo em mesa; no navegador mora no armazenamento do site (IndexedDB) |
-| Massa de arte | **667 PNG** na árvore: 169,60 Mpx, 274,87 MB. O corte com perdas por classe (`tools/set_texture_budget.py`, `compress/mode=1`) embarca **41,46 MB de `.ctex`** — 21,81 MB das 57 opacas + 19,65 MB das 610 com alfa — e fecha o `.pck` do navegador em 43,47 MB, que viram **48,61 MB** com as duas fontes de símbolo (§8) |
-| Download do build web | **58,35 MB** compactado. Dentro dele `.pck` 48,61 MB e `.wasm` 39,51 MB descompactado — o `.wasm` é o motor, fixo, não depende da arte |
-| Download dos builds de mesa | Windows **82,64 MB** (um `.exe` de 154,22 MB descompactado, `.pck` embutido); Linux **73,89 MB** (binário `x86_64` de 118,61 MB, `.pck` embutido). Os dois passam o limite de 200 MB por arquivo descompactado. As fontes do §8 **não** embarcam neles: `exclude_filter` com `fonts/*.ttf`, conferido no binário |
+| Massa de arte | **667 PNG** na árvore: 169,60 Mpx, 274,87 MB. O corte com perdas por classe (`tools/set_texture_budget.py`, `compress/mode=1`) embarca **41,46 MB de `.ctex`** — 21,81 MB das 57 opacas + 19,65 MB das 610 com alfa — e fecha o `.pck` do navegador em 43,47 MB, que viram **48,61 MB** com as fontes e **48,05 MB** depois de as 72 sondas de desenvolvimento saírem do pacote com as duas fontes de símbolo (§8) |
+| Download do build web | **57,81 MB** compactado. Dentro dele `.pck` 48,05 MB e `.wasm` 39,51 MB descompactado — o `.wasm` é o motor, fixo, não depende da arte |
+| Download dos builds de mesa | Windows **82,10 MB** (um `.exe` de 153,67 MB descompactado, `.pck` embutido); Linux **73,35 MB** (binário `x86_64` de 118,06 MB, `.pck` embutido). Os dois passam o limite de 200 MB por arquivo descompactado. As fontes do §8 **não** embarcam neles: `exclude_filter` com `fonts/*.ttf`, conferido no binário |
 
 Regra da itch.io que aperta aqui: cada arquivo **descompactado** tem de caber em 200 MB.
 O `.pck` sem perdas media 207,33 MB e era reprovado; hoje cabe com folga. Ver §6.
@@ -211,7 +211,7 @@ six languages • playable alpha in development.
 | Banner | 690×415 (opcional, mesma arte) |
 | Thumbnail | 16:9 |
 | Screenshots / gallery | os sete `screenshots/gallery_*.png` + `screenshots/current-build.png` |
-| Release name | `v0.1.0-alpha.5` — o número vai no nome do zip e, dentro do jogo, em `config/version` |
+| Release name | `v0.1.0-alpha.6` — o número vai no nome do zip e, dentro do jogo, em `config/version` |
 | Notes no arquivo | escreva "alpha em desenvolvimento; save no navegador fica no armazenamento do site" |
 | Available platforms | Windows, Linux, HTML5 |
 | Pricing | "Pay what you want" com mínimo 0 (ou o mínimo que você escolher) — a itch.io cobra 10% por padrão |
@@ -219,9 +219,9 @@ six languages • playable alpha in development.
 **Nome de arquivo** — o script gera:
 
 ```
-Succubus-Shop-0.1.0-alpha.5-windows.zip
-Succubus-Shop-0.1.0-alpha.5-linux.zip
-Succubus-Shop-0.1.0-alpha.5-web.zip
+Succubus-Shop-0.1.0-alpha.6-windows.zip
+Succubus-Shop-0.1.0-alpha.6-linux.zip
+Succubus-Shop-0.1.0-alpha.6-web.zip
 ```
 
 ---
@@ -270,9 +270,9 @@ régua dessa medida: ele ainda carrega entradas dos exports anteriores. Basis/UA
 (`mode=3`) custa 3,00 B/texel e foi reprovado na medição: 508 MB.
 
 O `.wasm` custa 39,51 MB e não depende da arte. Com as fontes do §8 dentro, o download
-total do navegador é **58,35 MB compactados** (`.zip` de 58.352.045 bytes) — eram 53,45 MB
-antes delas, e o `.pck` é o que cresce: 43.469.492 → 48.607.204 bytes. Um build honesto
-para o navegador: o maior arquivo extraído (o `.pck`, 48,61 MB) cabe 4,1× no teto de 200 MB
+total do navegador é **58,35 MB compactados** (`.zip` de 58.352.045 bytes; hoje **57,81 MB**, `.zip` de 57.811.416, com as sondas excluídas) — eram 53,45 MB
+antes delas, e o `.pck` é o que cresce: 43.469.492 → 48.607.204 → 48.049.800 bytes. Um build honesto
+para o navegador: o maior arquivo extraído (o `.pck`, 48,05 MB) cabe 4,2× no teto de 200 MB
 por arquivo.
 
 O que a mudança **não** é: os PNGs do repositório continuam os mesmos. Quem decide a
@@ -353,7 +353,7 @@ Antes de marcar *Publish*, confira:
   da Noto tem 25.332.736 bytes; a tabela `SVG ` (só para navegador, 20.288.281 B) é arrancada
   por `tools/strip_font_svg.py` e o que embarca mede 5.044.436 B. No `.pck`, o `.fontdata`
   importado custa 3.082.128 B (emoji) + 429.187 B (DejaVu). O `.pck` web cresceu 5.137.712 B
-  porque leva também o `.ttf` cru. **O download** subiu de 53,45 MB para **58,35 MB** — não os
+  porque leva também o `.ttf` cru. **O download** subiu de 53,45 MB para **58,35 MB** (**57,81 MB** no build de hoje) — não os
   "~64 MB" prometidos. Nos dois presets de mesa `exclude_filter` tem `fonts/*.ttf`, e o
   resultado foi conferido no binário: **0** ocorrências de `NotoColorEmoji` no `.exe` de
   154.222.744 B e no `.x86_64` de 118.614.472 B; as mesas cresceram só 0,02 MB (os `.txt` de licença, que o
@@ -365,7 +365,7 @@ Antes de marcar *Publish*, confira:
   `▶` desenhados, sem nenhum `▯` na tela, e o console limpo. Licenças no repo em
   `fonts/OFL-NotoColorEmoji.txt` e `fonts/LICENSE-DejaVuSans.txt`.
   **O que ainda não foi visto:** o build final foi reaberto no Chrome e a primeira tela — o
-  seletor de idioma, que é a mesma camada do menu — saiu com o rodapé `Versão: 0.1.0-alpha.5`
+  seletor de idioma, que é a mesma camada do menu — saiu com o rodapé `Versão: 0.1.0-alpha.6`
   desenhado, os glifos coloridos e o console limpo. Mas o clique sintético no `☰` não chega
   ao canvas (o Godot ignora evento não-confiável), então as telas internas (opções,
   conquistas, salvar) continuam sem print do navegador — vale abrir o `.zip` no itch.io e
@@ -381,3 +381,72 @@ Antes de marcar *Publish*, confira:
   escuras estão limpas, mas isso foi visto por uma máquina, não por você.
 - **Data de "1.0".** Ainda falta balanceamento e a aprovação visual do chão, da oclusão
   e do timing de animação no editor, que só você pode dar.
+
+---
+
+## 9. A release de mesa: `v0.1.0-alpha.6`
+
+A vitrine da itch.io espera upload manual. A **release do GitHub não**: o workflow
+`.github/workflows/alpha-release.yml` é disparado por qualquer tag `v*-alpha.*`, baixa o
+Godot 4.7.2 e os templates no runner, exporta o preset `Windows Desktop`, empacota e
+publica uma **pré-release** com `gh release create`. Subir a release é, portanto, um
+`git push origin v0.1.0-alpha.6` — não um clipe de arquivo numa página.
+
+Dois contratos entraram nesse workflow nesta rodada, porque a página mentir sobre o
+arquivo é pior que não ter página:
+
+- **O nome do asset sai de `config/version`.** A alpha.5 foi publicada como
+  `Succubus-Shop-Windows-Alpha.zip`, nome que não diz a versão e que não é o nome que o
+  README cita. Hoje os dois caminhos (CI e `tools/build_itch.sh`) produzem
+  `Succubus-Shop-<versão>-windows.zip`.
+- **O `.exe` é conferido pelo recurso de versão.** Depois do export, a CI lê
+  `VersionInfo.FileVersion` do binário e exige que ele comece pelo núcleo de
+  `config/version` (`0.1.0`). É a regra que `tools/probes/publicar.gd` já cobrava no
+  preset, agora cobrava no arquivo que o jogador baixa — o explorador mostra a versão do
+  `.exe`, não a do jogo.
+
+### Medido no build desta rodada (2026-10-19)
+
+| Arquivo | Bytes | MB |
+|---|---|---|
+| `Succubus-Shop-0.1.0-alpha.6-windows.zip` | 82.098.382 | 82,10 |
+| `.export/windows/Succubus Shop.exe` (extraído, `.pck` embutido) | 153.665.336 | 153,67 |
+| `Succubus-Shop-0.1.0-alpha.6-linux.zip` (após gravar o modo unix) | 73.351.720 | 73,35 |
+| `Succubus-Shop-0.1.0-alpha.6-web.zip` | 57.811.416 | 57,81 |
+| `.export/web/index.pck` | 48.049.800 | 48,05 |
+
+### O que o pacote do jogador não leva mais
+
+`tools/probes/*.gd` (36 sondas promovidas) e `_tmp_*.gd` (36 sondas soltas de outras
+sessões) eram empacotados nos três presets: o índice do `.pck` listava os 72 caminhos.
+Nenhum arquivo do jogo referencia `res://tools/` — conferido em `.gd`, `.tscn` e `.tres`,
+zero ocorrências —, então `exclude_filter` ganhou `_tmp_*.gd,tools/*` nos três alvos.
+O `.pck` do navegador caiu 568.664 bytes e o `.exe` de mesa, 540.914. Conferido no
+binário exportado: `res://main.tscn` está dentro, `res://tools/probes/` não.
+
+Provar sem mexer no portão: `tools/build_itch.sh` agora recusa um alvo cujo molde de
+release não existe (`windows_release_x86_64.exe`, `linux_release.x86_64`,
+`web_nothreads_release.zip`). O preflight só olhava `version.txt`, que existe em cópia
+parcial de templates — com `APPDATA` apontando para o diretório descartável das sondas, o
+export web tinha os `.zip` mas faltavam os `.exe`, e a cadeia morria depois de importar a
+árvore inteira. Agora morre em dois segundos, com o nome do arquivo que falta.
+
+### O que a alpha.6 traz sobre a alpha.5 publicada
+
+Sessenta commits. O que muda na mão de quem joga, em prosa:
+
+- **Onboarding**: painel *COMO SE JOGA* e o cartaz do primeiro dia, que explicam a rua
+  antes de o jogador adivinhar.
+- **Seis idiomas** no catálogo (francês, italiano e alemão entraram depois da alpha.5),
+  com paridade de **228 chaves** conferida sonda a sonda.
+- **Livro de Fiado** (#75), **clientes VIP** (#78) e **cartaz do combo** (#80) — a alpha.5
+  publicada não tem nenhum dos três.
+- **Casa que cresce em arte real** por faixa de progresso, com recorte fiel às curvas dos
+  móveis (#83, #84, #85, #86, #93) e elenco que não flutua nem fica anão na sala de
+  expedições (#87, #92).
+- **Trilha em WAV sintetizado** no lugar do MP3 que vazava recurso ao fechar a janela
+  (#101), emoji colorido no build web (#103) e a loja anunciando a própria versão em toda
+  tela do menu (#106).
+- **Registros da casa** (#107): oito seções de marco no menu, que só leem.
+- **README virou contrato medido** (#98): cada número que a página cita tem uma asserção
+  no motor, e a sonda reprova quando o texto e o código discordam.

@@ -35,8 +35,8 @@ extends SceneTree
 ## são `Windows Desktop`/`Windows Desktop`, `Linux`/`Linux/X11` e `Web`/`Web`, todos
 ## `runnable=true`, com saída em `.export/windows/Succubus Shop.exe`,
 ## `.export/linux/Succubus Shop.x86_64` e `.export/web/index.html`. A versão:
-## `config/version` é `0.1.0-alpha.5`, núcleo `0.1.0`, e só o preset de Windows carrega
-## `file_version`/`product_version` `0.1.0.5` — as duas outras plataformas **não** têm o
+## `config/version` é `0.1.0-alpha.6`, núcleo `0.1.0`, e só o preset de Windows carrega
+## `file_version`/`product_version` `0.1.0.6` — as duas outras plataformas **não** têm o
 ## campo (a primeira rodada tinha, e quebrou: Windows-only). Janela e renderizador copiados
 ## para a vitrine: 1280x720, `canvas_items`, `gl_compatibility`. Ícone presente (1127 bytes).
 ## Menu 💾 em mesa: 8 itens com as duas portas de arquivo; em navegador: 7 itens, o aviso
