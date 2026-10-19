@@ -151,17 +151,56 @@ Medido nesta árvore em 2026-10-19:
 
 | Precisam | Existe | Falta |
 |---|---|---|
-| Carrossel 1920×1080 (Epic) | 9 PNGs de capa em `marketing/itch/out/`, todos ≤ 1280×720; 7 screenshots de galeria em 1280×720 | renderizar em 1920×1080 |
-| Vitrine retrato 1200×1600 (Epic) | nada | compor com texto vertical — `capa.html` aceita qualquer W×H, mas a variante `compact` só é ligada para faixas largas (`H/W < 0,55`); retrato cai no layout largo e precisa de olhar |
-| Prévia social 1200×1200 (Epic) | nada | idem |
+| Carrossel 1920×1080 (Epic) | **feito**: `capa-A-{pt,en}-1920x1080.jpg`, 284/280 KB | — |
+| Vitrine paisagem 2560×1440 (Epic) | **feito**: `capa-A-{pt,en}-2560x1440.jpg`, 448/444 KB | — |
+| Vitrine retrato 1200×1600 (Epic) | **feito**: `capa-A-{pt,en}-1200x1600.jpg`, 216/218 KB | — |
+| Prévia social 1200×1200 (Epic) | **feito**: `capa-A-{pt,en}-1200x1200.jpg`, 188/190 KB | — |
+| Descrição curta ≤ 280 caracteres (Epic) | **feito**: PT 265 caracteres / 270 bytes, EN 277 / 277 (§4.1) | — |
 | Logo 960×540 (Epic) / key art 1920×1080 em camadas (GOG) | `icon.svg` (128×128) | gerar PNG nas duas medidas; o **PSD em camadas da GOG não existe** e HTML renderizado não produz camadas |
 | Trailer MP4 1920×1080 (Epic, recomendado) | nada | gravar do jogo em janela; sem gravação automática no repo |
-| Descrição curta ≤ 280 caracteres (Epic) | PT 315 caracteres, EN 312 caracteres (`marketing/itch/descricao-itch.md:38` e `:43`) | enxugar 35 e 32 caracteres |
-| Galeria de screenshots | 7 PNGs (602 KB–1,79 MB) | 5 deles **estouram o teto de 1 MB** da Epic para imagens extras do "About" em 1280×720; em 1920×1080 estouram mais ainda → precisa de otimização de PNG |
+| Galeria de screenshots | 7 PNGs em 1280×720 (602 KB–1,79 MB) | renderizar em 1920×1080 (**5 deles já estouram o teto de 1 MB** da Epic para imagens extras do "About" em 1280×720) |
 | Build Windows | `.exe` 153,67 MB, zip 82,10 MB | nenhum |
 | Build Linux | x86_64 `0755` no zip, 73,35 MB | **nunca executado** em Linux real |
 
-### Fazer os 1920×1080 é trivial, e medir isso é o que autoriza a afirmação
+### 4.1 O pacote que já saiu — renderizado e conferido a olho em 2026-10-19
+
+`marketing/itch/renderar.sh` ganhou as oito linhas de medida da Epic (PT e EN) e a coluna de
+extensão. **As artes de loja saem em JPG, não PNG**: o PNG de 2560×1440 pesa 4,36 MB e o teto
+da Epic para imagem de vitrine é 4 MB; o JPG do mesmo quadro são 448 KB, com o texto nítido
+conferido no olho nas quatro proporções, nos dois idiomas. Os arquivos estão em
+`marketing/itch/out/` (fora do git):
+
+```
+capa-A-pt-2560x1440.jpg  455.721 B   capa-A-en-2560x1440.jpg  454.137 B
+capa-A-pt-1920x1080.jpg  287.961 B   capa-A-en-1920x1080.jpg  286.501 B
+capa-A-pt-1200x1600.jpg  218.249 B   capa-A-en-1200x1600.jpg  217.837 B
+capa-A-pt-1200x1200.jpg  190.044 B   capa-A-en-1200x1200.jpg  189.122 B
+```
+
+O retrato 1200×1600 **funciona sem layout próprio**, e a razão é estrutural: `capa.html` fixa
+o canvas em 1280 de largura e deixa a altura seguir a proporção pedida
+(`stage.style.height = (H / s)` + `transform: scale(s)`), então o retrato ganha um quadro mais
+alto em vez de esticar — o texto fica no topo, o balcão preenche o pé da imagem e a linha de
+rodapé desce para a borda. O quadrado 1200×1200 é o que fica melhor das quatro. O que **não**
+existe é a classe `compact` para essas proporções (`H / W < 0,55` só liga em faixa larga), e
+não é preciso: nenhuma das duas medidas corta texto.
+
+**Descrições curtas nas medidas da Epic** (o limite é de 280 caracteres por idioma):
+
+PT — 265 caracteres / 270 bytes:
+> Simulador de gestão em fantasia sombria. Você é a succubus que herdou uma loja de relíquias
+> e precisa fazer ela pagar: forjar, vender, fiar, expedir, defender a porta e escolher onde
+> gastar talento. Sete capítulos, sete desfechos e clientes que lembram do seu nome.
+
+EN — 277 caracteres / 277 bytes:
+> A management sim in dark fantasy. You are the succubus who inherited a relic shop and has to
+> make it pay: forge, sell, extend credit, send expeditions, defend the door and choose where
+> every talent point goes. Seven chapters, seven endings, and regulars who remember your name.
+
+As duas versões longas que estavam na itch.io (PT 315, EN 312 caracteres) continuam valendo lá
+— a itch não tem esse teto — e o que mudou aqui foi só a poda para a vitrine da Epic.
+
+### Os 1920×1080 **de dentro do jogo** também são triviais, e medir isso é o que autoriza a afirmação
 
 `project.godot` tem `viewport 1280×720`, `stretch/mode="canvas_items"`,
 `stretch/aspect="expand"`. Capturar em 1920×1080 é a **mesma proporção 16:9**, então o fator
@@ -171,12 +210,10 @@ em `tools/probes/galeria.gd`, que hoje **não tem override nenhum de tamanho de 
 por isso fotografa nos 1280×720 do projeto. A sonda já roda em janela de propósito
 (`get_texture()` devolve null em `--headless`), então é uma linha, não uma reforma.
 
-O retrato 1200×1600 e o quadrado 1200×1200 **não** são a mesma coisa: `marketing/itch/capa.html`
-fixa o canvas em 1280 de largura e deixa a altura seguir a proporção pedida
-(`stage.style.height = (H / s)` + `transform: scale(s)`), então um retrato gera uma faixa
-**mais alta** em vez de esticar. O texto sobra em vertical e a arte é recortada por
-`object-position` (`72% 30%` na variante B, `62% 50%` nas outras). **Dá para renderizar, não
-dá para aprovar sem olho** — a classe `compact` não existe para essas proporções.
+É o único item de asset que sobra e que **precisa do motor aberto**: as sete capturas de
+galeria (01 recepção a 07 estrada) ainda não existem em 1920×1080, e cinco delas já estouram
+o teto de 1 MB da Epic para imagem extra do "About" no tamanho atual. As capas, essas, já
+saíram do HTML — §4.1.
 
 ### A fonte das capas continua sendo HTML, e isso é uma escolha
 
@@ -215,18 +252,20 @@ ignorado.
 
 ## 6. Checklist, na ordem em que dá para executar
 
-**Agora, desta máquina, sem conta nenhuma (trabalho meu):**
+**Andado desta máquina, sem conta nenhuma — 2026-10-19:**
 
-- [ ] Renderizar a bateria 1920×1080 (carrossel) adicionando o override de janela em
-      `tools/probes/galeria.gd` e as variantes de `renderar.sh` — conferidas a olho.
-- [ ] Compor retrato 1200×1600 e quadrado 1200×1200 em `capa.html` com um layout próprio
-      (a classe `compact` hoje só cobre faixa larga).
-- [ ] Otimizar os PNGs de galeria para o teto de 1 MB da Epic.
-- [ ] Gerar logo 960×540 e as duas medidas de key art a partir das artes que já existem.
-- [ ] Escrever as descrições curtas de ≤280 caracteres em PT e EN, e as longas nos formatos
-      das duas lojas.
+- [x] Oito capas nas medidas da Epic (2560×1440, 1920×1080, 1200×1600, 1200×1200) em PT e EN,
+      em JPG por causa do teto de 4 MB, conferidas a olho — §4.1.
+- [x] Descrições curtas podadas para os 280 caracteres da Epic (PT 265, EN 277) — §4.1.
+- [x] `marketing/` comitado como fonte, com `marketing/*/out/` fora do git.
+
+**Ainda desta máquina, mas exige o motor aberto:**
+
+- [ ] Renderizar a galeria em 1920×1080 adicionando o override de janela em
+      `tools/probes/galeria.gd`, e caber nos 1 MB da Epic para imagem extra do "About".
+- [ ] Gerar logo 960×540 e a key art 1920×1080 a partir das artes que já existem.
+- [ ] Escrever as descrições longas nos formatos das duas lojas (a da itch não serve tal qual).
 - [ ] Roteirizar o trailer e definir como ele é gravado.
-- [ ] Comitar `marketing/` com `marketing/*/out/` fora do git.
 
 **Com a conta aberta (trabalho seu):**
 
