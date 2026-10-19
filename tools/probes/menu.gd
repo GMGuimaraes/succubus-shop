@@ -16,6 +16,8 @@ extends SceneTree
 ##   Essa inimizade entre seções é o bug que `_save_person_settings()` existe para não ter.
 ## - Conquistas listam exatamente o que está destravado; créditos e relatório de bug abrem
 ##   sem escrever nada.
+## - O rodapé do painel anuncia a versão do build em toda tela, e a frase dela tem irmã em
+##   cada língua traduzida: em navegador e em Linux não há arquivo para olhar o número.
 ## - Salvar, exportar e apagar: só a janela de confirmação aparece; o save continua no
 ##   disco até o sim.
 ##
@@ -23,7 +25,7 @@ extends SceneTree
 ##   env APPDATA="D:\\Downloads\\tmp-userdata" godot --headless --path . \
 ##     --quit-after 90000 --script res://tools/probes/menu.gd
 ##
-## Veredito medido nesta rodada: **90 conferências, 0 quebras**. ☰ e ESC caem na mesma
+## Veredito medido nesta rodada: **95 conferências, 0 quebras**. ☰ e ESC caem na mesma
 ## camada (nenhuma segunda `Window` nasce do menu), e os três controles de som saíram do
 ## topo do painel. A raiz tem 9 itens e desce em cinco camadas — ⚙ Opções 10, 💾 Salvar e
 ## carregar 9, 🏆 Conquistas 3, ✨ Créditos 7, 🌐 Idioma 5 — e "← Voltar ao menu" sobe para
@@ -31,8 +33,10 @@ extends SceneTree
 ## e o rótulo acompanha; mudo, painel, balanço automático e cenas sensuais trocam estado E
 ## rótulo sem tocar em caixa nem em atendidos. Tela → 2, Escala → 1.25, VSync → 2 sobrevivem
 ## à escrita do idioma e a uma reabertura completa (um `ConfigFile` só, lido antes de
-## escrito). Conquistas listam exatamente as 2 destravadas de 100; créditos fecham com 6
-## notas. Salvar dá recibo e grava no descartável; exportar abre em modo de gravação e
+## escrito). Conquistas listam exatamente as 2 destravadas de 100; créditos fecham com 7
+## notas, a segunda sendo o selo `Versão: 0.1.0-alpha.5`, que também aparece no rodapé do
+## menu raiz e segue o idioma (em espanhol: `Versión: 0.1.0-alpha.5`). Salvar dá recibo e
+## grava no descartável; exportar abre em modo de gravação e
 ## importar em modo de leitura; "Apagar todo o progresso" só mostra a confirmação e o save
 ## continua no disco; o relatório de bug abre janela própria com publicar travado até a
 ## caixa de consentimento. A rua, medida em tiques de verdade em janelas de 600 quadros a
@@ -235,6 +239,21 @@ func _initialize() -> void:
 	_confere(notas >= 5, "créditos têm quem agradecer (%d notas)" % notas)
 	print("   créditos: %d notas, a última lendo %s" % [notas, _ultima_nota(loja)])
 
+	print("── o selo de versão ──")
+	var idioma_antes := str(TranslationServer.get_locale())
+	var selo := str(loja._version_stamp())
+	_confere(selo.contains("."), "o selo traz o número do project.godot: %s" % selo)
+	_confere(_tem_rotulo(loja, selo), "os créditos mostram o selo")
+	loja._show_menu_screen("root")
+	await _frames(2)
+	_confere(_tem_rotulo(loja, selo), "o menu raiz mostra o selo debaixo da lista")
+	TranslationServer.set_locale("es")
+	_confere(str(loja.tr("Versão: %s")) == "Versión: %s", "a frase do selo tem irmã em espanhol")
+	var selo_es := str(loja._version_stamp())
+	_confere(selo_es.begins_with("Versión: "), "e o selo segue o idioma: %s" % selo_es)
+	TranslationServer.set_locale(idioma_antes)
+	print("   selo: %s • em espanhol: %s" % [selo, selo_es])
+
 	print("── salvar, exportar e apagar: nada sem confirmação ──")
 	loja._show_menu_screen("save")
 	await _frames(2)
@@ -405,6 +424,16 @@ func _ultima_nota(loja) -> String:
 		if alvo != null:
 			return str(alvo.text)
 	return "<sem nota>"
+
+
+## O selo de versão mora fora da `menu_box` (é rodapé do painel), então aqui a varredura
+## é pela árvore inteira da loja.
+func _tem_rotulo(loja, texto: String) -> bool:
+	for filho in _todos_os_filhos(loja):
+		var label := filho as Label
+		if label != null and str(label.text) == texto:
+			return true
+	return false
 
 
 func _notas_por_prefixo(loja, prefixo: String) -> int:

@@ -2212,6 +2212,18 @@ func _build_menu_layer() -> void:
 		_:
 			_menu_screen_root()
 
+	# O selo fica em toda tela do menu, inclusive no seletor da primeira abertura: quem
+	# joga no navegador ou em Linux não tem arquivo nem explorador para descobrir o build.
+	var stamp := Label.new()
+	stamp.text = _version_stamp()
+	stamp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stamp.add_theme_font_size_override("font_size", 11)
+	stamp.add_theme_color_override("font_color", Color(0.55, 0.48, 0.62))
+	frame.add_child(stamp)
+
+func _version_stamp() -> String:
+	return tr("Versão: %s") % str(ProjectSettings.get_setting("application/config/version", "alpha"))
+
 func _menu_title() -> String:
 	if menu_start_mode:
 		return "ESCOLHA O IDIOMA"
@@ -2477,6 +2489,7 @@ func _menu_screen_creditos() -> void:
 	_menu_note("SUCCUBUS SHOP", Color(1.0, 0.67, 0.88), 20)
 	_menu_note("Concepção, código, escrita e arte: GMGuimaraes.", Color(0.85, 0.78, 0.95), 14)
 	var engine_version := str(Engine.get_version_info().get("string", "4"))
+	_menu_note(_version_stamp(), Color(0.85, 0.78, 0.95), 14)
 	_menu_note("Motor: Godot %s (gl_compatibility)." % engine_version, Color(0.85, 0.78, 0.95), 14)
 	_menu_note("Trilha e efeitos gravados no próprio projeto; retratos e poses desenhados para a loja, sem arte explícita.",
 			Color(0.78, 0.72, 0.86), 13)

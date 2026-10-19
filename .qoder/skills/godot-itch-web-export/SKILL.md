@@ -31,8 +31,9 @@ referência usam o Godot CLI em `C:\Users\gmore\godot\godot` (adaptar por projet
   `preset.0` e AUSÊNCIA nos presets de Linux e Web.
 - O `file_version` do `.exe` deve ser o núcleo de `config/version` do `project.godot`:
   o explorador Windows mostra a versão do `.exe`, não a do jogo — discordarem é o jogador
-  jurando que roda o build velho. Em Linux e navegador quem anuncia o número é o próprio
-  jogo (créditos e o nome do `.zip` que sobe).
+  jurando que roda o build velho. Em Linux e navegador não há `.exe` para olhar: o próprio
+  jogo tem de anunciar o número na tela (rodapé do menu e créditos), e a sonda de contrato
+  lê o tamanho do catálogo de idioma quando essa linha é traduzida.
 - No Web, confira também `variant/extensions_support=false` se não há extensões.
 
 ## 2. `variant/thread_support=false`
