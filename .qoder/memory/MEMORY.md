@@ -11,3 +11,4 @@
 - [Opt-in ladder inertia](project-opt-in-ladder-inertia.md) — new purchasable ladders must be byte-inert at rank 0; prove it by A/B rank 0 vs rank N
 - [Probe measurement validity](project-probe-measurement-validity.md) — four traps that made probes print confident nonsense (empty shelves, rounding floors, skipped --check-only, unmet gate preconditions)
 - [Headless text FATAL is engine, not feature](headless-text-fatal-is-engine-not-feature.md) — triage intermittent headless crashes by crash-rate matrix with controls before rewiring working code
+- [Trail in two tracks](project-trilha-duas-faixas.md) — classic MP3 is the daily theme by user demand; never re-synthesize it away, and shipping it is the owner's licence call
