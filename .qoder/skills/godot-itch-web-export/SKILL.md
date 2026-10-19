@@ -14,7 +14,8 @@ referência usam o Godot CLI em `C:\Users\gmore\godot\godot` (adaptar por projet
 ## Ordem dos passos
 
 1. Presets → 2. Flags do build web → 3. Guarda de FileDialog → 4. Orçamento de textura →
-5. Forma do zip → 6. Templates de export → 7. Fontes de símbolo no navegador.
+5. Forma do zip → 6. Templates de export → 7. Fontes de símbolo no navegador →
+8. Portão do pacote de mesa (sondas fora, versão no `.exe`, release pela tag).
 
 ## 1. Os três presets e os campos Windows-only
 
@@ -181,3 +182,37 @@ Web crava `thread_support=false`.
 - Fontes (§7): `grep -c NotoColorEmoji` nos binários de mesa tem de dar **0**, e o mesmo
   nome tem de estar presente no `.pck` do navegador. Glifo colorido na tela só se confere
   em Chrome — headless é renderer dummy.
+
+## 8. O portão do pacote de mesa (release executável)
+
+Medido em 2026-10-19 ao montar a `v0.1.0-alpha.6` do Succubus Shop.
+
+- **`exclude_filter` precisa de `_tmp_*.gd,tools/*` nos três presets.** Sem isso o índice do
+  `.pck` leva as sondas de desenvolvimento para o jogador: 36 probes promovidas + 36
+  `_tmp_*.gd` de outras sessões estavam dentro (`−0,55 MB` por alvo ao cortá-las). A
+  pergunta "algo referencia `res://tools/`?" tem de ser respondida com grep em `.gd`,
+  `.tscn` e `.tres` antes do filtro — zero ocorrências autoriza a exclusão.
+- **O `.pck` não guarda texto de script.** `grep` por uma string de UI dentro do `.pck` dá
+  0 mesmo com a feature embarcada (o `.gd` viaja compilado). O instrumento que funciona é
+  o **índice de caminhos**: `grep -ac 'res://main.tscn' <exe|pck>` = 1 e
+  `grep -ao 'res://tools/probes/[a-z_]*\.gd' ...` = vazio. Nunca declare "a feature não
+  está no build" com base em busca de prosa.
+- **`version.txt` na pasta de templates não prova molde nenhum.** A cópia parcial dentro do
+  `APPDATA` descartável das sondas tinha os `.zip` do navegador e os `.exe` de mesa
+  ausentes: o preflight passava e o export morria depois de importar a árvore inteira.
+  Conferir por alvo: `windows_release_x86_64.exe`, `linux_release.x86_64`,
+  `web_nothreads_release.zip`. **Rodar o build de release é sempre com o `%APPDATA%`
+  verdadeiro** — só as sondas trocam de pasta.
+- **A versão do `.exe` é contrato, e a CI pode cobrá-lo.** O explorador mostra
+  `VersionInfo.FileVersion`; a assertão da CI (pós-export) exige que ele comece pelo núcleo
+  de `config/version`. Bump de versão mexe em `project.godot`, no preset Windows (só ele
+  tem os campos) e em toda prosa que cita o número — `grep -rn "alpha\.<n>"` antes de
+  commitar.
+- **Release de mesa não é upload manual**: tag `v*-alpha.*` dispara o workflow, que baixa
+  motor + templates, exporta e abre pré-release com `gh`. Depois, **baixar o asset
+  publicado e rodá-lo** (`--headless --quit-after 300` com `APPDATA` descartável) é o que
+  fecha o ciclo — o zip da CI (`Compress-Archive`, com README+LICENSE dentro) mede
+  **83,34 MB** para o mesmo `.exe` cujo pacote local mede **82,10 MB**: citar tamanho sem
+  dizer de qual arquivo é mentira medida.
+- **O zip linux é reescrito** para gravar o modo unix `0755`: imprimir tamanho antes de
+  `marcar_execucao()` mostra o arquivo errado (72,50 MB antes, 73,35 MB depois).
