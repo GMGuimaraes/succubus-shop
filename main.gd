@@ -2203,6 +2203,8 @@ func _build_menu_layer() -> void:
 			_menu_screen_save()
 		"conquistas":
 			_menu_screen_conquistas()
+		"registros":
+			_menu_screen_registros()
 		"guia":
 			_menu_screen_guia()
 		"creditos":
@@ -2234,6 +2236,8 @@ func _menu_title() -> String:
 			return "SALVAR E CARREGAR"
 		"conquistas":
 			return "CONQUISTAS"
+		"registros":
+			return "REGISTROS DA CASA"
 		"guia":
 			return "COMO SE JOGA"
 		"creditos":
@@ -2271,6 +2275,7 @@ func _menu_screen_root() -> void:
 	_menu_button("💾 Salvar e carregar", _show_menu_screen.bind("save"))
 	_menu_button(tr("🏆 Conquistas (%d/%d)") % [unlocked_achievements.size(), _achievement_definitions().size()],
 			_show_menu_screen.bind("conquistas"))
+	_menu_button("📊 Registros da casa", _show_menu_screen.bind("registros"))
 	_menu_button("✨ Créditos", _show_menu_screen.bind("creditos"))
 	_menu_button("🌐 Idioma", _show_menu_screen.bind("idioma"))
 	_menu_button("🐞 Relatar um problema", _show_bug_report_dialog, 40)
@@ -2374,6 +2379,151 @@ func _menu_screen_conquistas() -> void:
 	else:
 		_menu_note(tr("Trancadas neste balcão: %d — os nomes ficam escondidos para não estragar a surpresa.")
 				% (definitions.size() - shown), Color(0.66, 0.6, 0.76), 12)
+	_menu_back_button()
+
+## Registros são leitura, não balcão. Cada linha daqui lê um número que o jogo já media para
+## si mesmo — nenhuma conta nova, nenhuma chave nova no save, nenhum sorteio consumido. A
+## prova é a cauda de RNG idêntica com o painel aberto e fechado.
+## A trava é marco, não compra: a seção acende sozinha quando o primeiro feito dela acontece
+## e, enquanto não acende, mostra só a porta — quem ainda não viu o fiado não merece que o
+## nome dele apareça na tela como se fosse uma prateleira para comprar.
+## O sufixo "(família)" marca o que atravessa a reencarnação; o resto morre com a vida.
+func _records_sections() -> Array:
+	var sections: Array = []
+	sections.append({
+		"id": "balcao",
+		"titulo": "BALCÃO DE HOJE",
+		"aberta": true,
+		"trava": "",
+		"linhas": [
+			"Dia %d na praça • caixa %d ouro • fama %d" % [shop_day, gold, reputation],
+			"Este dia: %d ouro ganho • %d peça(s) forjada(s) • %d que saíram da fila" % [daily_gold_earned, daily_crafts, day_walkouts],
+			"Nesta vida: %d atendidos • %d satisfeitos • %d decepcionados • %d que largaram a fila" % [customers_served, happy_customers, disappointed_customers, queue_walkouts],
+			"Feitiço: %d tentativas • %d convertidos • afeição %d • fúria %d" % [seduction_attempts, seduction_successes, affection, fury],
+			"Combo: %d na sequência agora • recorde do dia %d • recorde da vida %d • %d ouro em bônus" % [combo_streak, combo_day_best, combo_best, combo_gold],
+			"Ofício: nível %d com %d XP • %d ponto(s) de talento parado(s) na gaveta" % [player_level, player_xp, skill_points],
+		]
+	})
+	sections.append({
+		"id": "fiado",
+		"titulo": "CAIXA E COBRANÇA",
+		"aberta": credit_rank > 0,
+		"trava": "abre no primeiro degrau do Livro de Fiado comprado na Recepção.",
+		"linhas": [
+			"Degrau %d de %d no caderno • %d nota(s) na rua hoje" % [credit_rank, CREDIT_TIERS.size() - 1, credit_book.size()],
+			"Fiado escrito %d • cobrado %d • perdido %d ouro" % [credit_written, credit_paid, credit_lost_gold],
+			"Vermelho da casa: %d ouro • recorde desta vida %d" % [debt, debt_peak],
+			"Livro de reclamações: %d abertas • %d escritas • %d abafadas" % [complaints, complaints_written, complaints_hushed],
+		]
+	})
+	sections.append({
+		"id": "casa",
+		"titulo": "CASA, GENTE E CELA",
+		"aberta": not staff_hired.is_empty() or not servants.is_empty() or not prisoners.is_empty() or sweeps_done > 0,
+		"trava": "abre quando a casa tem gente: a primeira contratação, o primeiro servo ou a primeira cela ocupada.",
+		"linhas": [
+			"Quadro desta vida: %d contratado(s) • %d na cela • %d banidos do bairro" % [staff_hired.size(), prisoners.size(), banned_regulars.size()],
+			"Servos por afeto à chefe (família): %d" % servants.size(),
+			"Conserva: sujeira %d • faxinas feitas %d • colheita de sangue %d" % [mess, sweeps_done, blood_harvested],
+			"Furtos barrados nesta vida: %d" % theft_blocked,
+		]
+	})
+	sections.append({
+		"id": "estrada",
+		"titulo": "ESTRADA, FORJA E BANCADA",
+		"aberta": expeditions_done > 0 or total_crafted > 0 or not lab_trials.is_empty(),
+		"trava": "abre na primeira expedição concluída, na primeira peça forjada ou no primeiro ensaio da bancada.",
+		"linhas": [
+			"Estrada: %d expedições concluídas • %d raros no bolso • %d na fila da mesa" % [expeditions_done, rare_found, expeditions.size()],
+			"Rota aprendida (família): %d batedores com XP de estrada" % adventurer_xp.size(),
+			"Forja: %d peças • lendárias %d feitas, %d vendidas • exclusivas entregues %d" % [total_crafted, legendary_crafted, legendary_sold, exclusive_finished],
+			"Bancada de alquimia (vida): %d ensaios • %d becos sem saída • %d receitas novas • %d catalisador(es)" % [lab_trials.size(), lab_flops, lab_discovered.size(), catalyst_crafted],
+			"Alambique degrau %d • %d receitas no caderno" % [alchemy_rank, known_recipes.size()],
+		]
+	})
+	sections.append({
+		"id": "culto",
+		"titulo": "CULTO E MURALHA",
+		"aberta": rituals_performed > 0 or relics_calmed > 0 or invasions_repelled > 0 or tithe_paid_total > 0,
+		"trava": "abre no primeiro ritual do santuário ou na primeira vez que a porta do beco é segurada.",
+		"linhas": [
+			"Santuário: %d rituais • %d relíquias apaziguadas • %d consultas à biblioteca" % [rituals_performed, relics_calmed, library_consults],
+			"Invasões (família): %d seguradas • %d perdidas • última: %s" % [invasions_repelled, invasions_lost, last_invasion if last_invasion != "" else "nenhuma"],
+			"Dízimo (família): %d ouro pago • %d recusas • %d subornos" % [tithe_paid_total, vicar_refusals, vicar_bribes],
+			"Postura com o vigário nesta vida: %s" % (tithe_stance if tithe_stance != "" else "ainda não decidida"),
+		]
+	})
+	sections.append({
+		"id": "freguesia",
+		"titulo": "FREGUESIA E FACÇÕES",
+		"aberta": not regular_bonds.is_empty() or not origin_seen.is_empty() or not regular_arc_seen.is_empty(),
+		"trava": "abre quando um freguês volta: a primeira confiança firmada, o primeiro arco visto ou a primeira lembrança relembrada.",
+		"linhas": [
+			"Confiança firmada nesta vida: %d fregueses • arcos conhecidos %d" % [regular_bonds.size(), regular_arc_seen.size()],
+			"Histórias de balcão: %d pedidos entregues • %d arcos fechados" % [regular_orders_completed.size(), regular_story_completed.size()],
+			"Lembranças de origem (família): %d de %d" % [origin_seen.size(), Origin.size()],
+			"Momentos particulares destravados nesta vida: %d" % private_moments_unlocked,
+			_records_best_faction_line(),
+		]
+	})
+	sections.append({
+		"id": "vidas",
+		"titulo": "VIDAS E TEMPORADAS",
+		"aberta": prestige_runs > 0 or not endings_seen.is_empty() or ruined_lives > 0,
+		"trava": "abre na primeira reencarnação, no primeiro final visto ou na primeira ruína.",
+		"linhas": [
+			"Vidas vividas (família): %d • aura da dinastia %d • objetivos pagos %d" % [prestige_runs, prestige_aura, prestige_goals_paid],
+			"Finais vistos (família): %d de %d" % [endings_seen.size(), Endings.size()],
+			"Recorde de placar: %d • temporadas com recorde próprio %d" % [best_score, season_records.size()],
+			"Ruína (família): %d vidas quebradas • %d temporadas em ruína" % [ruined_lives, ruined_seasons.size()],
+		]
+	})
+	sections.append({
+		"id": "fachada",
+		"titulo": "FACHADA, FILIAIS E CARTAS",
+		"aberta": ad_level > 0 or not branches.is_empty() or packs_opened > 0 or vip_rank > 0,
+		"trava": "abre quando a loja muda de cara: a primeira faixa de fachada, a primeira filial ou o primeiro pacote de cartas.",
+		"linhas": [
+			"Fachada em obras: faixa %d • filiais desta vida %d • rivais absorvidos %d" % [ad_level, branches.size(), rivals_absorbed.size()],
+			"VIP: degrau %d de %d • %d servidos • %d recusados • %d ouro em gorjeta" % [vip_rank, VIP_TIERS.size() - 1, vip_served, vip_refusals, vip_tips_gold],
+			"Álbum: %d pacotes abertos • %d de %d cartas • %d conjunto(s) fechado(s)" % [packs_opened, Cards.owned_count(card_counts), Cards.size(), completed_sets.size()],
+			"Tempos já vistos na rua (família): %d" % weather_seen.size(),
+		]
+	})
+	return sections
+
+## A facção que mais puxa a balança hoje, lida do mesmo dicionário que o capítulo lê. Sem
+## este lookup o painel listaria cinco números soltos e o jogador teria de comparar de cabeça.
+func _records_best_faction_line() -> String:
+	var best_id := ""
+	var best_standing := 0x80000000
+	for faction in Factions.DATA:
+		var id := str(faction["id"])
+		var standing := int(faction_standing.get(id, 0))
+		if standing > best_standing:
+			best_standing = standing
+			best_id = id
+	if best_id == "":
+		return "Facções (família): nenhuma balança se mexeu ainda."
+	return "Facção da balança hoje: %s com %d • %d facções com pedido entregue" % [
+		str(Factions.find(best_id).get("name", best_id)), best_standing, _faction_asks_delivered()]
+
+func _menu_screen_registros() -> void:
+	_menu_note("Todo número abaixo é velho conhecido do jogo: o painel não inventa métrica, só organiza a que já existia. O que está trancado mostra a porta, não o prêmio.",
+			Color(0.72, 0.66, 0.8), 13)
+	var opened := 0
+	for section in _records_sections():
+		var titulo := str(section["titulo"])
+		if bool(section["aberta"]):
+			opened += 1
+			_menu_note(titulo, Color(0.85, 0.62, 1.0), 15)
+			for line in section["linhas"]:
+				_menu_note("• " + str(line), Color(0.78, 0.72, 0.86), 13)
+		else:
+			_menu_note("🔒 " + titulo, Color(0.52, 0.46, 0.62), 14)
+			_menu_note(tr("Ainda fechada: %s") % tr(str(section["trava"])), Color(0.6, 0.54, 0.72), 12)
+	_menu_note(tr("Seções abertas neste balcão: %d de %d — e nada aqui gasta um sorteio nem move um ouro.") % [opened, 8],
+			Color(0.66, 0.6, 0.76), 12)
 	_menu_back_button()
 
 ## O guia é leitura, não balcão: nenhuma linha daqui escreve em ouro, fama, experiência,

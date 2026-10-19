@@ -18,7 +18,7 @@ extends SceneTree
 ##   env APPDATA="D:\\Downloads\\tmp-userdata" godot --headless --path . \
 ##     --quit-after 90000 --script res://tools/probes/idioma.gd
 ##
-## Veredito medido nesta rodada: catálogo de 216 chaves com **paridade total** nas cinco
+## Veredito medido nesta rodada: catálogo de 228 chaves com **paridade total** nas cinco
 ## línguas traduzidas (en, es, fr, it, de) — `chaves sem irmã` lidas contra a UNIÃO de todas
 ## as tabelas, e uma chave vazia conta como órfã; a mesma frase sai
 ## "Ouro: %d / TALENTOS / ⚒ Forja" em pt, "Gold: %d / TALENTS / ⚒ Forge" em en,

@@ -43,7 +43,7 @@ extends SceneTree
 ## web no lugar e a frase de fechamento trocada. A corrida de 200 tiques com a mesma semente
 ## fecha idêntica dos dois lados — `caixa 2357 • fama 0 • dia 11 • servidos 20 • decepções
 ## 167 • fila 0` — com o painel web aberto antes da corrida mostrando a loja no ponto de
-## partida (`caixa 1200 • fama 20 • dia 1`). Catálogo com 216 chaves nas cinco línguas
+## partida (`caixa 1200 • fama 20 • dia 1`). Catálogo com 228 chaves nas cinco línguas
 ## traduzidas, e as duas frases novas respondem em en e de.
 ##
 ## `Linux/X11` não é typo de manual velho: medido nesta máquina, com `Linux/*BSD` ou

@@ -25,11 +25,11 @@ extends SceneTree
 ##   env APPDATA="D:\\Downloads\\tmp-userdata" godot --headless --path . \
 ##     --quit-after 90000 --script res://tools/probes/menu.gd
 ##
-## Veredito medido nesta rodada: **95 conferências, 0 quebras**. ☰ e ESC caem na mesma
+## Veredito medido nesta rodada: **101 conferências, 0 quebras**. ☰ e ESC caem na mesma
 ## camada (nenhuma segunda `Window` nasce do menu), e os três controles de som saíram do
-## topo do painel. A raiz tem 9 itens e desce em cinco camadas — ⚙ Opções 10, 💾 Salvar e
-## carregar 9, 🏆 Conquistas 3, ✨ Créditos 7, 🌐 Idioma 5 — e "← Voltar ao menu" sobe para
-## `root`. Arrastar o volume muda `audio.volume` sem recriar `menu_box` (mesma instância),
+## topo do painel. A raiz desce em seis camadas — ⚙ Opções 10, 💾 Salvar e
+## carregar 9, 🏆 Conquistas 3, 📊 Registros da casa 24, ✨ Créditos 8, 🌐 Idioma 8 — e
+## "← Voltar ao menu" sobe para `root`. Arrastar o volume muda `audio.volume` sem recriar `menu_box` (mesma instância),
 ## e o rótulo acompanha; mudo, painel, balanço automático e cenas sensuais trocam estado E
 ## rótulo sem tocar em caixa nem em atendidos. Tela → 2, Escala → 1.25, VSync → 2 sobrevivem
 ## à escrita do idioma e a uma reabertura completa (um `ConfigFile` só, lido antes de
@@ -40,7 +40,7 @@ extends SceneTree
 ## importar em modo de leitura; "Apagar todo o progresso" só mostra a confirmação e o save
 ## continua no disco; o relatório de bug abre janela própria com publicar travado até a
 ## caixa de consentimento. A rua, medida em tiques de verdade em janelas de 600 quadros a
-## 4x: +7 sem menu, **+0** com as cinco camadas navegadas, +7 depois de fechar.
+## 4x: +8 sem menu, **+0** com as seis camadas navegadas, +8 depois de fechar.
 
 const SEED_VAL := 20261016
 const Locales = preload("res://locales.gd")
@@ -73,7 +73,7 @@ func _initialize() -> void:
 		str(loja.get("volume_slider"))])
 
 	print("── camadas: descer e subir ──")
-	for prefixo in ["⚙", "💾", "🏆", "✨", "🌐"]:
+	for prefixo in ["⚙", "💾", "🏆", "📊", "✨", "🌐"]:
 		var alvo := _botao_por_prefixo(loja, prefixo)
 		_confere(alvo != null, "a raiz tem o botão %s" % prefixo)
 		if alvo == null:
@@ -332,7 +332,10 @@ func _initialize() -> void:
 	contador["n"] = 0
 	firme.menu_button.pressed.emit()
 	await _frames(2)
-	for camada in ["opcoes", "save", "conquistas", "creditos", "root"]:
+	## `registros` está aqui porque o laço de tiques é a única prova de que uma camada
+	## nova para a rua: o laço de subir-e-descer confere o voltar, não o relógio.
+	var camadas_do_laco: Array[String] = ["opcoes", "save", "conquistas", "registros", "creditos", "root"]
+	for camada in camadas_do_laco:
 		firme._show_menu_screen(camada)
 		await _frames(2)
 	await _frames(600)
@@ -344,8 +347,8 @@ func _initialize() -> void:
 	var de_volta := int(contador["n"])
 	var outra_janela: bool = firme._modal_holds_clock()
 	Engine.time_scale = 1.0
-	print("   600 quadros sem menu: +%d tiques • menu navegado em 5 camadas: +%d • fechado: +%d" % [
-		sem_menu, com_menu, de_volta])
+	print("   600 quadros sem menu: +%d tiques • menu navegado em %d camadas: +%d • fechado: +%d" % [
+		sem_menu, camadas_do_laco.size(), com_menu, de_volta])
 	_confere(sem_menu > 0, "a rua anda quando ninguém está no menu")
 	_confere(com_menu == 0, "e para em todas as camadas")
 	_confere(de_volta > 0 or outra_janela,

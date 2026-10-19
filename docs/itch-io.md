@@ -3,7 +3,7 @@
 Copy, avisos honestos e o passo a passo para subir o **Succubus Shop** na itch.io.
 Os números abaixo não são chutes: foram medidos em 2026-10-18 com
 `tools/probes/publicar.gd` (60 conferências, 0 quebras), `tools/probes/idioma.gd`
-(216/216 chaves nas cinco tabelas traduzidas), `tools/probes/menu.gd` (100 definições
+(228/228 chaves nas cinco tabelas traduzidas), `tools/probes/menu.gd` (100 definições
 de conquista) e uma varredura PNG da árvore `assets/`.
 
 ---
@@ -53,7 +53,7 @@ Duas armadilhas medidas nesta rodada, nenhuma delas com erro honesto na tela:
 | Janela | 1280×720, escala `canvas_items` |
 | Renderizador | `gl_compatibility` — escolhida de propósito: é a que roda em navegador e em GPU antiga |
 | Threads no build web | **desligadas** (`variant/thread_support=false`) → não exige `SharedArrayBuffer`, então roda em qualquer hospedagem, inclusive a da itch.io, sem cabeçalho cruzado |
-| Idiomas | português, inglês, espanhol, francês, italiano, alemão (catálogo com as mesmas 216 chaves nas cinco tabelas traduzidas) |
+| Idiomas | português, inglês, espanhol, francês, italiano, alemão (catálogo com as mesmas 228 chaves nas cinco tabelas traduzidas) |
 | Conquistas | 100 definições. Na itch.io elas **não** aparecem: só a integração opcional com a Steam as entrega — na vitrine elas contam como conteúdo, não como sistema |
 | Conteúdo | fantasia sombria adulta, **tom sugestivo atrás de um botão**; nenhuma nudez explícita em nenhum modo |
 | Save | arquivo em mesa; no navegador mora no armazenamento do site (IndexedDB) |
