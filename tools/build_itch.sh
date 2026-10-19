@@ -5,6 +5,20 @@
 #   Windows  -> Succubus-Shop-<versao>-windows.zip   (pasta com o .exe dentro)
 #   Linux    -> Succubus-Shop-<versao>-linux.zip     (pasta com o .x86_64 dentro)
 #   Web      -> Succubus-Shop-<versao>-web.zip       (index.html NA RAIZ do zip)
+#   Android  -> succubus-shop-<versao>-arm64.apk     (.apk solto, assinado aqui fora)
+#
+# O Android não vai em .zip de propósito: a itch.io lê a extensão para marcar a plataforma
+# e um `.zip` virou "Downloadable" sem o selo de Android. E ele não é assinado pelo Godot:
+# `--export-release` de linha de comando não tem como pedir a senha do keystore (a janela do
+# editor é a única que pergunta), então o export chega até "Assinando APK de lançamento",
+# avisa "O keystore de lançamento não foi encontrado" e morre -- deixando um APK completo e
+# sem assinatura nenhuma. Assinar aqui, com o keystore FORA do repo e a senha vinda do
+# ambiente, é o que mantém a senha fora do `export_presets.cfg` versionado.
+#
+# Uso do alvo Android (senha nunca aparece na linha de comando, só no ambiente):
+#   SS_KEYSTORE="D:/android-dev/keystores/succubus-shop-release.keystore" \
+#   SS_KEYSTORE_PASS="$(cat D:/android-dev/keystores/succubus-shop-release.password)" \
+#   GODOT=/c/Users/gmore/godot/godot bash tools/build_itch.sh --only android
 #
 # A raiz do zip web não é capricho: a itch.io descompacta o arquivo e procura
 # index.html no topo. Um `web/index.html` dentro de uma pasta dá "Could not find
@@ -35,6 +49,10 @@ OUT_IT="$ROOT/.export/itch"
 SO_VERSAO="$(sed -n 's/^config\/version="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' project.godot)"
 [ -n "$SO_VERSAO" ] || { echo "FALHA: project.godot não tem config/version."; exit 1; }
 NOME="$(sed -n 's/^config\/name="\(.*\)"$/\1/p' project.godot)"
+# O caminho gravado em `export_path` no preset Android. `exportar` confere que ele existe
+# depois do export, e `assinar_android` é quem lê este arquivo.
+APK_ANDROID="$OUT_DIR/android/succubus-shop-arm64.apk"
+ANDROID_APK=""
 
 ZIP_ENGINE=""
 if command -v zip >/dev/null 2>&1; then
@@ -158,6 +176,7 @@ exportar() {
 		"Windows Desktop") molde="windows_release_x86_64.exe" ;;
 		Linux) molde="linux_release.x86_64" ;;
 		Web) molde="web_nothreads_release.zip" ;;
+		Android) molde="android_release.apk" ;;
 		*) echo "FALHA: preset desconhecido '$preset'."; exit 1 ;;
 	esac
 	if [ ! -f "$TEMPLATES_DIR/$molde" ]; then
@@ -175,10 +194,54 @@ exportar() {
 		"Windows Desktop") destino="$OUT_DIR/windows" ;;
 		Linux) destino="$OUT_DIR/linux" ;;
 		Web) destino="$OUT_DIR/web" ;;
+		Android) destino="$OUT_DIR/android" ;;
 		*) echo "FALHA: preset desconhecido '$preset'."; exit 1 ;;
 	esac
 	mkdir -p "$destino"
 	"$GODOT" --headless --path . --export-release "$preset" 2>&1 | tail -n 20
+	# O export Android escreve o APK e SO DEPOIS reclama da assinatura. Com
+	# `package/signed=false` no preset ele termina em 0 e entrega o arquivo alinhado,
+	# sem assinatura; `assinar_android` é quem fecha a conta com o keystore de verdade.
+	[ -f "$destino/$(basename "$APK_ANDROID")" ] || {
+		echo "FALHA: o export de '$preset' não deixou arquivo em $destino."
+		exit 1
+	}
+}
+
+# Assinatura de release do Android, feita fora do Godot (ver o cabecalho do script).
+# A senha entra pelo ambiente e nunca pela linha de comando: `--ks-pass env:` lee a
+# variavel dentro do processo, e nothing dela vai para o log nem para o repo.
+assinar_android() {
+	local bt="${ANDROID_BUILD_TOOLS:-D:/android-dev/sdk/build-tools/35.0.0}"
+	[ -f "$bt/zipalign.exe" ] || { echo "FALHA: falta zipalign em $bt (instale build-tools no SDK)."; exit 1; }
+	[ -f "$bt/apksigner.bat" ] || { echo "FALHA: falta apksigner em $bt."; exit 1; }
+	[ -n "${SS_KEYSTORE:-}" ] && [ -f "$SS_KEYSTORE" ] || {
+		echo "FALHA: SS_KEYSTORE não aponta para um keystore."
+		echo "       SS_KEYSTORE=<caminho.keystore> SS_KEYSTORE_PASS=<senha> bash tools/build_itch.sh --only android"
+		echo "       A senha fica no ambiente da pessoa, não no export_presets.cfg versionado."
+		exit 1
+	}
+	[ -n "${SS_KEYSTORE_PASS:-}" ] || { echo "FALHA: SS_KEYSTORE_PASS ausente."; exit 1; }
+	local alinhado="$APK_ANDROID.aligned"
+	local destino="$OUT_IT/succubus-shop-$SO_VERSAO-arm64.apk"
+	rm -f "$destino"
+	"$bt/zipalign.exe" -f -p 4 "$APK_ANDROID" "$alinhado" || { echo "FALHA: zipalign."; exit 1; }
+	"$bt/apksigner.bat" sign \
+		--ks "$SS_KEYSTORE" \
+		--ks-key-alias "${SS_KEY_ALIAS:-succubus-shop}" \
+		--ks-pass env:SS_KEYSTORE_PASS \
+		--key-pass env:SS_KEYSTORE_PASS \
+		--out "$destino" "$alinhado" || { echo "FALHA: apksigner sign."; exit 1; }
+	rm -f "$alinhado" "${destino}.idsig"
+	# O veredito é a assinatura lida de volta, não o código de saída do comando anterior:
+	# um APK que o jogador não instala por culpa de um keystore errado é a pior surpresa
+	# possível, e `verify --print-certs` é o que prova que quem assinou foi o nosso par.
+	echo "── apksigner verify ──"
+	"$bt/apksigner.bat" verify --print-certs "$destino" 2>&1 | grep -E "^Verified|Signer #1 certificate DN" | sed 's/^/   /'
+	local bytes
+	bytes="$(stat -c %s "$destino")"
+	echo "  -> $destino ($bytes bytes, $(awk -v b="$bytes" 'BEGIN{printf "%.2f MB", b/1e6}'))"
+	ANDROID_APK="$destino"
 }
 
 caso() {
@@ -196,10 +259,14 @@ caso() {
 			exportar "Web"
 			empacotar "$OUT_IT/Succubus-Shop-$SO_VERSAO-web.zip" "$OUT_DIR/web"
 			;;
+		android)
+			exportar "Android"
+			assinar_android
+			;;
 	esac
 }
 
-SO_ALVO="windows linux web"
+SO_ALVO="windows linux web android"
 if [ "${1:-}" = "--only" ]; then
 	SO_ALVO="$2"
 	shift 2
@@ -215,6 +282,13 @@ done
 echo
 echo "── verificação de forma ──"
 for alvo in $SO_ALVO; do
+	if [ "$alvo" = "android" ]; then
+		# O alvo Android não é um .zip: é o .apk assinado, conferido pelo nome real.
+		[ -n "$ANDROID_APK" ] && [ -f "$ANDROID_APK" ] \
+			&& echo "$(stat -c %s "$ANDROID_APK" | awk '{printf "%.2f MB", $1/1e6}')  $(basename "$ANDROID_APK")" \
+			|| echo "QUEBRA: nenhum .apk assinado gerado"
+		continue
+	fi
 	local_zip="$OUT_IT/Succubus-Shop-$SO_VERSAO-$alvo.zip"
 	[ -f "$local_zip" ] || { echo "QUEBRA: falta $local_zip"; continue; }
 	echo "$(stat -c %s "$local_zip" | awk '{printf "%.2f MB", $1/1e6}')  $(basename "$local_zip")"

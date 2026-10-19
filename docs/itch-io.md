@@ -10,6 +10,10 @@ de conquista) e uma varredura PNG da árvore `assets/`.
 
 ## 1. Estado real — o que ainda bloqueia o botão de publicar
 
+> Resolvido em 2026-10-19: nada bloqueava, o botão foi clicado e a página está no ar
+> (`shininoobi.itch.io/succubus-shop`, §11). A tabela abaixo continua como diagnóstico do
+> caminho até a publicação, não como lista de pendências.
+
 | Item | Estado | O que falta |
 |---|---|---|
 | Presets de export (`Windows Desktop`, `Linux`, `Web`) | prontos, conferidos por sonda, e os três exportam de verdade | — |
@@ -77,7 +81,8 @@ O `.pck` sem perdas media 207,33 MB e era reprovado; hoje cabe com folga. Ver §
 
 **Título:** `Succubus Shop`
 
-**Tagline (a linha curta embaixo do título — 116 e 110 caracteres, cabe no campo):**
+**Tagline (a linha curta embaixo do título — 116 e 110 caracteres; a PT são 122 bytes e
+**não** cabe: o campo mede byte, ver §5):**
 
 - PT: `Gerencie uma loja de relíquias no submundo: forja, fiado, invasões e sete finais — com uma succubus atrás do balcão.`
 - EN: `Run an infernal relic shop: forging, credit, invasions and seven endings — with a succubus behind the counter.`
@@ -207,21 +212,27 @@ six languages • playable alpha in development.
 |---|---|
 | Classification | **Games** |
 | Type | **Play in browser** (o zip web) **+ Downloadable** (Windows e Linux) |
-| Genre / Tags | Simulation, Strategy, RPG, Indie; tags: `godot`, `management`, `shop-sim`, `dark-fantasy`, `incremental`, `female-protagonist`, `story-rich`, `portuguese` |
-| Content warning | **Adults Only – Sexual Themes** (marque "sexual themes"; **não** marque nudez: o jogo não tem) |
+| Genre / Tags | Gênero: `simulation`. Tags (só do catálogo da vitrine): `godot`, `management`, `dark-fantasy`, `fantasy`, `economy`, `story-rich`, `female-protagonist`, `incremental`, `ai-generated`. **Não existem** `shop-sim` nem `portuguese`: o campo de tags é uma lista fechada de 622 termos e recusa texto novo |
+| Content warning | A página de metadados da itch.io **não tem** categoria de conteúdo sexual: só dois checkboxes — *Has sensitive content* (marcado) e *Show content warning* (marcado). Com os dois ligados o visitante passa pelo aviso antes da página, e o texto "sexual themes, no nudity" fica na descrição (§4). **Não** há como marcar "nudez" nem "não-nudez": o que se promete é o que está escrito |
 | Status | **In Progress** |
-| Multiplayer | nenhum |
+| Multiplayer | nenhum (mín/máx 1 jogador) |
 | Inputs | mouse + teclado (ESC abre o menu) |
-| Language | Portuguese, English, Spanish, French, Italian, German |
-| Keyboard accessibility | o menu todo é clicável com mouse; ESC abre e fecha |
-| Cover image | 625×322 — use `screenshots/gallery_reception.png` recortada; o selo do projeto é `icon.svg` |
-| Banner | 690×415 (opcional, mesma arte) |
-| Thumbnail | 16:9 |
-| Screenshots / gallery | os sete `screenshots/gallery_*.png` + `screenshots/current-build.png` |
+| Language | Portuguese, Portuguese (Brazil), English, Spanish, French, Italian, German — o campo é código ISO; `pt` e `pt-BR` marcados para o jogo aparecer nos dois filtros |
+| Accessibility | *Interactive tutorial* (o único item da lista que o jogo entrega hoje; *configurable controls* não existe, então não foi marcado) |
+| Session duration | *About an hour* por objetivo (capítulo) |
+| Cover image | 625×322 — `marketing/itch/out/capa-A-pt-625x322.png` (variante A, salão com a chefe). Mínimo aceito: 315×250; recomendado 630×500 |
+| Banner | **não existe campo de banner** na página de projeto da itch.io: capa + galeria é que são renderizados |
+| Thumbnail | 16:9 — a própria capa |
+| Screenshots / gallery | os sete `screenshots/gallery_*.png` |
 | Release name | `v0.1.0-alpha.6` — o número vai no nome do zip e, dentro do jogo, em `config/version` |
 | Notes no arquivo | escreva "alpha em desenvolvimento; save no navegador fica no armazenamento do site" |
 | Available platforms | Windows, Linux, HTML5 |
-| Pricing | "Pay what you want" com mínimo 0 (ou o mínimo que você escolher) — a itch.io cobra 10% por padrão |
+| Pricing | **"Name your own price"** — é o que o modo *free* com doação renderiza na página pública. Não existe campo "pague o que quiser" com mínimo: os três modos são `free`, `paid`, `disable_payments`, e `paid` exige mínimo > 0 (a vitrine rejeita o save com *"paid projects must have a price set"*). Conta sem forma de pagamento configurada também não pode ter preço: o aviso na tela é *"no one will be able to download your project"* |
+
+**Tagline tem teto de 120 BYTES, não de caracteres.** A frase PT do §3 (116 caracteres
+acentuados) são 122 bytes em UTF-8 e o save devolve *"expected text between 1 and 120
+characters"* sem dizer que a régua é de byte. A versão publicada, de 97 bytes:
+`Forja, fiado, invasões e sete finais — a succubus que herdou a loja de relíquias da família.`
 
 **Nome de arquivo** — o script gera:
 
@@ -306,6 +317,11 @@ disponíveis, mas nenhuma é necessária com o `.pck` em 43,47 MB.
 ---
 
 ## 7. Passo a passo
+
+> A página foi publicada em 2026-10-19; o resultado item por item desta lista está no §11.
+> O único item que continua em aberto é o de **olho humano**: o build web abre e o console
+> fica limpo, mas o recorte dos personagens e o ruído nas paredes escuras são escolha de
+> gosto, e quem confere é você.
 
 ```bash
 # 1. uma vez só, no editor: Editor > Manage Export Templates > Download
@@ -501,12 +517,18 @@ VRAM nem por reencode. O maior arquivo extraído segue sendo o `.pck` do navegad
 `res://assets/shop_theme_loop.mp3` e `res://audio/shop_theme_loop.wav` aparecem os dois no
 `.pck` web, no `.exe` de mesa e no `x86_64` de Linux.
 
-### Ainda não há tag nova
+### A itch.io já serve a trilha dupla
 
-`config/version` segue `0.1.0-alpha.6` e o asset publicado continua no ar: a decisão de
-cortar `alpha.7` é do dono da conta e depende de ele ouvir as duas faixas no editor. Quem
-baixar a alpha.6 hoje recebe o build WAV-only de 82,10 MB descrito no §9; a árvore deste
-commit mede 84,30 MB.
+`config/version` segue `0.1.0-alpha.6` e nenhuma tag nova foi cortada. Mas a vitrine
+**não** é mais o build WAV-only: em 2026-10-19 os três arquivos da página foram
+reenviados com os artefatos deste commit — web 60.008.512, windows 84.297.687, linux
+75.549.335 bytes (§11). Quem baixa a alpha.6 hoje recebe o pacote com o MP3.
+
+Isso cruza a linha que a seção seguinte reserva ao dono da conta: **o MP3 sem procedência
+registrada está público na itch.io agora**, embarcado nos três alvos. Se a resposta for
+"não", o caminho é tirar `assets/shop_theme_loop.mp3` da árvore, reexportar e reenviar —
+não há como voltar ao zip WAV-only que estava no ar, porque ele foi sobrescrito no
+repositório de export.
 
 ### A licença do MP3 é a dúvida que fica
 
@@ -545,3 +567,156 @@ a mesma intermitência apareceu em 1 rodada de 5. Ou seja: **o contêiner só mu
 log imprime**. Fechando a janela com o ✕ enquanto a trilha toca, aquelas duas linhas podem
 voltar — nenhum portão de push as vê, porque o portão roda headless e headless não toca. Não
 existe mais baseline tolerada no grep do portão: o que passa é zero.
+
+---
+
+## 11. A página no ar — `shininoobi.itch.io/succubus-shop`
+
+Publicada em 2026-10-19 pelo editor web da conta (a API com chave de usuário é **somente
+leitura**: ela entrega o registro do jogo e os arquivos, mas não escreve página nenhuma).
+Estado conferido na página pública, não no formulário:
+
+| Campo | No ar |
+|---|---|
+| Status | *Published*, plataforma `HTML5, Windows, Linux`, gênero `Simulation`, status *In progress* |
+| Preço | *Name your own price* (modo `free` + doação) |
+| Arquivos | web 57 MB · windows 80 MB · linux 72 MB — os três são os artefatos da trilha dupla (§10) |
+| Embed | 1280×720, *Embed in page*, botão de fullscreen ligado, sem auto-start, sem scrollbars, **sem** `SharedArrayBuffer` (o build é no-threads — marcar essa caixa pediria um cabeçalho que a itch.io não manda) |
+| Prova de fogo | o iframe do build web abre, mostra o seletor de idioma com as seis línguas e `Versão: 0.1.0-alpha.6` no rodapé, console limpo |
+| Capa / galeria | capa 625×322 (variante A) + os sete `screenshots/gallery_*.png`; `og:image` aponta para a capa |
+| Metadados | teclado+mouse · `pt`, `pt-BR`, `en`, `es`, `fr`, `it`, `de` · *Interactive tutorial* · 1 jogador · *About an hour* · *Has sensitive content* + *Show content warning* |
+
+Quatro armadilhas que só apareceram na hora de clicar em *Publish*:
+
+- **O *Embed options* não existe até o zip web ser enviado com o projeto já marcado como
+  HTML5.** A sequência importa: criar os arquivos com `Kind = Downloadable` e depois trocar
+  para `HTML Game` deixa a página inteira no erro *"You've selected a HTML5 game but haven't
+  configured how your project is embedded"* — sem erro no save, sem nada no formulário. A
+  seção só é renderizada (por JS, então um `curl` no HTML não a vê) depois de reenviar o zip
+  **com o tipo já salvo** e com ele na **primeira linha** da lista de arquivos. Foi o que
+  custou um reenvio de 60 MB nesta rodada.
+- **Reenviar um arquivo de mesmo nome substitui a linha** (o id muda, a posição volta para o
+  fim): depois de reenviar o web zip foi preciso movê-lo de novo para a posição 0, senão o
+  embed aponta para o arquivo errado — conferido no `src` do iframe (`html-classic.itch.zone/html/<id>/`).
+- **Os bytes enviados não batiam com os do disco.** As três linhas diziam `alpha.6` e
+  55/78/70 MB, que são os zips da **alpha.5**: o upload tinha lido a pasta de export antes do
+  reexport da trilha dupla. A régua honesta é comparar o tamanho que a vitrine mostra com
+  `ls -l .export/itch` — foi assim que a divergência apareceu.
+- **`butler` não é obrigatório, mas falta.** Sem butler o envio é o arrastar-e-soltar do
+  navegador; funciona, não tem retomada e não confere hash. Para as próximas alphas,
+  `butler push` dá versão, canal e checksum de graça.
+
+O que a vitrine **não** entrega e a página não promete: conquistas da Steam, save em nuvem,
+jogo em celular, e o aviso de conteúdo sexual como categoria — a itch.io só tem o checkbox de
+conteúdo sensível, e o texto do aviso mora na descrição (§4).
+
+---
+
+## 12. O tema da página — editor nativo, sem CSS
+
+Aplicado em 2026-10-19. A itch.io **não libera o editor de CSS por conta própria** (o
+`/docs/creators/css-guide` diz que o acesso é pedido caso a caso e negado a conta vazia), e o
+tema não tem URL própria: sete endereços chutados (`/appearance`, `/theme`, `/styles`,
+`/customize`…) dão 404. O editor é o botão **Edit theme** na página pública, que abre uma
+gaveta lateral (`init_GameThemeEditor`) cujo `submit_url` é o próprio `/edit`. Tudo abaixo é
+campo nativo daquela gaveta.
+
+Paleta tirada da UI do jogo, não inventada:
+
+| Campo | Valor |
+|---|---|
+| `bg_color` / `bg2_color` | `#120a18` / `#1d1226` |
+| `bg2_alpha` | `90` — a caixa de conteúdo deixa 10 % do fundo vazar; abaixo de ~85 o texto começa a brigar com a arte |
+| `text_color` / `link_color` | `#e6dced` / `#e05299` |
+| `header_text_color` / `button_color` | `#f0b429` / `#a01f63` (a itch calcula o branco do botão e a borda `#442f55` sozinha) |
+| `font_family` / `font_size` | `lato` / `large` |
+| `header_font_family` | `Grenze Gotisch` |
+| `screenshots_loc` | `sidebar` |
+| `banner_image` | id `31091238` — faixa 1600×500, JPEG 195 KB, recorte de `assets/expedition_hall_scene.png` (os dois estandartes + a mesa do mapa) |
+| `background_image` | id `31091266` — 1600×914, JPEG 294 KB de `assets/library_tidy_scene.png`, `no-repeat`, `align_center`, `fixed` |
+| `embed_background_image` | vazio de propósito: o canvas 1280×720 cobre a área e arte atrás só faz ruído na borda |
+
+Seis coisas que só apareceram na prática:
+
+- **O banner mantém a proporção na largura do conteúdo.** Um PNG 1792×1024 virou um herói de
+  731 px que comia a viewport inteira e empurrava o jogo para baixo. Banner bom aqui é faixa
+  larga (~3,2:1), não a arte cheia.
+- **O fundo é servido em `/original/`.** Os dois PNGs de 3 MB pesavam ~6 MB por visita à
+  página. A `image_size_limit` do uploader é 3.145.728 bytes, e as cenas do repo vivem na
+  borda (2,79–2,95 MB) — ou seja, dá para estourar o limite por um nada. Recodificar em
+  JPEG q0.86 levou o par para 489 KB sem diferença visível.
+- **Não há PIL, ImageMagick nem ffmpeg nesta máquina.** O recorte e a compressão foram feitos
+  dentro do próprio navegador: `fetch` no servidor CORS local → `createImageBitmap` →
+  `canvas.drawImage` com a fonte recortada → `canvas.toBlob('image/jpeg', .86)`. Saiu mais
+  simples que instalar toolchain de imagem.
+- **O slider `bg2_alpha` é React com handler só no *nub* e só no teclado.** `mousedown`,
+  `pointerdown` e arrastar o *nub* não movem nada; `nub.focus()` + dez `keydown ArrowLeft`
+  levam de 100 a 90. É o caminho reprodutível.
+- **O `input[type=file]` do uploader é filho direto de `<html>`**, não do `<body>` — por isso
+  ele não aparece na árvore de acessibilidade e nenhuma ferramenta de automação o vê. (A
+  `upload_file` do navegador ainda devolve `Invalid arguments for file_upload: name is not
+  supported` nesta versão, então o caminho nem existe.) O que funciona: garfar
+  `HTMLInputElement.prototype.click`, clicar *Upload*, e escrever `input.files` via
+  `DataTransfer` + `new File([...], nome, {type:'image/jpeg'})` + `change`. O `accept` do
+  campo é `image/png,image/jpeg,image/gif` — JPEG entra.
+- **Trocar a imagem reseta o resto do widget? Não — mas remove e reenvia.** Com `have_upload`
+  só existe o botão *Remove image*; é preciso remover, aí o *Upload* reaparece. O id novo vem
+  no `input[name="layout[...][image_id]"]` depois do terceiro POST do fluxo (`upload-image` →
+  `itchio.commondatastorage.googleapis.com` → `action=success`), e os três precisam voltar
+  `success`. `repeat`/`align`/`fixed` sobreviveram ao reenvio.
+
+A régua da verificação é a página pública recarregada, não a gaveta: conferir em
+`getComputedStyle` que `.wrapper` tem `background-color: rgb(18,10,24)`, a URL do fundo,
+`no-repeat`, `fixed`, que `--itchio_*` baterem com o formulário, que `h2` está em
+`"Grenze Gotisch"` dourado e que o iframe do embed continua em
+`html-classic.itch.zone/html/19879347/`. O save em si se confirma pelo corpo da resposta
+(`{"success":true}`), porque o banner de "salvo" da página fica velho.
+
+Última nota: as sete capturas da galeria têm o HUD do jogo queimado na imagem, então **não**
+servem como arte de tema — daí o upload das cenas cruas de `assets/`, que são as mesmas salas
+sem a sobreposição da UI.
+
+---
+
+## 13. O arquivo de Android — medido em 2026-10-19
+
+O alvo Android (`preset.3` no `export_presets.cfg`) não é um `.zip`: a itch.io lê a extensão
+`.apk` para marcar a plataforma sozinha, e um `.zip` de Android vira "Downloadable" sem selo
+de sistema. As três decisões do arquivo, conferidas com `aapt2 dump badging` no APK final:
+
+| Campo | Valor medido | Por quê |
+|---|---|---|
+| pacote | `br.com.shininoobi.succubusshop`, `versionCode 1`, `versionName 0.1.0` | nome invertido do jogo; o `versionName` é o `config/version` truncado no núcleo (três números) |
+| arquiteturas | `native-code: arm64-v8a` (só) | 76,79 MB com um `.so` de 71 MB dentro; adicionar x86_64 dobraria o arquivo para instalar em dois aparelhos que quase ninguém tem |
+| orientação | `android.hardware.screen.landscape` no manifesto | `screen/orientation=0` — o jogo é 1280×720 deitado, e retrato aqui é tela preta com uma faixa |
+| SDK | `minSdkVersion 24`, `targetSdkVersion 36` | 24 é Android 7.0 e é o piso do template 4.7.2; o alvo 36 vem do template, não deste repo |
+| texturas | ETC2/ASTC (`texture_format/etc2_astc=true`, s3tc desligado) | DXT não existe em GPU de celular; ligar os dois só incha o pacote |
+| assinatura | v2 + v3, **sem** v1 | com `minSdk 24` o verificador do Android exige v2 a partir de 7.0; v1 (JAR) é o que o Play usa para compatibilidade antiga |
+
+**A assinatura não é do Godot, e não é capricho.** Medido na primeira tentativa:
+`--export-release "Android"` chega até `Assinando APK de lançamento`, imprime
+`WARNING: Assinatura de Código: O keystore de lançamento não foi encontrado` e morre com
+`ERROR: Project export for preset "Android" failed` — deixando o APK no disco, completo e
+`DOES NOT VERIFY: Missing META-INF/MANIFEST.MF`. A senha do keystore de release só entra pela
+janela do editor, e a linha de comando não tem janela. Escrever a senha no
+`export_presets.cfg` seria commitar a chave do jogo. Então:
+
+- o preset fica com `package/signed=false` e `signing/keystore=""` (assinatura nenhuma,
+  `exit 0`, o arquivo sai alinhado);
+- `tools/build_itch.sh --only android` faz `zipalign -p 4` → `apksigner sign` →
+  `apksigner verify --print-certs`, lendo `SS_KEYSTORE`, `SS_KEYSTORE_PASS` e `SS_KEY_ALIAS`
+  do **ambiente** (`--ks-pass env:`, nunca `:file:` nem linha de comando);
+- o par fica fora do repo, em `D:/android-dev/keystores/`. **Este keystore é a identidade do
+  aplicativo:** perder o arquivo ou a senha significa não poder mais atualizar o APK instalado
+  em nenhum aparelho, porque a assinatura nova não bate com a velha. Não há segunda cópia e
+  não haverá recuperação.
+
+O caminho do `apksigner` e do `zipalign` não é adivinhado: `ANDROID_BUILD_TOOLS` (padrão
+`D:/android-dev/sdk/build-tools/35.0.0`) e o `ANDROID_HOME`/`JAVA_HOME` apontando para o SDK e
+o JDK 17 instalados para o export. O Godot lê os dois de
+`%APPDATA%/Godot/editor_settings-4.7.tres` (`export/android/android_sdk_path` e
+`export/android/java_sdk_path`) — por isso **o export usa o APPDATA real**: com o `APPDATA`
+descartável das sondas, nem os templates nem o SDK são achados. O save do jogador não é
+tocado pelo export; a asserção continua sendo o hash conferido antes e depois.
+
+Sonda do layout de toque: `tools/probes/toque.gd` (§ regras em `main.gd::_fit_touch`).
