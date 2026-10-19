@@ -664,6 +664,16 @@ var locale_confirmed: bool = false
 ## e prometeria um arquivo que o jogador não pode tocar. O save continua existindo
 ## (IndexedDB) e nenhum número da loja muda — o que some é a porta de saída para o disco.
 var web_build: bool = OS.has_feature("web")
+## Emoji e símbolos no navegador: o build web não tem fallback de sistema, então os 84
+## símbolos que o jogo imprime (ícones de item, humor, estado, ☰ do menu, ─ de separador e
+## ░█ das barras) viram tofu. As duas fontes embarcadas entram na cadeia de fallback do
+## `ThemeDB.fallback_font` — nunca como fonte padrão, que é o que trocaria a métrica de todo
+## texto. A ordem é a asserção da sonda: a colorida primeiro, porque a DejaVu também desenha
+## vários dos 63 codepoints dela e sombrearia o emoji em preto-e-branco. O recorte da Noto
+## (tabela `SVG ` removida, 25,3 MB → 5,04 MB) é medido em `tools/strip_font_svg.py`; as
+## licenças estão em `fonts/OFL-NotoColorEmoji.txt` e `fonts/LICENSE-DejaVuSans.txt`.
+const EMOJI_FONT_PATH := "res://fonts/NotoColorEmoji-Colr.ttf"
+const SYMBOL_FONT_PATH := "res://fonts/DejaVuSans.ttf"
 const WEB_SAVE_NOTE := "Neste navegador o save mora no armazenamento do site: nada sai para arquivo, e limpar os dados do navegador apaga a loja."
 var menu_layer: Control
 var menu_start_mode: bool = false
@@ -1901,6 +1911,8 @@ func _ready() -> void:
 	TranslationServer.set_locale(locale)
 	_mark_day_start()
 	_sync_quality_stock()
+	if web_build:
+		_setup_web_fonts()
 	_build_ui()
 	_apply_platform_guards()
 	_apply_sector_visibility()
@@ -13305,6 +13317,26 @@ func _toggle_adult_content() -> void:
 ## O que a plataforma esconde. No navegador a janela de arquivo não existe, então a
 ## fileira de exportar/importar sai de cena e fica só o aviso; em mesa os dois botões
 ## aparecem e o aviso some. Nenhum número da loja é tocado aqui — é porta, não conta.
+## Chamada em `_ready()` antes de `_build_ui()`: é a cadeia de fallback do `ThemeDB` que o
+## `Label` consulta quando não tem fonte própria, e montá-la depois de o painel existir
+## deixaria os primeiros textos medidos sem emoji. Idempotente: rodar duas vezes não
+## duplica fonte na cadeia. A ordem do vetor é a ordem de consulta.
+func _setup_web_fonts() -> void:
+	var base := ThemeDB.fallback_font
+	var cadeia: Array[Font] = []
+	for fb in base.get_fallbacks():
+		if fb is Font:
+			cadeia.append(fb)
+	for caminho in [EMOJI_FONT_PATH, SYMBOL_FONT_PATH]:
+		var fonte := load(caminho) as FontFile
+		if fonte == null:
+			push_warning("Fonte embarcada ausente em %s: os simbolos do jogo aparecem como tofu." % caminho)
+			continue
+		if fonte in cadeia:
+			continue
+		cadeia.append(fonte)
+	base.set_fallbacks(cadeia)
+
 func _apply_platform_guards() -> void:
 	if is_instance_valid(save_transfer_box):
 		save_transfer_box.visible = not web_build

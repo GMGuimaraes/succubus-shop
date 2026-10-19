@@ -16,9 +16,10 @@ de conquista) e uma varredura PNG da árvore `assets/`.
 | Ícone do build (`icon.svg`, 128×128, 1127 bytes) | pronto | — |
 | Guarda de plataforma (sem janela de arquivo no navegador) | pronta e medida | — |
 | Templates de export do Godot 4.7.2 | **instalados** (`%APPDATA%\Godot\export_templates\4.7.2.stable`) | — |
-| Build Windows real | gerado e medido: `.exe` de 154,21 MB descompactado (`.pck` embutido), zip de **82,62 MB** | ver §6 antes de confiar na arte |
-| Build Linux real | gerado e medido: `Succubus Shop.x86_64` de 118,60 MB, zip de **73,88 MB**, com o modo unix `0755` gravado no `.zip` | o zip criado no Windows sairia `-rw----` (sem bit de execução) — `marcar_execucao()` corrige |
-| Build web real | gerado e medido: `.pck` de 43,47 MB, zip de 53,45 MB, `index.html` na raiz | ver §6 antes de confiar na arte |
+| Build Windows real | gerado e medido: `.exe` de 154,23 MB descompactado (`.pck` embutido), zip de **82,65 MB** | ver §6 antes de confiar na arte |
+| Build Linux real | gerado e medido: `Succubus Shop.x86_64` de 118,60 MB, zip de **73,90 MB**, com o modo unix `0755` gravado no `.zip` | o zip criado no Windows sairia `-rw----` (sem bit de execução) — `marcar_execucao()` corrige |
+| Build web real | gerado e medido: `.pck` de 48,61 MB, zip de **58,36 MB**, `index.html` na raiz | ver §6 antes de confiar na arte |
+| Fontes de símbolo embarcadas (§8) | prontas e medidas **só no navegador**: os presets de mesa filtram `fonts/*.ttf` e o binário de mesa não tem uma ocorrência da Noto | — |
 | Orçamento de textura do `.pck` | aplicado (`tools/set_texture_budget.py`) | conferir o recorte no olho (§6) |
 | Descrição "About" do repositório GitHub | não alterada | sem `gh` CLI neste ambiente — edição manual na web |
 
@@ -56,9 +57,9 @@ Duas armadilhas medidas nesta rodada, nenhuma delas com erro honesto na tela:
 | Conquistas | 100 definições. Na itch.io elas **não** aparecem: só a integração opcional com a Steam as entrega — na vitrine elas contam como conteúdo, não como sistema |
 | Conteúdo | fantasia sombria adulta, **tom sugestivo atrás de um botão**; nenhuma nudez explícita em nenhum modo |
 | Save | arquivo em mesa; no navegador mora no armazenamento do site (IndexedDB) |
-| Massa de arte | **667 PNG**, 275 MB na árvore, **169,60 Mpx** de textura. Re-encodeada com perdas por classe (`tools/set_texture_budget.py`): o `.pck` do navegador mede **43,47 MB** no export real |
-| Download do build web | **53,45 MB** compactado. Dentro dele `.pck` 43,47 MB e `.wasm` 39,51 MB descompactado — o `.wasm` é o motor, fixo, não depende da arte |
-| Download dos builds de mesa | Windows **82,62 MB** (um `.exe` de 154,21 MB descompactado, `.pck` embutido); Linux **73,88 MB** (binário `x86_64` de 118,60 MB, `.pck` embutido). Os dois passam o limite de 200 MB por arquivo descompactado |
+| Massa de arte | **667 PNG**, 275 MB na árvore, **169,60 Mpx** de textura. Re-encodeada com perdas por classe (`tools/set_texture_budget.py`): 43,47 MB do `.pck` do navegador, que fecha em **48,61 MB** com as duas fontes de símbolo (§8) |
+| Download do build web | **58,36 MB** compactado. Dentro dele `.pck` 48,61 MB e `.wasm` 39,51 MB descompactado — o `.wasm` é o motor, fixo, não depende da arte |
+| Download dos builds de mesa | Windows **82,65 MB** (um `.exe` de 154,23 MB descompactado, `.pck` embutido); Linux **73,90 MB** (binário `x86_64` de 118,60 MB, `.pck` embutido). Os dois passam o limite de 200 MB por arquivo descompactado. As fontes do §8 **não** embarcam neles: `exclude_filter` com `fonts/*.ttf`, conferido no binário |
 
 Regra da itch.io que aperta aqui: cada arquivo **descompactado** tem de caber em 200 MB.
 O `.pck` sem perdas media 207,33 MB e era reprovado; hoje cabe com folga. Ver §6.
@@ -233,6 +234,7 @@ Medido no primeiro export de verdade, não estimado:
 |---|---|---|---|
 | sem perdas (`compress/mode=0` — como estava) | 204,3 MB | **207,33 MB** | **reprovado**: a itch.io limita cada arquivo descompactado a 200 MB |
 | WebP com perdas por classe (`tools/set_texture_budget.py`) | 58,5 MB | **43,47 MB** | aprovado, com folga de ~4,6× |
+| o mesmo, com as duas fontes de símbolo embarcadas (§8) | +3,51 MB de `.fontdata` | **48,61 MB** | aprovado, com folga de ~4,1× |
 
 Duas crenças desta seção caíram na medição:
 
@@ -262,8 +264,10 @@ conta que se revalida antes de prometer a folga. O cache de `.godot/imported` **
 régua dessa medida: ele ainda carrega entradas dos exports anteriores. Basis/UASTC
 (`mode=3`) custa 3,00 B/texel e foi reprovado na medição: 508 MB.
 
-O `.wasm` custa 39,51 MB e não depende da arte, então o download total é **53,45 MB
-compactados** — um build honesto para o navegador.
+O `.wasm` custa 39,51 MB e não depende da arte. Com as fontes do §8 dentro, o download
+total do navegador é **58,36 MB compactados** (`.zip` de 58.358.890 bytes) — eram 53,45 MB
+antes delas, e o `.pck` é o que cresce: 43.469.492 → 48.614.256 bytes. Um build honesto
+para o navegador, ainda a ~4,1× do teto de 200 MB por arquivo.
 
 O que a mudança **não** é: os PNGs do repositório continuam os mesmos. Quem decide a
 codificação são os 667 `.png.import`, commitados junto. `python tools/set_texture_budget.py
@@ -298,6 +302,11 @@ Antes de marcar *Publish*, confira:
 - [ ] nenhum arquivo descompactado passa de 200 MB
 - [ ] o build web abre no navegador **sem** os botões de exportar/importar save, e com o
       aviso no lugar (isso é medido em `tools/probes/publicar.gd`, dos dois lados)
+- [ ] o build web aberto no Chrome mostra `♥` vermelho, `★` dourado, `☰` e `▶` desenhados,
+      sem nenhum tofu `▯` na tela (§8) — e o console do navegador fica limpo, sem o aviso
+      de "fonte embarcada ausente"
+- [ ] os binários de mesa **não** carregam as fontes: `grep -c NotoColorEmoji` no `.exe` e
+      no `.x86_64` devolve `0`
 - [ ] o build de mesa **tem** os dois botões
 - [ ] o seletor de idioma aparece na primeira abertura das três plataformas
 - [ ] a tagline e a descrição longa estão na página, nas duas línguas
@@ -313,17 +322,42 @@ Antes de marcar *Publish*, confira:
   o apaga — o jogo avisa isso na própria tela de save.
 - **Nota no mobile.** O build web usa `gl_compatibility` e roda, mas a UI foi desenhada
   para 1280×720 com mouse. Não marque "mobile friendly".
-- **Os ícones emoji não aparecem no navegador.** Medido no primeiro build web aberto no
-  Chrome: **77 glifos emoji distintos, 655 usos** nos `.gd`. No desktop eles saem porque o
-  motor pede a fonte de emoji ao sistema operacional; no navegador não há sistema operacional
-  por trás, e cada um deles vira o tofu `▯` — a barra de setores, os contadores do topo e
-  vários rótulos ficam com caixinhos vazios. O jogo funciona e nenhum número muda; é
-  puramente cosmético, mas é a primeira coisa que se vê na página. Três saídas, todas com custo:
-  embarcar uma fonte de emoji (Noto Color Emoji, OFL, e Godot renderiza emoji colorido por
-  partes), trocar os 77 glifos por ícones desenhados no projeto, ou remover os emoji só no
-  build web (a flag de plataforma já existe — mas os rótulos são chave de tradução nas
-  cinco tabelas de `locales.gd`, então mexer neles é bater na sonda de idioma). **A escolha
-  é sua; nenhuma foi feita aqui.**
+- **Os emoji do navegador: resolvido, com o número errado que eu prometi.** Medido no
+  primeiro build web aberto no Chrome: **84 codepoints** que a fonte padrão do motor não
+  desenha (emoji colorido e símbolos de interface — `♥ ★ ☰ ✓ ✦ ▸ ░ █ ─ ← → ≈ ∞ ✗  ✕`),
+  somando 3.206 usos nos `.gd`. No desktop eles saem porque o motor pede a fonte ao sistema
+  operacional; no navegador não há sistema operacional por trás, e cada um virava o tofu `▯`.
+  A rota escolhida foi embarcar a fonte: `Noto Color Emoji` (OFL) para os 63 coloridos e
+  `DejaVu Sans` (Bitstream Vera) para os 21 monocromáticos, montados como **cadeia de
+  fallback** — nunca como fonte padrão, porque trocar a padrão moveria a métrica de todo
+  texto do jogo. A colorida vem primeiro na cadeia porque a DejaVu também desenha vários dos
+  63 e, se vier antes, o emoji sai preto-e-branco. Fiação em `main.gd:_setup_web_fonts()`,
+  chamada em `_ready()` só quando `web_build`.
+  **A promessa de tamanho estava errada, e o erro foi a favor do jogador:** o arquivo oficial
+  da Noto tem 25.332.736 bytes; a tabela `SVG ` (só para navegador, 20.288.281 B) é arrancada
+  por `tools/strip_font_svg.py` e o que embarca mede 5.044.436 B. No `.pck`, o `.fontdata`
+  importado custa 3.082.128 B (emoji) + 429.187 B (DejaVu). O `.pck` web cresceu 5.144.764 B
+  porque leva também o `.ttf` fonte.-download subiu de 53,45 MB para **58,36 MB** — não os
+  "~64 MB" prometidos. Nos dois presets de mesa `exclude_filter` tem `fonts/*.ttf`, e o
+  resultado foi conferido no binário: **0** ocorrências de `NotoColorEmoji` no `.exe` de
+  154.229.792 B e no `.x86_64`; as mesas cresceram só 0,02 MB (os `.txt` de licença, que o
+  filtro não alcança).
+  **Prova, não aparência:** união 84/84 conferida glifo por glifo; a A/B de 200 tiques na
+  mesma semente rodou 6 processos com a cadeia e 6 sem, `MEDIDA` byte por byte idêntica
+  (`dia=11 ouro=809 fama=0 atendidos=5 afeto=27 furia=5 prateleira=6 vinculos=1`) e 0 crashes
+  nos 12; no Chrome aberto pelo servidor local o `♥` saiu vermelho, o `★` dourado, o `☰` e o
+  `▶` desenhados, sem nenhum `▯` na tela, e o console limpo. Licenças no repo em
+  `fonts/OFL-NotoColorEmoji.txt` e `fonts/LICENSE-DejaVuSans.txt`.
+  **O que ainda não foi visto:** só a tela inicial e a HUD do build web. O clique sintético
+  no `☰` não chegou ao canvas (o Godot ignora evento não-confiável), então menu, conquistas
+  e painéis internos continuam sem print do navegador — vale abrir o `.zip` no itch.io e
+  bater o olho antes de marcar *Publish*. E o harness que mediu os crashes (`_tmp_flaky.gd`,
+  promovido a `tools/probes/fonte_frequencia.gd`) deixou um achado registrado: um FATAL
+  intermitente do TextServer cai em ~metade dos processos quando um `Label` novo com esses
+  glifos entra numa árvore de jogo já rodando, **com ou sem** a cadeia — a cadeia foi absolvida
+  pela frequência (`flat` 4/8, `nested` 5/8, `emoji` 5/8, nenhuma fiação 5/12; com texto ASCII,
+  0/12). É caminho do motor no headless do Windows, não do recurso: a rota publicada ficou
+  limpa nos 12 processos.
 - **A arte com perdas precisa do seu olho.** O `.pck` caiu para 43,47 MB com WebP q=0,85
   (opacas) e q=0,92 (com alfa). No print do build web a borda dos personagens e as paredes
   escuras estão limpas, mas isso foi visto por uma máquina, não por você.
