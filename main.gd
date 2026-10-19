@@ -664,6 +664,25 @@ var locale_confirmed: bool = false
 ## e prometeria um arquivo que o jogador não pode tocar. O save continua existindo
 ## (IndexedDB) e nenhum número da loja muda — o que some é a porta de saída para o disco.
 var web_build: bool = OS.has_feature("web")
+## Toque: no celular o polegar não acerta alvo de 34 px lógicos e a fonte 13 vira ~8 dp na
+## tela do bolso. Nada aqui é recurso da partida nem preferência do jogador: é apresentação
+## decidida pelo hardware, então não entra no save, não move ouro, fama ou sorteio. A prova
+## é a cauda de `randi()` idêntica com o passe ligado, o alvo todos dentro da janela em
+## recorte de celular e a lista de chaves do save inalterada (`tools/probes/toque.gd`).
+## Degrau zero desta escada não existe: ou o aparelho tem tela sensível, ou não tem.
+## O alvo é 48 px lógicos, não 56: a régua que fecha a conta é o 720 da viewport, e com 56 a
+## coluna pediu 744 — polegar maior com o rodapé cortado é pior que polegar um pouco menor com
+## tudo desenhado. Em um 2400x1080 com `canvas_items`+`expand` o fator é 1,5, então 48 lógicos
+## são 72 físicos; isto NÃO é conformidade com os 48 dp do Material (seriam ~88 lógicos), é o
+## teto que este layout aguenta.
+const TOUCH_TARGET_MIN := Vector2(48, 48)
+const TOUCH_ICON_TEXT_LEN := 3
+const TOUCH_FONT_FLOOR := 15
+## O ar de 12 px entre linhas é de desktop, onde sobra tela. No celular cada um desses vales
+## come a altura do palco, e a varredura de alvo estoura a janela. Separação vertical entra em
+## regime apertado; horizontal fica intacta, porque ali a largura só cresceu.
+const TOUCH_SEP_MAX := 8
+var touch_ui: bool = false
 ## Emoji e símbolos no navegador: o build web não tem fallback de sistema, então os 84
 ## símbolos que o jogo imprime (ícones de item, humor, estado, ☰ do menu, ─ de separador e
 ## ░█ das barras) viram tofu. As duas fontes embarcadas entram na cadeia de fallback do
@@ -2234,6 +2253,7 @@ func _build_menu_layer() -> void:
 	stamp.add_theme_font_size_override("font_size", 11)
 	stamp.add_theme_color_override("font_color", Color(0.55, 0.48, 0.62))
 	frame.add_child(stamp)
+	_fit_touch(menu_layer)
 
 func _version_stamp() -> String:
 	return tr("Versão: %s") % str(ProjectSettings.get_setting("application/config/version", "alpha"))
@@ -11635,6 +11655,7 @@ func _show_ending(ending: Dictionary = {}, ruined := false) -> void:
 	close_button.custom_minimum_size = Vector2(240, 46)
 	close_button.pressed.connect(_reopen_after_ruin if ruined else _close_ending)
 	box.add_child(close_button)
+	_fit_touch(ending_layer)
 
 func _close_ending() -> void:
 	if is_instance_valid(ending_layer):
@@ -11733,6 +11754,7 @@ func _show_origin(scene: Dictionary) -> void:
 	close_button.custom_minimum_size = Vector2(240, 46)
 	close_button.pressed.connect(_close_origin)
 	box.add_child(close_button)
+	_fit_touch(origin_layer)
 	_sync_clock()
 	audio.play("rare")
 	_refresh_ui()
@@ -11872,6 +11894,7 @@ func _show_day_report(balance: Dictionary) -> void:
 	close_button.custom_minimum_size = Vector2(240, 46)
 	close_button.pressed.connect(_close_day_report)
 	box.add_child(close_button)
+	_fit_touch(day_layer)
 
 	_sync_clock()
 	audio.play("coin" if net >= 0 else "sad", true)
@@ -13557,6 +13580,103 @@ func _apply_platform_guards() -> void:
 		save_transfer_box.visible = not web_build
 	if is_instance_valid(web_save_note):
 		web_save_note.visible = web_build
+	touch_ui = OS.has_feature("android") or OS.has_feature("ios") or DisplayServer.is_touchscreen_available()
+	if not touch_ui:
+		return
+	_fit_touch_margins()
+	_fit_touch(ui_layer)
+
+## O entalhe e a borda arredondada comem o canto da tela em celular deitado, e a UI inteira
+## já mora dentro de uma MarginContainer: o recorte vira margem, não posição nova de cada
+## botão. Em mesa o safe area é a janela toda, então as quatro margens ficam nos 16/14 de
+## sempre e nada muda.
+func _fit_touch_margins() -> void:
+	if not is_instance_valid(ui_layer):
+		return
+	var safe := DisplayServer.get_display_safe_area()
+	# Safe area vazio é "o motor não sabe", não "a tela toda está cortada". Em headless a
+	# consulta devolve um retângulo de tamanho zero, e tratar isso como recorte inventaria
+	# 1280 px de margem fantasma sobre a loja inteira.
+	if safe.size.x <= 0 or safe.size.y <= 0:
+		return
+	var window := get_window()
+	var origin := window.position
+	var window_size := window.size
+	var display := DisplayServer.screen_get_size()
+	# O fator vem da viewport, não do `content_scale_factor` da janela: aquele número é a
+	# escala de DPI e em headless fica em 1 enquanto o `canvas_items` estica de verdade.
+	var factor := maxf(float(window_size.x) / maxf(get_viewport_rect().size.x, 1.0), 0.001)
+	# Recorte só existe onde a janela encosta a borda da tela: uma janela de desktop nunca é
+	# cortada pelo entalhe, e em headless o safe area é menor que a janela — sem esta
+	# condição a loja acordaria com 80 px de margem fantasma.
+	var left := maxf(0.0, float(safe.position.x - origin.x) / factor) if origin.x <= 0 else 0.0
+	var top := maxf(0.0, float(safe.position.y - origin.y) / factor) if origin.y <= 0 else 0.0
+	var right := 0.0
+	if origin.x + window_size.x >= display.x:
+		right = maxf(0.0, float(origin.x + window_size.x - (safe.position.x + safe.size.x)) / factor)
+	var bottom := 0.0
+	if origin.y + window_size.y >= display.y:
+		bottom = maxf(0.0, float(origin.y + window_size.y - (safe.position.y + safe.size.y)) / factor)
+	ui_layer.add_theme_constant_override("margin_left", 16 + int(left))
+	ui_layer.add_theme_constant_override("margin_right", 16 + int(right))
+	ui_layer.add_theme_constant_override("margin_top", 14 + int(top))
+	ui_layer.add_theme_constant_override("margin_bottom", 14 + int(bottom))
+
+## Alvo mínimo, fonte legível e separação apertada impostos por varredura, não linha a
+## linha: os 97 `custom_minimum_size` e as 148 fontes do arquivo são a UI inteira, e um alvo
+## esquecido não dá erro — dá um botão que o polegar não alcança. Largura só é forçada em quem
+## já pedia largura ou em quem só tem ícone: `Vector2(0, 44)` é "pega a coluna inteira", e
+## trocar o zero por 48 engessaria o layout.
+func _fit_touch(node: Node) -> void:
+	if not touch_ui:
+		return
+	if node is Button:
+		var button := node as Button
+		var minimum := button.custom_minimum_size
+		minimum.y = maxf(minimum.y, TOUCH_TARGET_MIN.y)
+		if minimum.x > 0.0:
+			minimum.x = maxf(minimum.x, TOUCH_TARGET_MIN.x)
+		elif button.text.length() <= TOUCH_ICON_TEXT_LEN:
+			minimum.x = TOUCH_TARGET_MIN.x
+		button.custom_minimum_size = minimum
+	elif node is Slider:
+		var slider := node as Slider
+		slider.custom_minimum_size.y = maxf(slider.custom_minimum_size.y, TOUCH_TARGET_MIN.y)
+	elif node is ScrollContainer:
+		var scroll := node as ScrollContainer
+		if not bool(scroll.get_meta("touch_drag", false)):
+			scroll.set_meta("touch_drag", true)
+			scroll.gui_input.connect(_on_touch_scroll.bind(scroll))
+	elif node is BoxContainer and (node as BoxContainer).vertical:
+		var box := node as BoxContainer
+		if box.get_theme_constant("separation") > TOUCH_SEP_MAX:
+			box.add_theme_constant_override("separation", TOUCH_SEP_MAX)
+	elif node is FlowContainer:
+		var flow := node as FlowContainer
+		if flow.get_theme_constant("v_separation") > TOUCH_SEP_MAX:
+			flow.add_theme_constant_override("v_separation", TOUCH_SEP_MAX)
+	if node is Label or node is Button:
+		var text_control := node as Control
+		if text_control.get_theme_font_size("font_size") < TOUCH_FONT_FLOOR:
+			text_control.add_theme_font_size_override("font_size", TOUCH_FONT_FLOOR)
+	for child in node.get_children():
+		_fit_touch(child)
+
+## Rolagem por arraste: este motor só move o ScrollContainer pela barra de rolagem, e uma
+## barra de 6 px não é alvo de polegar. O arraste entra pelo próprio container, então soltar
+## o dedo em cima de um botão não rola — que é o que quem segura o celular espera. A régua é
+## a posição anterior guardada no quadro, não `event.delta`: `delta` é documentado como o
+## deslocamento "de um dispositivo relativo" e o toque é absoluto — apostar nele daria um
+## gesto que não anda. O primeiro evento do pouso move zero, que é o que evita o salto.
+func _on_touch_scroll(event: InputEvent, scroll: ScrollContainer) -> void:
+	if not (event is InputEventScreenDrag):
+		return
+	var drag := event as InputEventScreenDrag
+	var previous := drag.position
+	if scroll.has_meta("touch_last"):
+		previous = scroll.get_meta("touch_last")
+	scroll.set_meta("touch_last", drag.position)
+	scroll.scroll_vertical = int(float(scroll.scroll_vertical) - (drag.position.y - previous.y))
 
 func _show_save_dialog(exporting: bool) -> void:
 	save_file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE if exporting else FileDialog.FILE_MODE_OPEN_FILE
