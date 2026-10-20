@@ -25,7 +25,7 @@ de conquista) e uma varredura PNG da árvore `assets/`.
 | Build web real | gerado e medido: `.pck` de 48,05 MB, zip de **57,81 MB**, `index.html` na raiz | ver §6 antes de confiar na arte |
 | Fontes de símbolo embarcadas (§8) | prontas e medidas **só no navegador**: os presets de mesa filtram `fonts/*.ttf` e o binário de mesa não tem uma ocorrência da Noto | — |
 | Orçamento de textura do `.pck` | aplicado (`tools/set_texture_budget.py`) | conferir o recorte no olho (§6) |
-| Descrição "About" do repositório GitHub | não alterada | sem `gh` CLI neste ambiente — edição manual na web |
+| Descrição "About" do repositório GitHub | editável pela API (`PATCH /repos/...`) — ver §16 | — |
 
 `tools/build_itch.sh` ainda **não baixa nada**: sem templates ele para na porta com a
 instrução de instalação. O preflight comparava a versão longa do motor
@@ -897,3 +897,46 @@ Quatro coisas que só apareceram na execução:
   devolve o texto **velho** — o que lê como "não aplicou" e convida a aplicar de novo. Na segunda
   tentativa os padrões antigos já não existem, e isso é a prova de que a primeira funcionou, não de
   que falhou. A régua certa é recarregar o editor e ler o campo vindo do servidor.
+
+## 16. API antes do navegador — medido em 2026-10-20
+
+A rota padrão agora é a API; o navegador (§11 a §15) virou segunda opção, usada só para o que
+nenhuma API cobre. A descoberta que custou a sondagem errada: **a API atual da itch não mora em
+`itch.io/api/1/...`, e sim em `api.itch.io`**, com `Authorization: Bearer <chave>`. Batendo no
+endereço antigo, todo caminho devolve `{"errors":["invalid api endpoint"]}` e a leitura parece
+"não existe API". Existe — e é só leitura.
+
+| Chamada | O que devolve |
+|---|---|
+| `GET https://api.itch.io/credentials/info` | `{"type":"key"}` — chave válida, sem escopo (as geradas na conta têm acesso a tudo o que a API tem) |
+| `GET https://api.itch.io/profile` | usuário dono da chave |
+| `GET https://api.itch.io/profile/games` | título, `published`, `min_price`, `traits`, `embed`, contadores |
+| `GET https://api.itch.io/games/5186495` | a ficha do projeto, mesma forma |
+| legado `https://itch.io/api/1/key/*` | `credentials/info`, `me`, `my-games`, `game/<id>/purchases`, `download_keys` |
+
+Medido no projeto real: `traits: ["p_windows","p_linux","p_osx","p_android"]` — é a prova de que os
+quatro tipos de plataforma ficaram marcados, lida sem abrir o editor. `PUT /api/1/shininoobi/
+projects/5186495` responde **404**: não há endpoint de escrita de página nem de upload. As duas
+referências oficiais (a atual e a legada) listam só `credentials`, `profile`, `games`,
+`download_keys`, `purchases`, `claimed-rewards`, `ownership`, coleções e `wharf/latest`. O
+substituto natural seria o `butler`, que **não está instalado** e cuja URL de download pública não
+resolveu daqui — e baixar CLI de terceiro é decisão do autor, não do agente. Então a divisão fica:
+**conferir pela API, gravar pelo navegador.**
+
+A página pública também não precisa mais de navegador para conferência: `curl` na URL lê as linhas
+de download como HTML server-rendered. Medido em 2026-10-20, cinco linhas — Windows 80 MB,
+Linux 72 MB, Android 73 MB, macOS 101 MB, Linux arm64 71 MB (o build de navegador não é linha de
+download, é o embed da linha 0, §11).
+
+**GitHub é o oposto:** a REST API faz tudo o que o navegador fazia, inclusive escrita. Sem `gh`
+CLI, o token sai de `git credential fill` para `github.com` (40 caracteres, mantido só em variável
+de shell, nunca impresso nem commitado) e vale contra `https://api.github.com`. Medido nesta
+rodada: `POST https://uploads.github.com/repos/GMGuimaraes/succubus-shop/releases/416907533/assets?name=<arquivo>`
+com `--data-binary @<arquivo>` subiu os cinco alvos que faltavam na release da alpha.6 (macOS,
+Linux x86_64, Linux arm64, navegador, APK), cada um voltando `state: "uploaded"` com o tamanho de
+disco, e o `Content-Length` da URL pública bateu com `stat -c%s` nos cinco arquivos.
+
+Uma armadilha própria do console, não da API: ao verificar texto acentuado, `json.load(sys.stdin)`
+decodifica pelo codepage do Windows e **inventa mojibake**. A descrição do repositório pareceu ter
+`Ã­`/`Ã©` onde deveria haver `í`/`é`; salvo em arquivo e lido com `decode("utf-8")` explícito, ela
+estava correta o tempo todo. A régua é bytes crus, nunca o que o terminal mostra.
