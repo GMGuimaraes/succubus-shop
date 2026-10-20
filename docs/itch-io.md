@@ -368,6 +368,10 @@ Antes de marcar *Publish*, confira:
   funciona bem em macOS/iOS; (b) SharedArrayBuffer **desligado** na vitrine, porque ligá-lo é que
   quebraria o Safari. O que não foi medido: o jogo aberto num iPhone de verdade — o Safari tem
   problemas de WebGL 2.0 que os outros navegadores não têm, e checkbox nenhum substitui isso.
+  A régua final fechou em 2026-10-20: relida do servidor, `embed[mobile_friendly]=true` e
+  `embed[cdn_type]=false`, a página pública não mostra **aviso nenhum** de celular, e o parágrafo
+  "No iPhone e no iPad" está na vitrine. O que continua sem medição é o aparelho: o texto promete
+  o caminho, não o desempenho.
 - **Os emoji do navegador: resolvido, com o número errado que eu prometi.** Medido no
   primeiro build web aberto no Chrome: **84 codepoints** que a fonte padrão do motor não
   desenha (emoji colorido e símbolos de interface — `♥ ★ ☰ ✓ ✦ ▸ ░ █ ─ ← → ≈ ∞ ✗  ✕`),
@@ -755,11 +759,24 @@ Duas armadilhas do editor web, medidas na subida:
   `codesign`. O que dá para fazer daqui é preparar o preset e a lista de arquivos, e rodar o
   export numa máquina Apple. **O Android não tinha essa barreira** — o APK saiu do Windows e
   está na itch (73 MiB, arm64-v8a).
-- **E não é o que segura o iPhone.** O `.ipa` nunca foi o único caminho: o build **Web** que já
-  está no ar é single-threaded de propósito, e é exatamente esse modo que a doc da Godot cita
-  como o que *"works very well on macOS and iOS too, where it always had compatibility issues
-  with multiple threads exports"*. Um jogador de iPhone abre a página da itch em Safari e joga,
-  sem app e sem loja. Ver §8, item "Mobile".
+- **A itch.io não tem tipo de arquivo iOS — medido no DOM vivo do editor em 2026-10-20.** Cada
+  linha de upload oferece seis caixas de tipo: `p_windows`, `p_linux`, `p_osx`, `p_android`,
+  `embed`, `hidden`. **Não existe `p_ios`.** Mac tem linha própria; iPhone não tem, e não é
+  limitação desta máquina — não há o que marcar. O campo `game[app_store_url]` existe no
+  formulário (é o botão *Apple App Store* da seção de links externos) e continua vazio de
+  propósito: preencher exigiria uma página real na App Store, e link mentiroso na vitrine é pior
+  que link nenhum. A lista pública de downloads reflete isso: Windows, Linux e
+  "Android (arm64-v8a)" — três linhas, nenhuma de iPhone.
+- **O que se publica, então, é o caminho do iPhone na página — e ele foi publicado em
+  2026-10-20.** O `.ipa` nunca foi o único caminho: o build **Web** que já está no ar é
+  single-threaded de propósito, e é exatamente esse modo que a doc da Godot cita como o que
+  *"works very well on macOS and iOS too, where it always had compatibility issues with multiple
+  threads exports"*. Um jogador de iPhone abre a página da itch em Safari, toca em *Click to
+  launch* e joga, sem app e sem loja. Texto gravado nos dois campos: `game[instructions]` ganhou
+  o parágrafo "No iPhone e no iPad", `game[description]` ganhou o mesmo em PT e EN e a ficha
+  técnica passou a ler "navegador (incluindo Safari em iPhone e iPad)". Conferência tripla: o corpo
+  da resposta XHR (`{"success":true}`), uma recarga nova com os dois campos lidos do servidor, e a
+  página pública exibindo os quatro trechos. Ver §8, item "Mobile".
 - **GOG.** A loja não aceita submissão self-service: é formulário de candidatura com revisão
   humana, e a FAQ coloca *"Adult sexual content"* entre os itens não elegíveis — a nossa zona
   cinzenta (tema adulto, zero nudez) precisa de uma resposta deles antes de qualquer
