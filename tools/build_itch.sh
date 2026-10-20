@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 # Build de publicação do Succubus Shop para a itch.io.
 #
-# Faz três exports e três .zip com a forma que a itch.io exige:
-#   Windows  -> Succubus-Shop-<versao>-windows.zip   (pasta com o .exe dentro)
-#   Linux    -> Succubus-Shop-<versao>-linux.zip     (pasta com o .x86_64 dentro)
-#   Web      -> Succubus-Shop-<versao>-web.zip       (index.html NA RAIZ do zip)
-#   Android  -> succubus-shop-<versao>-arm64.apk     (.apk solto, assinado aqui fora)
+# Faz seis exports e os .zip com a forma que a itch.io exige:
+#   Windows    -> Succubus-Shop-<versao>-windows.zip      (pasta com o .exe dentro)
+#   Linux      -> Succubus-Shop-<versao>-linux.zip        (pasta com o .x86_64 dentro)
+#   Linux ARM  -> Succubus-Shop-<versao>-linux-arm64.zip  (pasta com o .arm64 dentro)
+#   Web        -> Succubus-Shop-<versao>-web.zip          (index.html NA RAIZ do zip)
+#   Android    -> succubus-shop-<versao>-arm64.apk        (.apk solto, assinado aqui fora)
+#   macOS      -> Succubus-Shop-<versao>-macos.zip        (o .app ja vem zipado do exportador)
+#
+# Linux e escolhido por ARQUITETURA, nao por distro: o x86_64 publicado roda em qualquer distro
+# x86_64 (Debian/Ubuntu, Fedora, Arch, openSUSE, Steam Deck). A linha arm64 cobre o que sobrava,
+# que e processador ARM de 64 bits. macOS sai do Windows sem Mac nenhum -- o que exige macOS e
+# Xcode e a assinatura de Developer ID e a notarizacao, e este build e ad-hoc sem elas. iOS exige
+# o Mac para existir; ver docs/itch-io.md §14.
 #
 # O Android não vai em .zip de propósito: a itch.io lê a extensão para marcar a plataforma
 # e um `.zip` virou "Downloadable" sem o selo de Android. E ele não é assinado pelo Godot:
@@ -175,6 +183,8 @@ exportar() {
 	case "$preset" in
 		"Windows Desktop") molde="windows_release_x86_64.exe" ;;
 		Linux) molde="linux_release.x86_64" ;;
+		"Linux (arm64)") molde="linux_release.arm64" ;;
+		macOS) molde="macos.zip" ;;
 		Web) molde="web_nothreads_release.zip" ;;
 		Android) molde="android_release.apk" ;;
 		*) echo "FALHA: preset desconhecido '$preset'."; exit 1 ;;
@@ -193,19 +203,34 @@ exportar() {
 	case "$preset" in
 		"Windows Desktop") destino="$OUT_DIR/windows" ;;
 		Linux) destino="$OUT_DIR/linux" ;;
+		"Linux (arm64)") destino="$OUT_DIR/linux-arm64" ;;
+		macOS) destino="$OUT_DIR/macos" ;;
 		Web) destino="$OUT_DIR/web" ;;
 		Android) destino="$OUT_DIR/android" ;;
 		*) echo "FALHA: preset desconhecido '$preset'."; exit 1 ;;
 	esac
 	mkdir -p "$destino"
 	"$GODOT" --headless --path . --export-release "$preset" 2>&1 | tail -n 20
-	# O export Android escreve o APK e SO DEPOIS reclama da assinatura. Com
-	# `package/signed=false` no preset ele termina em 0 e entrega o arquivo alinhado,
-	# sem assinatura; `assinar_android` é quem fecha a conta com o keystore de verdade.
-	[ -f "$destino/$(basename "$APK_ANDROID")" ] || {
-		echo "FALHA: o export de '$preset' não deixou arquivo em $destino."
+	# A porta de conferência era uma linha fixa no `.apk` do Android e valia para TODO preset
+	# — defeito latente medido em 2026-10-20: os `.zip` de mesa da alpha.6 são das 12:34 e o
+	# gate entrou no script às 15:57, então nenhum build de mesa passou por ele. O arquivo
+	# esperado agora é lido do próprio `export_path` do preset: fonte única, sem tabela para
+	# envelhecer. O export Android escreve o APK e SO DEPOIS reclama da assinatura; com
+	# `package/signed=false` no preset ele termina em 0 e entrega o arquivo alinhado, sem
+	# assinatura, e `assinar_android` é quem fecha a conta com o keystore de verdade.
+	local export_path
+	export_path="$(awk -v want="$preset" '
+		/^name=/        { n = $0; sub(/^name="/, "", n); sub(/"$/, "", n) }
+		/^export_path=/ { p = $0; sub(/^export_path="/, "", p); sub(/"$/, "", p)
+		              if (n == want) { print p; exit } }
+	' export_presets.cfg)"
+	[ -n "$export_path" ] || { echo "FALHA: preset '$preset' não tem export_path no cfg."; exit 1; }
+	EXPORT_PATH="$destino/$(basename "$export_path")"
+	[ -e "$EXPORT_PATH" ] || {
+		echo "FALHA: o export de '$preset' não deixou '$EXPORT_PATH'."
 		exit 1
 	}
+	echo "  export: $EXPORT_PATH"
 }
 
 # Assinatura de release do Android, feita fora do Godot (ver o cabecalho do script).
@@ -255,6 +280,29 @@ caso() {
 			empacotar "$OUT_IT/Succubus-Shop-$SO_VERSAO-linux.zip" "$OUT_DIR/linux"
 			marcar_execucao "$OUT_IT/Succubus-Shop-$SO_VERSAO-linux.zip"
 			;;
+		linux-arm64)
+			exportar "Linux (arm64)"
+			empacotar "$OUT_IT/Succubus-Shop-$SO_VERSAO-linux-arm64.zip" "$OUT_DIR/linux-arm64"
+			marcar_execucao "$OUT_IT/Succubus-Shop-$SO_VERSAO-linux-arm64.zip"
+			;;
+		macos)
+			# Quem produz o .zip aqui e o proprio exportador do Godot -- e nao `empacotar`:
+			# medido no zip do export, as entradas ja nascem com sistema Unix e o binario com
+			# modo 0755, que e justamente o que se perde quando o alvo e um .app solto saido
+			# do Windows ("Projects exported as .zip are not affected by this issue", doc
+			# oficial). Reempacotar daqui seria trocar o cuidado do motor pelo nosso.
+			exportar "macOS"
+			local zip_macos="$OUT_IT/Succubus-Shop-$SO_VERSAO-macos.zip"
+			cp -f "$EXPORT_PATH" "$zip_macos"
+			command -v python >/dev/null 2>&1 || {
+				echo "FALHA: preciso de python para conferir o bundle de macOS."
+				exit 1
+			}
+			python tools/check_macho_fat.py "$zip_macos" || exit 1
+			local bytes
+			bytes="$(stat -c %s "$zip_macos")"
+			echo "  -> $zip_macos ($bytes bytes, $(awk -v b="$bytes" 'BEGIN{printf "%.2f MB", b/1e6}'))"
+			;;
 		web)
 			exportar "Web"
 			empacotar "$OUT_IT/Succubus-Shop-$SO_VERSAO-web.zip" "$OUT_DIR/web"
@@ -266,7 +314,7 @@ caso() {
 	esac
 }
 
-SO_ALVO="windows linux web android"
+SO_ALVO="windows linux linux-arm64 web android macos"
 if [ "${1:-}" = "--only" ]; then
 	SO_ALVO="$2"
 	shift 2

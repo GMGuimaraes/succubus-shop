@@ -798,3 +798,102 @@ errada**, e o erro era nosso, não da ferramenta: `endings.gd` declara sete fina
 `casa` e `ruina` com `faction: ""`. O português já dizia o certo ("cinco de facção, o da casa
 e o da ruína"). Corrigido no editor web para *"five by faction, the house one and the ruin"* e
 conferido na página pública depois do reload do formulário de edição.
+
+---
+
+## 15. MacBook e Linux por arquitetura — medido em 2026-10-20
+
+A pergunta foi "versão macbook e outras versões de linux, caso a publicada só abranja um tipo de
+distro". A premissa de distro não se sustenta, e a de Mac sim — as duas coisas abaixo foram lidas
+na documentação do motor e confirmadas no artefato.
+
+### Linux: quem escolhe é a CPU, não a distribuição
+
+A doc de export Linux lista **sete arquiteturas** (`x86_64`, `x86_32`, `arm64`, `arm32`, `rv64`,
+`ppc64`, `loongarch64`), default `x86_64`, e diz que todo Intel/AMD moderno é `x86_64`. Não existe
+eixo "distro": um binário `x86_64` roda em Ubuntu, Fedora, Arch, Mint e no Steam Deck (que é
+`x86_64`) exatamente pelo mesmo motivo — a ABI, não o gerenciador de pacotes. O único buraco real
+de cobertura era **arm64** (Raspberry Pi OS 64 bits, laptops ARM), e ele foi fechado:
+
+| Item | Medido |
+|---|---|
+| Preset | `[preset.5]` `name="Linux (arm64)"`, `binary_format/architecture="arm64"` |
+| Binário extraído | 113.825.896 B, `e_machine = 183` (AArch64) — lido no cabeçalho ELF, não chutado |
+| Zip da vitrine | `Succubus-Shop-0.1.0-alpha.6-linux-arm64.zip` 75.070.219 B, binário com modo `0755` |
+| Teto da itch | 200 MB por arquivo **extraído** → 113,8 MB passa com folga |
+
+`x86_32` ficou de fora de propósito: é o único outro alvo plausível e não há quem o peça — e cada
+preset a mais é um upload de ~70 MB para validar em aparelho que ninguém tem.
+
+### Mac: exporta daqui, mas o Gatekeeper continua no caminho
+
+Diferente do iOS (ver §14), o export de macOS **não exige** uma máquina com macOS: a própria doc
+tem o ramo *"If you do not have an Apple Developer ID Certificate"* → assinatura *Built-in (ad-hoc
+only)* e *Notarization = Disabled*. O que isso custa ao jogador:
+
+- **Sem assinatura de Developer ID e sem notarização, o macOS bloqueia o app baixado de "fonte
+  desconhecida"** — e a itch é uma fonte desconhecida. A página precisa ensinar o
+  botão-direito → *Abrir* (ou `xattr -d com.apple.quarantine`), senão o download vira "não abre"
+  sem mensagem nossa.
+- **`.app` solto exportado do Windows perde o bit de execução** (frase da doc: *"Due to file system
+  limitations, .app bundles exported from Windows lack the executable flag and won't run on
+  macOS. Projects exported as .zip are not affected"*). Por isso o preset entrega `.zip`, e a
+  ferramenta confere o modo de cada entrada.
+- **DMG não dá**: a empacotamento é caminho de macOS. Zip é o formato da vitrine.
+
+### Universal 2: provado no binário, não no texto da doc
+
+A doc promete um binário único "Universal 2" (x86_64 + arm64) nos templates oficiais. Conferido no
+cabeçalho Mach-O gordo do executável exportado:
+
+| Slice | Offset | Tamanho |
+|---|---|---|
+| `x86_64` (Intel) | 32.768 | 87.608.528 B |
+| `arm64` (Apple Silicon) | 87.654.400 | 83.309.248 B |
+
+Executável: 170.963.648 B extraídos, modo `0755`; bundle com 7 entradas; zip 106.742.830 B.
+**O rótulo de tamanho não é uma régua:** o editor mostra `102mb` e a página pública, `101 MB` para o
+mesmo arquivo — as duas colunas arredondam MiB de jeitos diferentes (e o `linux.zip` de x86_64, que é
+2 MB maior que o de arm64, sai com `72mb` nos dois por acaso). A conferência é byte de disco contra
+byte de disco. **Folga de só ~29 MB no teto de
+200 MB por arquivo extraído** — é a margem que qualquer alta de textura ou áudio come, e por isso o
+verificador abaixo é obrigatório antes do upload, não opcional.
+
+`tools/check_macho_fat.py` é quem mede isso no artefato: formato do zip, `Info.plist`
+(`CFBundleIdentifier` / `CFBundleName` / `CFBundleShortVersionString`), modo de execução do
+binário, as duas fatias do Mach-O gordo e o teto da itch. Roda dentro do `tools/build_itch.sh
+macos`.
+
+### A porta que quebrou no caminho
+
+O gate de fim de `exportar()` conferia `basename "$APK_ANDROID"` para **todo** preset — ou seja,
+para Windows/Linux/web ele procurava o nome do APK e, como o teste era `[ -f ]` de um caminho que
+não existia, reprovaria. Medido pelos mtimes: o gate entrou em vigor no commit `0c82b87`
+(2026-10-19 15:57) e os zips de mesa são das 12:34–12:35 do mesmo dia, **antes** dele — nunca
+rodou contra um alvo de mesa. Agora o `export_path` é lido do próprio `export_presets.cfg` por
+`awk`, e o gate cobra o arquivo que aquele preset declarou.
+
+### O que a publicação mediu (2026-10-20)
+
+As duas linhas estão no ar: `macOS (Intel + Apple Silicon) — v0.1.0-alpha.6` (upload
+`19907096`, tipo `p_osx`) e `Linux (arm64) — v0.1.0-alpha.6` (`19907642`, tipo `p_linux`). A
+página pública passou a listar seis arquivos e o banner de update confirmou os dois nomes novos.
+Quatro coisas que só apareceram na execução:
+
+- **Um dispatch não é um upload.** O primeiro envio do arm64 devolveu
+  `{"bytes":75070219,"parts":5,"dispatched":true}` — os bytes conferidos, o evento entregue — e a
+  linha **nunca existiu** no servidor: o reload seguinte mostrou 5 linhas, sem ela. A régua é a
+  linha escrita `· Success` com o tamanho certo, lida depois de esperar a barra; `dispatched` não
+  prova nada.
+- **A itch adivinha o tipo de macOS e não adivinha o de Linux.** A linha do `.zip` do Mac nasceu
+  com `p_osx` já marcado (ela lê o `Succubus Shop.app` dentro do pacote); a do arm64 nasceu **sem
+  plataforma nenhuma**, porque por fora é um `.zip` igual aos outros. Conferir checkbox por
+  checkbox, linha por linha, é o passo, não a suposição.
+- **A linha nova nem sempre vem escondida.** A do macOS veio com `hidden` marcado (o previsto); a
+  do arm64 veio **desmarcada**, ou seja: se alguém salvasse o formulário antes de olhar, o build
+  teria ido ao ar com tipo vazio e sem nome de exibição. A caixa de esconder não é um padrão
+  garantido, é um estado a ler.
+- **O `code.set()` do Redactor responde no tick seguinte.** `code.get()` logo depois do `set()`
+  devolve o texto **velho** — o que lê como "não aplicou" e convida a aplicar de novo. Na segunda
+  tentativa os padrões antigos já não existem, e isso é a prova de que a primeira funcionou, não de
+  que falhou. A régua certa é recarregar o editor e ler o campo vindo do servidor.
