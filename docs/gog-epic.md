@@ -34,21 +34,73 @@ tipos de imagem em outras proporções.
 
 ## 2. GOG — o estado da arte lido desta máquina
 
-### O formulário
+### O formulário — as 17 perguntas, lidas uma por uma
 
-Aberto em `https://www.gog.com/indie` (~15 perguntas, sem taxa, com revisão humana).
-Medido aqui: `partner.gog.com` **não resolve** por DNS neste ambiente, e
-`gog.com/submit-your-game` renderiza o formulário dentro de um iframe que devolve
-`iframe_loading_error` — ou seja, **as perguntas exatas do formulário não foram lidas**.
-Quem for preencher tem de fazer isso logado, no navegador, e conferir campo a campo.
+Medido em 2026-10-20, e a leitura anterior estava errada no ponto que importava: **o
+formulário não é da GOG**. A cadeia real é três páginas, não uma:
+
+| Passo | O que é | Medido |
+|---|---|---|
+| `https://www.gog.com/indie` | só um atalho | **HTTP 302** → `/submit-your-game` (13,2 s) |
+| `https://www.gog.com/submit-your-game` | casca da loja, carrega o resto | 200, 433.144 bytes; dentro, um `<iframe>` |
+| `src` do iframe: `https://lp.gog.com/submit-your-game/en` | página de campanha | 200, 356.491 bytes; dentro, **outro** `<iframe>` |
+| `src` desse: `https://form.typeform.com/to/jtPGIqWl` | **o formulário de verdade — um Typeform** | 17 campos lidos pela definição pública `api.typeform.com/forms/jtPGIqWl` |
+
+O `iframe_loading_error` que a versão antiga desta seção registrou é o **texto-fallback
+escrito pela própria GOG dentro do `<iframe>`** (`<p>iframe_loading_error</p>` está no HTML
+de `gog.com/submit-your-game`, como conteúdo do elemento que aponta para a `lp.gog.com` — não
+é mensagem do navegador). Aberto como **página de topo**, o mesmo Typeform renderiza e aceita
+resposta. Conclusão operacional: **não se passa pelo `gog.com/submit-your-game`; abre-se
+`https://form.typeform.com/to/jtPGIqWl` direto.**
+
+E não havia bloqueio nenhum a liberar. `partner.gog.com` devolve
+`Non-existent domain` do resolver — o domínio **não existe**, não está censurado — e
+`gog.com` resolve nos IPs normais da Fastly (`151.101.129.241` &c). O que falhava era a
+montagem de iframe aninhado dentro da visualização incorporada, não a saída de rede.
+
+As perguntas, na ordem e com o tipo:
+
+| # | Pergunta | Tipo | Resposta |
+|---|---|---|---|
+| 1 | Your email address | email | **é seu** — é por onde eles respondem |
+| 2 | Developer's name | texto | quem assina: seu nome ou o codinome de dev |
+| 3 | Country of residency | lista | **é seu** (Brasil está na lista) |
+| 4 | Do you own a business? | sim/não | decide o caminho fiscal |
+| 5 | Do you have a company registered in Poland? | escolha | existe opção **"No — it's just me ("osoba fizyczna")"** |
+| 6 | Do you have NIP (Polish Tax ID)? | sim/não | **é seu** |
+| 7 | Is your company registered in Russia/Belarus? | sim/não | não |
+| 8 | (statement) "unable to process payments to your country" | texto puro | só aparece em país bloqueado |
+| 9 | Game title | texto | Succubus Shop |
+| 10 | Is your game already released? | sim/não | depende do que você chama de lançado (a alpha está no ar) |
+| 11 | Link to your game | URL | `https://shininoobi.itch.io/succubus-shop` |
+| 12 | Planned release date | data | **é seu** — só você tem o cronograma |
+| 13 | Development status | lista | **Pre-Alpha / Alpha / Beta / Ready to go** |
+| 14 | Do you plan to release in Early Access? | sim/não | **é seu** |
+| 15 | In-game gameplay | URL | **não temos** — pede vídeo jogável (§ embaixo) |
+| 16 | A few words about your game | texto longo | redigível agora |
+| 17 | Data processing | aceite jurídico | **é seu** — é consentimento em nome de quem assina |
+
+Duas coisas essa lista muda na leitura que estava aqui:
+
+1. **A pergunta 13 tem "Alpha" como opção.** A FAQ desaconselha candidatar cedo, mas o
+   formulário aceita o estado atual do projeto sem mentir. Submeter hoje custa zero e a
+   resposta deles é a única evidência que vale (§ "O risco que decide tudo").
+2. **Não exige empresa.** O caminho "é só eu" está previsto no campo 5, então a ausência de
+   CNPJ/PJ não bloqueia a candidatura — o que bloqueia, se bloquear, é o conteúdo (§ risco).
+
+O que **não** dá para adiantar é tudo o que está marcado "é seu" na tabela: identidade,
+fisco, cronograma e o consentimento de tratamento de dados, que se assina em nome de quem
+preenche. Dá para adiantar as respostas 9, 11, 13 e 16 — e a 16 é texto que se escreve agora.
 
 ### O que a documentação pública diz
 
 - **Sem taxa, mas com curadoria.** A GOG avalia jogo por jogo; não é loja de autosserviço.
   O Developer Portal (onde se sobe build) é **por convite**, depois da aprovação.
-- **Eles pedem jogo pronto.** A FAQ desaconselha candidatar jogo em desenvolvimento inicial
-  e manda submeter "quando reaches the final stage". Estamos em **v0.1.0-alpha.6**.
-  Isso é um choque direto com o nosso rótulo, e é a segunda razão para a ordem da §1.
+- **Eles pedem jogo pronto — e o formulário mesmo assim aceita alpha.** A FAQ desaconselha
+  candidatar jogo em desenvolvimento inicial e manda submeter "quando reaches the final
+  stage". Mas o campo 13 do Typeform lista **Pre-Alpha / Alpha / Beta / Ready to go** como
+  opções. Estamos em **v0.1.0-alpha.6**: submeter hoje não exige mentir no estado, só assume
+  o risco de uma triagem antecipada. Fica registrado como escolha, não como impedimento.
 - **DRM-free é regra, não opção.** Sem launcher próprio, sem checagem online, sem
   ativação. Nosso build já é exatamente isso: `.exe` + `.pck`, save em `user://`, nenhuma
   rede. Nada a fazer.
@@ -61,11 +113,14 @@ Quem for preencher tem de fazer isso logado, no navegador, e conferir campo a ca
 - **GOG GALAXY SDK é opcional**, e **nuvem de save** é opcional; se usada, o save vai em
   subpasta com teto de 200 MB. Nosso save é um `.cfg` de alguns kilobytes.
 
-### O que NÃO foi possível verificar
+### O que continua NÃO verificado
 
-Dimensões exatas de cápsulas, processo de classificação etária, nomes de arquivo de
-arquivo/executável, dados fiscais e de pagamento. A GOG publica isso dentro do portal do
-desenvolvedor, que é por convite. **Não escrever números aqui só para ter número.**
+Ler as 17 perguntas não lê o resto. Dimensões exatas de cápsulas, processo de classificação
+etária, exigências do instalador, dados fiscais e de pagamento continuam dentro do portal do
+desenvolvedor, que é **por convite, depois da aprovação** — nada disso é acessível desta
+máquina hoje. **Não escrever números aqui só para ter número.** O que também não se mediu: o
+comportamento do Typeform quando uma resposta é inválida, e se a GOG responde por e-mail ou
+só convida — isso só se sabe submetendo.
 
 ### O risco que decide tudo
 
@@ -78,9 +133,16 @@ insinuação, e um botão que muda o tom sem mover número. Duas leituras possí
 2. "Adult sexual content" = qualquer conteúdo sexualmente sugestivo, com ou sem nudez →
    **não elegível**, e a GOG está fora.
 
-Não existe como resolver isso por interpretação da documentação pública. É a primeira
-pergunta do formulário, e a resposta deles é a única evidência que vale. Se vier "não", o
-custo total da aposta foi uma hora de preenchimento.
+Não existe como resolver isso por interpretação da documentação pública — e agora sabe-se
+que **tampouco existe como perguntar**: das 17 perguntas lidas, **nenhuma é sobre conteúdo**.
+O formulário não tem campo de nudez, violência ou classificação etária; ele pergunta e-mail,
+país, fisco polonês, título, link, data, estado de desenvolvimento, Early Access, um link de
+gameplay e "a few words". Ou seja: a triagem de conteúdo acontece **depois**, por curadoria
+humana, e o formulário não dá nenhum indício antecipado.
+
+Isso piora a aposta e ao mesmo tempo a barateia. Piora porque não há como saber a resposta
+antes de submeter. Barateia porque o custo de submeter é preencher 17 campos, e a resposta
+deles — um convite ou um silêncio — continua sendo a única evidência que vale.
 
 ---
 
@@ -247,35 +309,57 @@ que é o que a GOG pede para o material principal, e não produz o logo vetorial
 arquivo que este pipeline não faz; exportar o SVG em camadas para PSD é trabalho manual em
 ferramenta de arte, e isso não existe nesta máquina.
 
-`marketing/` está **fora do git** (árvore não rastreada, sem entrada em `.gitignore`). Os
-PNGs renderizados — 5,5 MB, 1,26 MB no maior — não devem entrar; o que deve entrar são
-`capa.html`, `renderar.sh`, `descricao-itch.md` e `.gdignore`, com `marketing/*/out/`
-ignorado.
+`marketing/` entrou no git como **fonte** (`capa.html`, `renderar.sh`, `descricao-itch.md`,
+`.gdignore`); a saída renderizada fica fora — `marketing/*/out/` está no `.gitignore`. Os
+PNGs de 5,5 MB (1,26 MB no maior) são artefato reproduzível, não material versionável.
 
 ---
 
 ## 5. O que bloqueia, dito sem rodeios
 
-1. **iOS não dá desta máquina.** Export de iOS no Godot exige **macOS + Xcode + certificado
-   de code signing + Apple Developer (US$ 99/ano)**. Não há Mac aqui, não há Xcode, e
-   `--export-pack` de iOS em Windows não existe. O APK de Android saiu (itch, 73 MiB,
-   arm64-v8a, assinado com o keystore do projeto); iPhone vai ter de ser outra máquina.
-2. **GOG e Epic pedem a conta do autor.** Nenhuma das duas está logada no navegador desta
-   sessão. Não se pede senha a ninguém, e não se cria conta de loja em nome de outra pessoa.
-3. **Epic custa US$ 100 antes de qualquer coisa**, e o valor é por produto.
-4. **Documento de identidade, entrevista fiscal e conta Hyperwallet** são dados pessoais do
+1. **iOS nativo não dá desta máquina — e não é o que segura o iPhone.** A documentação
+   oficial da Godot ("Exporting for iOS → Requirements") é uma linha: *"You must export for
+   iOS from a computer running macOS with Xcode installed."* Sem Mac, sem Xcode, sem
+   `--export-pack` de iOS em Windows, e sem o certificado de code signing + Apple Developer
+   (US$ 99/ano). O `.ipa` não existe e não vai existir a partir daqui. O paralelelo do Android
+   saiu e está no ar (APK na itch, 73 MiB, arm64-v8a, assinado com o keystore do projeto); o
+   do iPhone é outra máquina, não outro comando.
+   **Mas o iPhone já tem caminho**, e ele não é o `.ipa`: o preset `Web`
+   (`export_presets.cfg`, `variant/thread_support=false`) exporta **single-threaded**, que é
+   o modo que a mesma documentação descreve como o que *"works very well on macOS and iOS
+   too, where it always had compatibility issues with multiple threads exports"*. Por isso o
+   toggle SharedArrayBuffer da itch fica **desligado** (medido: `embed[cdn_type]` = false) —
+   ligá-lo é que quebraria o Safari.
+2. **O que faltava para o iPhone na itch era um checkbox, e ele foi marcado.** O editor de
+   arquivos tinha `embed[mobile_friendly]` = **false**; sem ele, a documentação da itch diz
+   que *"a warning will be displayed to the viewer that the game may not work"* em celular.
+   Está em `true` desde 2026-10-20 (lido de volta do servidor depois do save), e com isso o
+   celular passa a abrir o jogo em "clique para tela cheia". O que isto **não** prova: o
+   jogo rodando de fato num iPhone real — WebGL 2.0 do Safari tem problemas que os outros
+   navegadores não têm (mesma doc da Godot), e a verificação final é dedo em tela de iPhone.
+3. **O formulário da GOG não pede conta nenhuma.** É um Typeform público
+   (`form.typeform.com/to/jtPGIqWl`), então a candidatura não depende de login — depende só
+   das respostas que são identidade, fisco e cronograma do autor. A **Epic** continua pedindo
+   o cadastro dela, com documento.
+4. **Epic custa US$ 100 antes de qualquer coisa**, e o valor é por produto.
+5. **Documento de identidade, entrevista fiscal e conta Hyperwallet** são dados pessoais do
    autor. A Epic exige nome/endereço/país batendo com o documento.
-5. **Elegibilidade de conteúdo na GOG** (§2) pode ser "não", e nenhuma leitura da doc pública
-   resolve.
-6. **Estágio alpha** contra a política da GOG de submeter jogo finalizado. Se a intenção é
-   candidatar agora, o copy da candidatura precisa dizer o estágio com a mesma honestidade da
-   página da itch — e aceitar que essa é a fraqueza do submission.
+6. **Nenhuma conta alheia foi jamais entregue a esta sessão.** Google e Steam: não há token,
+   cookie, chave ou sessão de nenhuma das duas aqui — quem tem essas sessões é só o navegador
+   em que você as abriu. E conta Steam de consumidor **não publica jogo**: publicação exige
+   Steamworks Partner (AppID + US$ 100 por app + os mesmos dados fiscais). Se alguma credencial
+   dessas foi colada em conversa, considera-a exposta e troca.
+7. **Elegibilidade de conteúdo na GOG** (§2) pode ser "não", e agora sabe-se que o
+   formulário não pergunta nada sobre conteúdo — não há como descobrir antes de submeter.
+8. **Estágio alpha** contra a política da GOG de submeter jogo finalizado, contra o fato de o
+   campo 13 aceitar "Alpha". Escolha, não impedimento — mas o copy da candidatura tem de dizer
+   o estágio com a mesma honestidade da página da itch.
 
 ---
 
 ## 6. Checklist, na ordem em que dá para executar
 
-**Andado desta máquina, sem conta nenhuma — 2026-10-19:**
+**Andado desta máquina, sem conta nenhuma — 2026-10-19/20:**
 
 - [x] Oito capas nas medidas da Epic (2560×1440, 1920×1080, 1200×1600, 1200×1200) em PT e EN,
       em JPG por causa do teto de 4 MB, conferidas a olho — §4.1.
@@ -284,19 +368,29 @@ ignorado.
 
 - [x] Galeria em 1920×1080 pelo argumento novo de `tools/probes/galeria.gd` (`-- 1920`), em
       PNG e JPG, com a medida conferida no log — §4.2.
+- [x] As 17 perguntas da GOG lidas uma a uma, com o URL direto do Typeform — §2.
+- [x] iPhone liberado na itch: `embed[mobile_friendly]` marcado e SharedArrayBuffer
+      confirmado desligado, no build que já nasce single-threaded — §5.1/5.2.
 
 **Ainda desta máquina:**
 
 - [ ] Gerar logo 960×540 e a key art 1920×1080 a partir das artes que já existem.
 - [ ] Escrever as descrições longas nos formatos das duas lojas (a da itch não serve tal qual).
-- [ ] Roteirizar o trailer e definir como ele é gravado.
+- [ ] Roteirizar o trailer e definir como ele é gravado. **Isso agora tem prazo interno:** é a
+      pergunta 15 do formulário da GOG ("In-game gameplay", campo de URL) e a Epic pede o
+      mesmo para o carrossel em vídeo. Sem link de gameplay, a candidatura da GOG se preenche
+      até o fim e trava nesse campo.
+- [ ] Redigir a resposta da pergunta 16 ("A few words about your game") — texto é nosso.
 
 **Com a conta aberta (trabalho seu):**
 
-- [ ] `https://www.gog.com/indie` — ler as ~15 perguntas e responder a de conteúdo adulto.
+- [ ] `https://form.typeform.com/to/jtPGIqWl` — abrir **direto**, não por
+      `gog.com/submit-your-game` (o iframe aninhado é o que falhava). Responder e-mail, país,
+      as três perguntas de fisco polonês, data de lançamento, Early Access e o aceite de dados.
 - [ ] `https://dev.epicgames.com/portal/` — cadastro, documento, US$ 100.
 - [ ] Abrir o produto na Epic, preencher IARC e subir o primeiro build no sandbox `Dev` com
       a BuildPatch Tool.
+- [ ] Testar o jogo num iPhone real, em Safari. O checkbox diz "pode jogar"; só dedo confirma.
 
 **Depois da resposta da GOG:** decidir se a key art em camadas PSD vale o esforço — se a
 resposta for "não", a §2 inteira não precisa mais de atenção.

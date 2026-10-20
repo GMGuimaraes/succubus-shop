@@ -360,8 +360,14 @@ Antes de marcar *Publish*, confira:
   desbloqueiam algo na vitrine.
 - **Nuvem.** Save em nuvem é Steam Cloud. No navegador, o save é do site e limpar dados
   o apaga — o jogo avisa isso na própria tela de save.
-- **Nota no mobile.** O build web usa `gl_compatibility` e roda, mas a UI foi desenhada
-  para 1280×720 com mouse. Não marque "mobile friendly".
+- **Mobile: marcado, e com uma ressalva que só o dedo fecha.** A afirmação antiga
+  ("a UI foi desenhada para 1280×720 com mouse, não marque mobile friendly") venceu quando a
+  UI de toque entrou no jogo (`main.gd::_fit_touch`, sonda `tools/probes/toque.gd`) e o
+  `mobile_friendly` foi marcado na itch. O que autoriza o checkbox: (a) export **single-threaded**
+  (`variant/thread_support=false`), que é o modo que a doc oficial da Godot descreve como o que
+  funciona bem em macOS/iOS; (b) SharedArrayBuffer **desligado** na vitrine, porque ligá-lo é que
+  quebraria o Safari. O que não foi medido: o jogo aberto num iPhone de verdade — o Safari tem
+  problemas de WebGL 2.0 que os outros navegadores não têm, e checkbox nenhum substitui isso.
 - **Os emoji do navegador: resolvido, com o número errado que eu prometi.** Medido no
   primeiro build web aberto no Chrome: **84 codepoints** que a fonte padrão do motor não
   desenha (emoji colorido e símbolos de interface — `♥ ★ ☰ ✓ ✦ ▸ ░ █ ─ ← → ≈ ∞ ✗  ✕`),
@@ -743,15 +749,24 @@ Duas armadilhas do editor web, medidas na subida:
 
 ## 14. O que ainda não dá para sair desta máquina
 
-- **iOS.** O export `.ipa` do Godot 4 exige macOS com Xcode, um Apple Developer Program pago
-  (US$ 99/ano) e o `codesign` da Apple. Do Windows não há caminho: nem o `.ipa` é gerado, nem o
-  certificado é emitido. O que dá para fazer daqui é preparar o preset e a lista de arquivos, e
-  rodar o export numa máquina Apple.
+- **iOS nativo (.ipa) não existe e não pode existir aqui.** A frase da documentação oficial é
+  literal: *"You must export for iOS from a computer running macOS with Xcode installed."*
+  Falta o macOS, falta o Xcode, falta o Apple Developer Program (US$ 99/ano) e falta o
+  `codesign`. O que dá para fazer daqui é preparar o preset e a lista de arquivos, e rodar o
+  export numa máquina Apple. **O Android não tinha essa barreira** — o APK saiu do Windows e
+  está na itch (73 MiB, arm64-v8a).
+- **E não é o que segura o iPhone.** O `.ipa` nunca foi o único caminho: o build **Web** que já
+  está no ar é single-threaded de propósito, e é exatamente esse modo que a doc da Godot cita
+  como o que *"works very well on macOS and iOS too, where it always had compatibility issues
+  with multiple threads exports"*. Um jogador de iPhone abre a página da itch em Safari e joga,
+  sem app e sem loja. Ver §8, item "Mobile".
 - **GOG.** A loja não aceita submissão self-service: é formulário de candidatura com revisão
   humana, e a FAQ coloca *"Adult sexual content"* entre os itens não elegíveis — a nossa zona
   cinzenta (tema adulto, zero nudez) precisa de uma resposta deles antes de qualquer
-  investimento. O Developer Portal, onde se sobe build, é por convite. A lista completa, com o
-  que foi lido e o que não foi, está em [`gog-epic.md`](gog-epic.md).
+  investimento. Lido agora até o fim (as 17 perguntas): **o formulário não pergunta nada sobre
+  conteúdo**, então não há como descobrir a posição deles respondendo campo a campo — a triagem
+  é curadoria humana, depois. É Typeform público, sem login. O Developer Portal, onde se sobe
+  build, é por convite. A lista completa está em [`gog-epic.md`](gog-epic.md).
 - **Epic Games Store.** Autocadastro que aceita pessoa física (18+, com verificação de
   documento), **US$ 100 por produto** — não por estúdio —, entrevista fiscal que gera o
   formulário W-8 e build sobe pela BuildPatch Tool, não pelo `.zip` da itch. Nada disso pode
