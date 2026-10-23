@@ -1,0 +1,2 @@
+.export/itch/*.apk filter=lfs diff=lfs merge=lfs -text
+.export/itch/*.zip filter=lfs diff=lfs merge=lfs -text
